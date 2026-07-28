@@ -11,6 +11,7 @@ import type {
   LoginInput,
   ManagedDocument,
   Note,
+  PreviewInfo,
   PublicUser,
   SaveMonthInput,
   SetupInput,
@@ -91,6 +92,46 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T
 }
 
+/**
+ * Holt eine Datei als Blob – über denselben Weg wie jeder andere Aufruf.
+ *
+ * Nicht der Umweg, für den es aussieht: Ein <img src="https://manager-api…">
+ * ist für den Browser eine Anfrage an eine fremde Adresse. Die
+ * Sicherheitsrichtlinie der Seite (img-src) erlaubt aber nur die eigene
+ * Herkunft – das Bild wurde stumm verworfen, und die Vorschau blieb leer.
+ * Über fetch() greift stattdessen connect-src, wo die API bereits eingetragen
+ * ist; aus dem Blob wird danach eine blob:-Adresse, die jede Richtlinie
+ * durchlässt. Nebenbei ist so sichergestellt, dass das Sitzungs-Cookie
+ * mitgeht, egal wo die API einmal liegt.
+ */
+async function requestBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${path}`, { credentials: 'include', signal })
+  } catch {
+    throw new ApiRequestError(0, 'network_error', 'Keine Verbindung zum Server. Bist du offline?')
+  }
+
+  if (!response.ok) {
+    // Der Fehlerkörper ist hier JSON, obwohl ein Bild erwartet wurde.
+    let code = 'unknown'
+    let message = 'Die Datei konnte nicht geladen werden.'
+    try {
+      const payload: unknown = await response.json()
+      if (payload && typeof payload === 'object' && 'error' in payload) {
+        const error = (payload as { error: { code: string; message: string } }).error
+        code = error.code
+        message = error.message
+      }
+    } catch {
+      // Kein JSON – dann bleibt es bei der allgemeinen Meldung.
+    }
+    throw new ApiRequestError(response.status, code, message)
+  }
+
+  return response.blob()
+}
+
 export const api = {
   health: () => request<Health>('/api/health'),
 
@@ -149,6 +190,14 @@ export const api = {
 
   retryOcr: (id: string) =>
     request<{ ocrStatus: string }>(`/api/documents/${id}/ocr`, { method: 'POST' }),
+
+  documentPreview: (id: string) => request<PreviewInfo>(`/api/documents/${id}/preview`),
+
+  documentPreviewPage: (id: string, page: number, signal?: AbortSignal) =>
+    requestBlob(`/api/documents/${id}/preview/${page}`, signal),
+
+  documentFile: (id: string, signal?: AbortSignal) =>
+    requestBlob(`/api/documents/${id}/file`, signal),
 
   listShopping: () => request<{ items: ShoppingItem[] }>('/api/shopping'),
 

@@ -30,6 +30,12 @@
     # Berechtigung der Seite. Nötig würde 'camera=(self)' erst bei einer
     # Live-Vorschau im Browser über getUserMedia.
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    # img-src erlaubt bewusst kein https://manager-api.alae.app: Die Vorschau
+    # holt Bilder und gerasterte PDF-Seiten per fetch() – dafür genügt der
+    # Eintrag unter connect-src – und zeigt sie als blob: an. Ein <img> direkt
+    # auf die API-Adresse wäre hier verworfen worden, und genau das war die
+    # Ursache der leeren Vorschau. object-src 'none', weil kein <object> und
+    # kein <embed> mehr vorkommt; PDFs werden als Bild dargestellt.
     Content-Security-Policy = """
       default-src 'self'; \
       script-src 'self'; \
@@ -37,6 +43,7 @@
       img-src 'self' data: blob:; \
       font-src 'self'; \
       connect-src 'self' https://manager-api.alae.app; \
+      object-src 'none'; \
       frame-ancestors 'none'; \
       base-uri 'self'; \
       form-action 'self'"""

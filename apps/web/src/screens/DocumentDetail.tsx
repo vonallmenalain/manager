@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { Button } from '../components/Button'
+import { DocumentPreview } from '../components/DocumentPreview'
 import { StatusBadge } from '../components/StatusBadge'
 import {
   fileUrl,
@@ -84,7 +85,7 @@ export function DocumentDetail() {
         <StatusBadge status={document.status} />
       </div>
 
-      <Preview id={document.id} mimeType={document.mimeType} title={document.title} />
+      <DocumentPreview id={document.id} mimeType={document.mimeType} title={document.title} />
 
       <div className="flex gap-2">
         <a
@@ -187,36 +188,6 @@ function formatDateTime(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function Preview({ id, mimeType, title }: { id: string; mimeType: string; title: string }) {
-  const url = fileUrl(id)
-
-  if (mimeType.startsWith('image/')) {
-    return (
-      <img
-        src={url}
-        alt={title}
-        className="max-h-96 w-full rounded-2xl border border-slate-200 bg-slate-50 object-contain dark:border-slate-800 dark:bg-slate-900"
-      />
-    )
-  }
-
-  // PDFs im <object> statt <iframe>: Kann der Browser sie nicht darstellen
-  // (auf Android häufig), zeigt er den Inhalt des Elements statt einer
-  // leeren Fläche.
-  return (
-    <object data={url} type={mimeType} className="h-96 w-full rounded-2xl border border-slate-200 dark:border-slate-800">
-      <div className="grid h-full place-items-center px-6 text-center">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Vorschau hier nicht möglich –{' '}
-          <a href={url} className="font-medium text-brand-700 underline dark:text-brand-300">
-            Datei öffnen
-          </a>
-        </p>
-      </div>
-    </object>
-  )
 }
 
 interface EditFormProps {

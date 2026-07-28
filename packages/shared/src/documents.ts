@@ -113,6 +113,24 @@ export const documentSchema = z.object({
 
 export type ManagedDocument = z.infer<typeof documentSchema>
 
+/**
+ * Wie sich ein Dokument in der App anschauen lässt.
+ *
+ * 'pdf'   – der Server rastert die Seiten zu Bildern, `pages` sagt wie viele
+ * 'image' – die Datei selbst ist ein Bild und wird direkt angezeigt
+ * 'none'  – keine Vorschau möglich, es bleibt beim Öffnen der Datei
+ */
+export const PREVIEW_KINDS = ['pdf', 'image', 'none'] as const
+export type PreviewKind = (typeof PREVIEW_KINDS)[number]
+
+export const previewInfoSchema = z.object({
+  kind: z.enum(PREVIEW_KINDS),
+  /** Anzahl anzeigbarer Seiten. 0, wenn keine Vorschau möglich ist. */
+  pages: z.number().int().nonnegative(),
+})
+
+export type PreviewInfo = z.infer<typeof previewInfoSchema>
+
 export const documentDetailSchema = documentSchema.extend({
   activity: z.array(activityEntrySchema),
   /** Der vollständige erkannte Text, für die Ansicht im Detail. */
