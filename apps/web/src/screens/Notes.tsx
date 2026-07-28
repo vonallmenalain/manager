@@ -1,10 +1,10 @@
 import {
-  checklistToText,
   NOTE_COLORS,
   NOTE_KIND_LABELS,
   NOTE_KINDS,
   parseChecklist,
   serializeChecklist,
+  sortChecklist,
   type ChecklistItem,
   type Note,
   type NoteColor,
@@ -87,11 +87,10 @@ export function Notes() {
                       </span>
                     ) : null}
                   </span>
-                  {note.pinned ? (
-                    <span className="shrink-0 text-slate-400" aria-label="Angeheftet">
-                      📌
-                    </span>
-                  ) : null}
+                  <span className="flex shrink-0 items-center gap-1 text-slate-400">
+                    {note.shared ? <span title="Geteilt">👥</span> : null}
+                    {note.pinned ? <span title="Angeheftet">📌</span> : null}
+                  </span>
                 </span>
               </button>
             </li>
@@ -152,7 +151,9 @@ export function Notes() {
 
 /** Die ersten Einträge einer Checkliste, wie sie in der Übersicht erscheinen. */
 function ChecklistPreview({ body }: { body: string }) {
-  const items = parseChecklist(body)
+  // Auch hier Erledigtes nach unten – für Notizen, die noch aus der Zeit
+  // davor stammen und seither nicht angefasst wurden.
+  const items = sortChecklist(parseChecklist(body))
   if (items.length === 0) return null
 
   const offen = items.filter((item) => !item.done).length
@@ -201,14 +202,15 @@ function NoteEditor({
   const remove = useDeleteNote()
   useFullScreenOverlay()
 
-  const [kind, setKind] = useState<NoteKind>(note?.kind ?? newKind)
+  // Die Art wird beim Anlegen gewählt und bleibt dann, was sie ist.
+  const kind = note?.kind ?? newKind
   const [title, setTitle] = useState(note?.title ?? '')
   const [text, setText] = useState(() =>
     (note?.kind ?? newKind) === 'liste' ? '' : (note?.body ?? ''),
   )
   const [items, setItems] = useState<ChecklistItem[]>(() => {
     if ((note?.kind ?? newKind) !== 'liste') return []
-    const vorhanden = parseChecklist(note?.body ?? '')
+    const vorhanden = sortChecklist(parseChecklist(note?.body ?? ''))
     // Eine frische Liste beginnt mit einer leeren Zeile – sonst müsste man
     // erst „Eintrag hinzufügen" treffen, bevor man tippen kann.
     return vorhanden.length > 0 ? vorhanden : [{ text: '', done: false }]
@@ -216,6 +218,7 @@ function NoteEditor({
   /** Sobald eine neue Notiz einmal gespeichert ist, lässt sie sich löschen. */
   const [savedId, setSavedId] = useState(note?.id)
   const [pinned, setPinned] = useState(note?.pinned ?? false)
+  const [shared, setShared] = useState(note?.shared ?? false)
   const [color, setColor] = useState<NoteColor>(note?.color ?? 'default')
   const [state, setState] = useState<SaveState>(note ? 'gespeichert' : 'ruht')
 
@@ -224,8 +227,16 @@ function NoteEditor({
 
   // Der jeweils neueste Stand, damit auch das Speichern beim Schliessen ihn
   // sieht – zu dem Zeitpunkt rendert die Komponente nicht mehr.
-  const current = useRef({ id: note?.id, title, body, kind, pinned, color })
-  current.current = { id: current.current.id ?? note?.id, title, body, kind, pinned, color }
+  const current = useRef({ id: note?.id, title, body, kind, pinned, shared, color })
+  current.current = {
+    id: current.current.id ?? note?.id,
+    title,
+    body,
+    kind,
+    pinned,
+    shared,
+    color,
+  }
 
   // Auf Refs statt im Zustand: Beides darf das Fenster nicht neu zeichnen,
   // und beides muss auch nach dem Ausblenden noch stimmen.
@@ -256,6 +267,7 @@ function NoteEditor({
           body: entry.body,
           kind: entry.kind,
           pinned: entry.pinned,
+          shared: entry.shared,
           color: entry.color,
         },
       })
@@ -285,7 +297,7 @@ function NoteEditor({
     dirty.current = true
     const timer = setTimeout(() => void flush(), AUTOSAVE_MS)
     return () => clearTimeout(timer)
-  }, [title, body, kind, pinned, color, flush])
+  }, [title, body, kind, pinned, shared, color, flush])
 
   // Beim Schliessen – auch über die Zurück-Geste – das Angefangene sichern.
   useEffect(() => () => void flush(), [flush])
@@ -297,13 +309,6 @@ function NoteEditor({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-
-  function switchKind(next: NoteKind) {
-    if (next === kind) return
-    if (next === 'liste') setItems(parseChecklist(text))
-    else setText(checklistToText(serializeChecklist(items)))
-    setKind(next)
-  }
 
   return createPortal(
     <div
@@ -332,6 +337,19 @@ function NoteEditor({
                     : ''}
           </span>
           <div className="flex items-center gap-1">
+            {/* Beschriftet statt nur ein Symbol: Wem eine Notiz gehört und wer
+                sie sieht, ist nichts, was man erraten sollte. */}
+            <button
+              onClick={() => setShared((value) => !value)}
+              aria-pressed={shared}
+              className={`flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-medium ${
+                shared
+                  ? 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-100'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              {shared ? '👥 Geteilt' : '🔒 Nur für mich'}
+            </button>
             <button
               onClick={() => setPinned((value) => !value)}
               className={`grid size-11 min-h-11 place-items-center rounded-full text-sm ${pinned ? '' : 'opacity-30'}`}
@@ -382,22 +400,7 @@ function NoteEditor({
           )}
         </div>
 
-        <div className="space-y-3 border-t border-black/5 px-4 py-3 dark:border-white/10">
-          <div className="flex gap-1 rounded-xl bg-black/5 p-1 dark:bg-white/10">
-            {NOTE_KINDS.map((option) => (
-              <button
-                key={option}
-                onClick={() => switchKind(option)}
-                aria-pressed={kind === option}
-                className={`min-h-11 flex-1 rounded-lg text-sm font-medium transition ${
-                  kind === option ? 'bg-white shadow-sm dark:bg-slate-800' : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                {NOTE_KIND_LABELS[option]}
-              </button>
-            ))}
-          </div>
-
+        <div className="border-t border-black/5 px-4 py-3 dark:border-white/10">
           <div className="flex items-center gap-2">
             {NOTE_COLORS.map((option) => (
               <button
@@ -450,7 +453,11 @@ function Checklist({
   const inputs = useRef<Array<HTMLInputElement | null>>([])
 
   function update(index: number, changes: Partial<ChecklistItem>) {
-    onChange(items.map((item, position) => (position === index ? { ...item, ...changes } : item)))
+    const next = items.map((item, position) => (position === index ? { ...item, ...changes } : item))
+    // Beim Abhaken rutscht der Eintrag ans Ende: Oben steht, was noch zu tun
+    // ist. Beim Tippen bleibt die Reihenfolge, wie sie ist – sonst spränge
+    // die Zeile unter dem Finger weg.
+    onChange(changes.done === undefined ? next : sortChecklist(next))
   }
 
   function insertAfter(index: number) {

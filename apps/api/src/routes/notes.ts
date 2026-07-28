@@ -8,7 +8,7 @@ import {
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
-import { and, desc, eq, like, type SQL } from 'drizzle-orm'
+import { and, desc, eq, like, or, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 
@@ -23,6 +23,7 @@ function toApi(row: NoteRow): Note {
     body: row.body,
     kind: row.kind as NoteKind,
     pinned: row.pinned,
+    shared: row.shared,
     color: row.color as NoteColor,
     createdBy: row.createdBy,
     updatedBy: row.updatedBy,
@@ -34,6 +35,19 @@ function toApi(row: NoteRow): Note {
 const querySchema = z.object({
   q: z.string().trim().max(200).optional(),
 })
+
+/**
+ * Wer eine Notiz sehen darf: wer sie angelegt hat, und bei geteilten alle.
+ *
+ * Steht bewusst in jeder Abfrage, auch beim Ändern und Löschen. Sonst liesse
+ * sich eine fremde Notiz über ihre Kennung erreichen, ohne dass sie je in
+ * einer Liste aufgetaucht wäre.
+ */
+function visibleTo(userId: string): SQL {
+  const condition = or(eq(notes.createdBy, userId), eq(notes.shared, true))
+  if (!condition) throw new Error('Sichtbarkeitsbedingung fehlt')
+  return condition
+}
 
 /**
  * Der durchsuchbare Text einer Notiz.
@@ -56,10 +70,13 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
 
   fastify.get('/api/notes', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
     const parsed = querySchema.safeParse(request.query)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const conditions: SQL[] = []
+    const conditions: SQL[] = [visibleTo(user.id)]
     if (parsed.data.q) {
       // Dieselbe Vereinheitlichung wie bei den Dokumenten – „PRÄMIE" und
       // „praemie" sollen überall dasselbe finden.
@@ -69,7 +86,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const rows = await db
       .select()
       .from(notes)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions))
       // Angeheftete zuerst, darunter die zuletzt bearbeiteten.
       .orderBy(desc(notes.pinned), desc(notes.updatedAt))
 
@@ -83,7 +100,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, kind, pinned, color } = parsed.data
+    const { title, body, kind, pinned, shared, color } = parsed.data
     const inserted = await db
       .insert(notes)
       .values({
@@ -92,6 +109,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
         body,
         kind,
         pinned,
+        shared,
         color,
         searchText: searchTextFor(kind, title, body),
         createdBy: user.id,
@@ -112,7 +130,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, kind, pinned, color } = parsed.data
+    const { title, body, kind, pinned, shared, color } = parsed.data
     const updated = await db
       .update(notes)
       .set({
@@ -120,12 +138,15 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
         body,
         kind,
         pinned,
+        shared,
         color,
         searchText: searchTextFor(kind, title, body),
         updatedBy: user.id,
         updatedAt: new Date().toISOString(),
       })
-      .where(eq(notes.id, id))
+      // Die Bedingung prüft den Stand vor der Änderung: Eine fremde private
+      // Notiz lässt sich damit nicht durch Mitschicken von shared aufbrechen.
+      .where(and(eq(notes.id, id), visibleTo(user.id)))
       .returning()
 
     const row = updated[0]
@@ -134,8 +155,14 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.delete('/api/notes/:id', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
     const { id } = request.params as { id: string }
-    const deleted = await db.delete(notes).where(eq(notes.id, id)).returning({ id: notes.id })
+    const deleted = await db
+      .delete(notes)
+      .where(and(eq(notes.id, id), visibleTo(user.id)))
+      .returning({ id: notes.id })
 
     if (deleted.length === 0) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
     return reply.status(204).send()

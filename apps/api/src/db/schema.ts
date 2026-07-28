@@ -225,6 +225,12 @@ export const notes = sqliteTable(
     kind: text('kind').notNull().default('text'),
     /** Angeheftete stehen immer oben. */
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * false heisst „nur für mich": Die Notiz sieht nur, wer sie angelegt hat.
+     * Der Standard, weil sich Geteiltes freigeben lässt, aber nichts
+     * ungeschehen macht, was schon jemand gelesen hat.
+     */
+    shared: integer('shared', { mode: 'boolean' }).notNull().default(false),
     color: text('color').notNull().default('default'),
 
     /** Titel und Text vereinheitlicht – dieselbe Suchlogik wie bei Dokumenten. */
@@ -240,6 +246,8 @@ export const notes = sqliteTable(
   (table) => [
     index('notes_pinned_idx').on(table.pinned, table.updatedAt),
     index('notes_search_idx').on(table.searchText),
+    // Jede Abfrage filtert danach, wem die Notiz gehört und ob sie geteilt ist.
+    index('notes_visibility_idx').on(table.createdBy, table.shared),
   ],
 )
 

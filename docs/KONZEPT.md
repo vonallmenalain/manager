@@ -175,7 +175,8 @@ erDiagram
 * `jobs` – OCR-Warteschlange: id, document_id, type, state, attempts, error, timestamps
 * `shopping_items` – Einkaufsliste; `shopping_memory` – die gelernte Zuordnung
   Artikel → Abteilung, bewusst getrennt, damit „Aufräumen" sie nicht mitlöscht
-* `notes` – Notizen mit Art (Text oder Checkliste), Farbe, Anheftung und eigener Suchspalte
+* `notes` – Notizen mit Art (Text oder Checkliste), Sichtbarkeit (`shared`), Farbe,
+  Anheftung und eigener Suchspalte
 * `finance_years` – Steuerbetrag, Satz, Steuerabzug ja/nein, Abrechnungsstand (je Jahr)
 * `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
 * `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum und Beleg-Notiz
@@ -265,10 +266,25 @@ verschluckt. Änderungen der anderen Person kommen alle 20 Sekunden nach.
 ### 6.3 Notizen
 
 Kurze Notizen mit Titel und Inhalt, in zwei Arten: **Fliesstext** oder **Checkliste** mit
-Einträgen zum Abhaken. Beim Anlegen wird gewählt, später lässt sich wechseln. Dazu
-Anheften (steht dann zuoberst), fünf gedeckte Farben und Suche über Titel und Inhalt –
-mit denselben Regeln wie bei den Dokumenten, also findet `zuegeltermin` auch
-„Zügeltermin". Bewusst schlicht – kein zweites Notion.
+Einträgen zum Abhaken. Die Art wird beim Anlegen gewählt (zwei Einträge am Plus-Knopf)
+und bleibt dann, was sie ist – ein Umschalten hinterher wäre eine Umwandlung mit
+Verlusten für einen Fall, den es im Alltag kaum gibt. Dazu Anheften (steht dann
+zuoberst), fünf gedeckte Farben und Suche über Titel und Inhalt – mit denselben Regeln
+wie bei den Dokumenten, also findet `zuegeltermin` auch „Zügeltermin". Bewusst schlicht –
+kein zweites Notion.
+
+**Abgehaktes rutscht nach unten.** Eine Liste beantwortet die Frage „was ist noch zu
+tun", und die steht dann oben statt zwischen Durchgestrichenem. Sortiert wird der
+gespeicherte Inhalt selbst, nicht nur die Anzeige – so sieht die Liste auf jedem Gerät
+gleich aus und die Vorschau in der Übersicht zeigt dieselben offenen Punkte.
+
+**Nur für mich oder geteilt.** Jede Notiz gehört zunächst dem, der sie anlegt, und wird
+über einen Schalter im Fenster bewusst freigegeben. Umgekehrt herum wäre es die falsche
+Voreinstellung: Ein Freigeben lässt sich zurücknehmen, ein Gelesenwerden nicht. Geteilte
+Notizen sind für beide da – wer sie sieht, darf sie auch ändern und löschen, wie bei den
+Dokumenten. Die Prüfung steht serverseitig in jeder Abfrage, auch beim Ändern und
+Löschen; sonst wäre eine fremde Notiz über ihre Kennung erreichbar, ohne je in einer
+Liste aufgetaucht zu sein.
 
 Eine Notiz öffnet als **Fenster über der Liste**, nicht als eigener Bildschirm: Sie ist
 eine Randnotiz, kein Formular. Gespeichert wird **von selbst** – kurz nach dem letzten
@@ -560,7 +576,7 @@ eine funktionierende App auf dem Handy.
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Dokumentenmodus mit Randerkennung, mehrseitige Scans, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
-| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
+| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
 

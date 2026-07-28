@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { checklistToText, parseChecklist, serializeChecklist } from '@manager/shared'
+import { parseChecklist, serializeChecklist, sortChecklist } from '@manager/shared'
 
 describe('parseChecklist', () => {
   it('liest offene und erledigte Einträge', () => {
@@ -59,8 +59,39 @@ describe('serializeChecklist', () => {
   })
 })
 
-describe('checklistToText', () => {
-  it('lässt die Kästchen weg', () => {
-    assert.equal(checklistToText('[x] Milch\n[ ] Brot'), 'Milch\nBrot')
+describe('sortChecklist', () => {
+  it('stellt Erledigtes ans Ende', () => {
+    const sortiert = sortChecklist([
+      { text: 'Milch', done: true },
+      { text: 'Brot', done: false },
+      { text: 'Butter', done: true },
+      { text: 'Eier', done: false },
+    ])
+    assert.deepEqual(
+      sortiert.map((item) => item.text),
+      ['Brot', 'Eier', 'Milch', 'Butter'],
+    )
+  })
+
+  it('behält die Reihenfolge innerhalb der beiden Gruppen', () => {
+    // Wer seine Liste in der Reihenfolge des Ladens schreibt, findet sie so
+    // wieder – abgehakt wird von unten aufgefüllt, nicht durchmischt.
+    const sortiert = sortChecklist([
+      { text: 'A', done: false },
+      { text: 'B', done: false },
+      { text: 'C', done: false },
+    ])
+    assert.deepEqual(
+      sortiert.map((item) => item.text),
+      ['A', 'B', 'C'],
+    )
+  })
+
+  it('ändert nichts, wenn schon alles sortiert ist', () => {
+    const items = [
+      { text: 'Offen', done: false },
+      { text: 'Erledigt', done: true },
+    ]
+    assert.deepEqual(sortChecklist(items), items)
   })
 })
