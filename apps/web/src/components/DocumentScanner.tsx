@@ -29,8 +29,12 @@ import {
  *   Zuschneiden   – die erkannten Ecken zur Kontrolle, verschiebbar
  *   Verarbeiten   – entzerren, Licht ausgleichen, als Seite zurückgeben
  *
- * Der Scanner bleibt danach offen und zeigt wieder das Live-Bild: Die zweite
- * Seite eines Briefes folgt fast immer, und sie soll keinen Umweg kosten.
+ * Danach schliesst der Scanner und die Seite landet im Stapel. Nicht gleich
+ * wieder in den Sucher, obwohl das einen Tap sparen würde: Nach einer Seite
+ * ist das Wahrscheinlichste, dass sie es war. Und wer weitermacht, bekommt
+ * über „Weitere Seite" eine frisch geöffnete Kamera – auf manchen
+ * Android-Geräten der einzige Weg zu einem Live-Bild, nachdem einmal ein
+ * Standbild aufgenommen wurde.
  *
  * Die Fläche hängt über ein Portal direkt am <body> und nicht in der
  * Dokumentenliste, aus der sie geöffnet wurde: Sonst teilt sie sich den
@@ -147,6 +151,15 @@ export function DocumentScanner({
       streamRef.current = stream
       trackRef.current = stream.getVideoTracks()[0] ?? null
       setStreamReady(true)
+
+      // Endet der Strom von sich aus – weil eine andere App die Kamera
+      // übernimmt oder das Gerät sie nach einer Standbildaufnahme neu
+      // einrichtet –, wird er neu angefordert, statt ein schwarzes Bild
+      // stehen zu lassen. track.stop() löst dieses Ereignis nicht aus, das
+      // Aufräumen unten kann also keine Schleife anstossen.
+      trackRef.current?.addEventListener('ended', () => {
+        if (!stopped) setAttempt((count) => count + 1)
+      })
     }
 
     void start()
@@ -241,12 +254,18 @@ export function DocumentScanner({
       onCapture(await renderScan(captured.canvas, quad, filter))
       setCaptured(null)
       setQuad(null)
+      // Zurück zum Stapel statt gleich wieder in den Sucher: Nach einer Seite
+      // ist das Wahrscheinlichste, dass sie es war. Wer weitermachen will,
+      // tippt dort auf „Weitere Seite" – und bekommt damit eine frisch
+      // geöffnete Kamera, was auf manchen Geräten der einzige Weg zu einem
+      // Live-Bild nach einer Standbildaufnahme ist.
+      onClose()
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : 'Die Seite liess sich nicht aufbereiten.')
     } finally {
       setWorking(false)
     }
-  }, [captured, quad, filter, onCapture])
+  }, [captured, quad, filter, onCapture, onClose])
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-white">
@@ -303,6 +322,11 @@ export function DocumentScanner({
           onRetake={() => {
             setCaptured(null)
             setQuad(null)
+            // Die Kamera neu anfordern statt den bestehenden Strom wieder
+            // anzuzeigen: Nach einer Standbildaufnahme liefert er auf manchen
+            // Android-Geräten kein Bild mehr, und man schaut ins Schwarze.
+            // Der Neustart kostet einen Sekundenbruchteil.
+            setAttempt((count) => count + 1)
           }}
           onAccept={() => void accept()}
         />
