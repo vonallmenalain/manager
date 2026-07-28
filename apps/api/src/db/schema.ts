@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 /**
  * Zeitstempel werden als ISO-8601-Text gespeichert, nicht als Unix-Zahl.
@@ -48,3 +48,98 @@ export const sessions = sqliteTable(
 )
 
 export type Session = typeof sessions.$inferSelect
+
+export const categories = sqliteTable('categories', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull().unique(),
+  icon: text('icon').notNull().default('folder'),
+  sortOrder: integer('sort_order').notNull().default(100),
+  createdAt: text('created_at').notNull().default(now),
+})
+
+export type Category = typeof categories.$inferSelect
+
+export const documents = sqliteTable(
+  'documents',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    /**
+     * Pfad relativ zu STORAGE_DIR. Absolut wäre er nach jedem Umzug der
+     * Ablage falsch – so genügt es, eine Umgebungsvariable zu ändern.
+     */
+    storagePath: text('storage_path').notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    /** Erkennt Doppel-Uploads, bevor zwei Exemplare derselben Rechnung entstehen. */
+    sha256: text('sha256').notNull(),
+
+    uploadedBy: text('uploaded_by')
+      .notNull()
+      .references(() => users.id),
+    uploadedAt: text('uploaded_at').notNull().default(now),
+
+    /** Datum auf dem Dokument. Beim Upload zunächst das Uploaddatum. */
+    docDate: text('doc_date').notNull(),
+    categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    /** null heisst "beide zuständig", nicht "niemand". */
+    assignedTo: text('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('offen'),
+    dueDate: text('due_date'),
+
+    amountCents: integer('amount_cents'),
+    vendor: text('vendor'),
+    notes: text('notes'),
+
+    /**
+     * Titel, Absender und Notizen in vereinheitlichter Form: klein
+     * geschrieben, Umlaute ausgeschrieben, Akzente entfernt. Nur gegen diese
+     * Spalte wird gesucht, damit „PRÄMIE" und „praemie" dasselbe finden.
+     */
+    searchText: text('search_text').notNull().default(''),
+
+    /** Ab Etappe 3 befüllt; hier schon angelegt, damit später keine Migration nötig ist. */
+    ocrStatus: text('ocr_status').notNull().default('pending'),
+    ocrText: text('ocr_text'),
+
+    /** Papierkorb statt echtem Löschen – 30 Tage Gnadenfrist. */
+    deletedAt: text('deleted_at'),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (table) => [
+    index('documents_status_idx').on(table.status),
+    index('documents_category_idx').on(table.categoryId),
+    index('documents_assigned_idx').on(table.assignedTo),
+    index('documents_doc_date_idx').on(table.docDate),
+    index('documents_sha256_idx').on(table.sha256),
+    index('documents_deleted_at_idx').on(table.deletedAt),
+    index('documents_search_text_idx').on(table.searchText),
+  ],
+)
+
+export type DocumentRow = typeof documents.$inferSelect
+export type NewDocumentRow = typeof documents.$inferInsert
+
+/**
+ * Beantwortet "wer hat wann was hochgeladen" und gibt jedem Dokument eine
+ * Verlaufsspur. Bewusst append-only: Einträge werden nie geändert.
+ */
+export const activity = sqliteTable(
+  'activity',
+  {
+    id: text('id').primaryKey(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    action: text('action').notNull(),
+    /** Fertig formulierter deutscher Satz – das UI muss nichts zusammenbauen. */
+    summary: text('summary').notNull(),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [index('activity_document_idx').on(table.documentId, table.createdAt)],
+)
+
+export type ActivityRow = typeof activity.$inferSelect

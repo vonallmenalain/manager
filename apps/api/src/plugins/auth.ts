@@ -22,7 +22,7 @@ export function sessionCookieOptions(expires: Date): CookieSerializeOptions {
   return {
     httpOnly: true,
     secure: isProduction,
-    // 'lax' genügt, weil manager.alae.app und api.alae.app dieselbe Registrable
+    // 'lax' genügt, weil manager.alae.app und manager-api.alae.app dieselbe Registrable
     // Domain teilen und damit als same-site gelten. Das erspart uns
     // SameSite=None und alle Probleme mit Third-Party-Cookie-Blockern.
     sameSite: 'lax',

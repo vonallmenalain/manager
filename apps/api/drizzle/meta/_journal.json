@@ -8,6 +8,20 @@
       "when": 1785240186926,
       "tag": "0000_robust_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785247417245,
+      "tag": "0001_cute_cammi",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785247846198,
+      "tag": "0002_late_rumiko_fujikawa",
+      "breakpoints": true
     }
   ]
 }

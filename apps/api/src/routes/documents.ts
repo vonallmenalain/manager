@@ -1,0 +1,356 @@
+import { randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+
+import {
+  ALLOWED_MIME_TYPES,
+  API_ERROR_CODES,
+  buildSearchText,
+  documentQuerySchema,
+  MAX_UPLOAD_BYTES,
+  normalizeForSearch,
+  OPEN_STATUSES,
+  updateDocumentSchema,
+} from '@manager/shared'
+import { and, desc, eq, inArray, isNull, like, sql, type SQL } from 'drizzle-orm'
+import type { FastifyPluginAsync } from 'fastify'
+
+import { db } from '../db/index.js'
+import { categories, documents, type DocumentRow } from '../db/schema.js'
+import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
+import {
+  describeChanges,
+  findDocument,
+  getActivity,
+  loadUserNames,
+  logActivity,
+  toApiDocument,
+} from '../lib/documents.js'
+import {
+  buildStoragePath,
+  commitUpload,
+  discardUpload,
+  extensionFor,
+  moveToTrash,
+  moveWithinStorage,
+  resolveInStorage,
+  storeTemporarily,
+} from '../lib/storage.js'
+
+const allowedMimeTypes = new Set<string>(ALLOWED_MIME_TYPES)
+
+/** "Rechnung Krankenkasse_Maerz.pdf" → "Rechnung Krankenkasse Maerz" */
+function titleFromFilename(filename: string): string {
+  const withoutExtension = filename.replace(/\.[^./\\]+$/, '')
+  const cleaned = withoutExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return cleaned.slice(0, 200) || 'Ohne Titel'
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function categoryNameFor(categoryId: string | null): Promise<string | null> {
+  if (!categoryId) return null
+  const rows = await db
+    .select({ name: categories.name })
+    .from(categories)
+    .where(eq(categories.id, categoryId))
+    .limit(1)
+  return rows[0]?.name ?? null
+}
+
+const documentRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('onRequest', fastify.requireAuth)
+
+  // -------------------------------------------------------------------------
+  // Hochladen
+  // -------------------------------------------------------------------------
+  fastify.post('/api/documents', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const upload = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } })
+    if (!upload) {
+      return reply
+        .status(400)
+        .send(apiError(API_ERROR_CODES.validationFailed, 'Keine Datei empfangen.'))
+    }
+
+    if (!allowedMimeTypes.has(upload.mimetype)) {
+      // Den Datenstrom trotzdem leeren, sonst wartet der Client auf ein Ende,
+      // das nie kommt.
+      upload.file.resume()
+      return reply
+        .status(415)
+        .send(
+          apiError(
+            'unsupported_type',
+            `Dateityp ${upload.mimetype} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+          ),
+        )
+    }
+
+    const documentId = randomUUID()
+    const stored = await storeTemporarily(upload.file, documentId)
+
+    // truncated wird erst nach dem Lesen gesetzt – die Prüfung gehört hierhin,
+    // nicht davor.
+    if (upload.file.truncated) {
+      await discardUpload(stored.tempPath)
+      return reply
+        .status(413)
+        .send(
+          apiError(
+            'file_too_large',
+            `Die Datei ist grösser als ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`,
+          ),
+        )
+    }
+
+    const allowDuplicate = (request.query as { allowDuplicate?: string }).allowDuplicate === '1'
+    if (!allowDuplicate) {
+      const duplicates = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.sha256, stored.sha256), isNull(documents.deletedAt)))
+        .limit(1)
+
+      const duplicate = duplicates[0]
+      if (duplicate) {
+        await discardUpload(stored.tempPath)
+        return reply.status(409).send({
+          error: {
+            code: 'duplicate',
+            message: `Diese Datei liegt bereits als „${duplicate.title}" in der Ablage.`,
+          },
+          existing: toApiDocument(duplicate),
+        })
+      }
+    }
+
+    const title = titleFromFilename(upload.filename)
+    const docDate = today()
+    const storagePath = buildStoragePath({
+      docDate,
+      categoryName: null,
+      title,
+      documentId,
+      extension: extensionFor(upload.mimetype, upload.filename),
+    })
+
+    await commitUpload(stored.tempPath, storagePath)
+
+    const inserted = await db
+      .insert(documents)
+      .values({
+        id: documentId,
+        title,
+        storagePath,
+        mimeType: upload.mimetype,
+        sizeBytes: stored.sizeBytes,
+        sha256: stored.sha256,
+        uploadedBy: user.id,
+        docDate,
+        status: 'offen',
+        searchText: buildSearchText({ title }),
+      })
+      .returning()
+
+    const row = inserted[0]
+    if (!row) throw new Error('Dokument konnte nicht gespeichert werden')
+
+    await logActivity(documentId, user.id, 'upload', `„${title}" hochgeladen`)
+
+    request.log.info({ documentId, sizeBytes: stored.sizeBytes }, 'Dokument hochgeladen')
+    return reply.status(201).send({ document: toApiDocument(row) })
+  })
+
+  // -------------------------------------------------------------------------
+  // Liste und Suche
+  // -------------------------------------------------------------------------
+  fastify.get('/api/documents', async (request, reply) => {
+    const parsed = documentQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
+
+    const { q, status, categoryId, assignedTo, year, pending, limit, offset } = parsed.data
+
+    const conditions: SQL[] = [isNull(documents.deletedAt)]
+
+    if (q) {
+      // Beide Seiten werden gleich vereinheitlicht: die gespeicherte
+      // Suchspalte beim Schreiben, die Eingabe hier. Ab Etappe 3 fliesst der
+      // OCR-Text in dieselbe Spalte ein.
+      conditions.push(like(documents.searchText, `%${normalizeForSearch(q)}%`))
+    }
+
+    if (status) conditions.push(eq(documents.status, status))
+    if (pending) conditions.push(inArray(documents.status, [...OPEN_STATUSES]))
+    if (categoryId) conditions.push(eq(documents.categoryId, categoryId))
+    if (assignedTo) conditions.push(eq(documents.assignedTo, assignedTo))
+    if (year) conditions.push(like(documents.docDate, `${year}-%`))
+
+    const where = and(...conditions)
+
+    const rows = await db
+      .select()
+      .from(documents)
+      .where(where)
+      // Nach Dokumentdatum sortiert, nicht nach Upload: Wer im Januar die
+      // Dezemberrechnung nachträgt, will sie beim Dezember sehen.
+      .orderBy(desc(documents.docDate), desc(documents.uploadedAt))
+      .limit(limit)
+      .offset(offset)
+
+    const counted = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(documents)
+      .where(where)
+
+    return reply.send({
+      documents: rows.map(toApiDocument),
+      total: counted[0]?.count ?? 0,
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Einzelnes Dokument
+  // -------------------------------------------------------------------------
+  fastify.get('/api/documents/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const row = await findDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    return reply.send({
+      document: { ...toApiDocument(row), activity: await getActivity(id) },
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Datei ausliefern
+  // -------------------------------------------------------------------------
+  fastify.get('/api/documents/:id/file', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { download } = request.query as { download?: string }
+
+    const row = await findDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    const absolute = resolveInStorage(row.storagePath)
+    const extension = row.storagePath.split('.').pop() ?? 'bin'
+    // Der Dateiname für den Nutzer wird aus dem Titel gebildet, nicht aus dem
+    // Ablagepfad – der enthält die technische Kurz-ID.
+    const filename = `${row.title.replace(/["\\]/g, '')}.${extension}`
+
+    reply.header(
+      'content-disposition',
+      `${download === '1' ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    )
+    reply.header('cache-control', 'private, max-age=300')
+    return reply.type(row.mimeType).send(createReadStream(absolute))
+  })
+
+  // -------------------------------------------------------------------------
+  // Ändern
+  // -------------------------------------------------------------------------
+  fastify.patch('/api/documents/:id', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const { id } = request.params as { id: string }
+    const before = await findDocument(id)
+    if (!before) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    const parsed = updateDocumentSchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
+
+    const changes = parsed.data
+    if (Object.keys(changes).length === 0) {
+      return reply.send({ document: { ...toApiDocument(before), activity: await getActivity(id) } })
+    }
+
+    const merged: DocumentRow = { ...before, ...changes } as DocumentRow
+
+    // Titel, Kategorie oder Datum bestimmen den Ablagepfad. Ändert sich einer
+    // davon, wandert die Datei mit – sonst driftet die Ordnerstruktur mit der
+    // Zeit von den Metadaten weg und der Vorteil lesbarer Pfade ist dahin.
+    let storagePath = before.storagePath
+    const affectsPath =
+      changes.title !== undefined ||
+      changes.categoryId !== undefined ||
+      changes.docDate !== undefined
+
+    if (affectsPath) {
+      const extension = before.storagePath.split('.').pop() ?? 'bin'
+      const nextPath = buildStoragePath({
+        docDate: merged.docDate,
+        categoryName: await categoryNameFor(merged.categoryId),
+        title: merged.title,
+        documentId: before.id,
+        extension,
+      })
+
+      try {
+        if (await moveWithinStorage(before.storagePath, nextPath)) {
+          storagePath = nextPath
+        }
+      } catch (error) {
+        // Metadaten trotzdem speichern: Ein fehlgeschlagenes Umbenennen darf
+        // die Bearbeitung nicht blockieren – der Pfad bleibt dann einfach alt.
+        request.log.error({ err: error, documentId: id }, 'Datei konnte nicht verschoben werden')
+      }
+    }
+
+    const updated = await db
+      .update(documents)
+      .set({
+        ...changes,
+        storagePath,
+        searchText: buildSearchText(merged),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(documents.id, id))
+      .returning()
+
+    const row = updated[0]
+    if (!row) throw new Error('Dokument konnte nicht aktualisiert werden')
+
+    const names = await loadUserNames()
+    for (const entry of describeChanges(before, changes as Partial<DocumentRow>, names)) {
+      await logActivity(id, user.id, entry.action, entry.summary)
+    }
+
+    return reply.send({
+      document: { ...toApiDocument(row), activity: await getActivity(id) },
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Löschen (in den Papierkorb)
+  // -------------------------------------------------------------------------
+  fastify.delete('/api/documents/:id', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const { id } = request.params as { id: string }
+    const row = await findDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    let storagePath = row.storagePath
+    try {
+      storagePath = await moveToTrash(row.storagePath)
+    } catch (error) {
+      request.log.error({ err: error, documentId: id }, 'Verschieben in den Papierkorb fehlgeschlagen')
+    }
+
+    await db
+      .update(documents)
+      .set({ deletedAt: new Date().toISOString(), storagePath })
+      .where(eq(documents.id, id))
+
+    await logActivity(id, user.id, 'delete', `„${row.title}" in den Papierkorb gelegt`)
+
+    return reply.status(204).send()
+  })
+}
+
+export default documentRoutes
