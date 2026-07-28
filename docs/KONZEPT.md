@@ -459,13 +459,21 @@ ziehen wir Etappe 5 vor – sie hängt von nichts ab ausser Etappe 0.
 
 ---
 
-## 13. Offene Entscheidungen
+## 13. Getroffene Entscheidungen
 
-| # | Frage | Warum sie zählt |
+| Frage | Entscheid | Folge |
 |---|---|---|
-| 1 | Android, iPhone oder gemischt? | Bestimmt Share Target vs. iOS-Kurzbefehl in Etappe 2 |
-| 2 | Liegt die DNS von `alae.app` bei Cloudflare? | Voraussetzung für den Tunnel; sonst Alternative über myQNAPcloud |
-| 3 | Wie aktualisiert sich der Container der Share-App heute? | Bewährtes Muster übernehmen statt neues erfinden |
-| 4 | QNAP-Modell (x86 oder ARM) und Speicherort für die Ablage | Build-Ziel des Images und die konkreten Mount-Pfade |
-| 5 | Claude API für Metadaten-Extraktion gewünscht? | Optional; ohne funktioniert alles, mit wird das Ausfüllen komfortabler |
-| 6 | Vorname deiner Frau für die Konten | Kosmetik, aber angenehmer als "Nutzer 2" |
+| Handy-Plattform | **Beide Android** | Web Share Target wird nativ gebaut, kein iOS-Kurzbefehl nötig |
+| DNS `alae.app` | **Cloudflare** | Cloudflare Tunnel für `api.alae.app`, keine offenen Ports |
+| Container-Updates | **Watchtower** | Wie im Konzept beschrieben, identisch zur Share-App |
+| Reihenfolge | **Etappe 0 → 1 → 2** | Fundament, Dokumente, dann der schnelle Handy-Upload |
+
+## 14. Noch offen
+
+| # | Frage | Wann relevant |
+|---|---|---|
+| 1 | Speicherort der Ablage auf dem QNAP (welche Freigabe?) | Beim Einrichten des Containers – bis dahin gelten die Standardpfade |
+| 2 | Claude API für Metadaten-Extraktion gewünscht? | Etappe 3; ohne funktioniert alles, mit wird das Ausfüllen komfortabler |
+| 3 | Vorname deiner Frau für ihr Konto | Beim Anlegen der Konten in Etappe 0 |
+
+Das Image wird für **amd64 und arm64** gebaut – damit ist das QNAP-Modell irrelevant.

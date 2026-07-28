@@ -1,0 +1,12 @@
+{
+  // Die Tests werden nie kompiliert – Node führt sie direkt aus und entfernt
+  // die Typen zur Laufzeit. Sie sollen aber trotzdem geprüft werden, sonst
+  // fällt ein veralteter Test erst auf, wenn er falsch durchläuft.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": []
+}
