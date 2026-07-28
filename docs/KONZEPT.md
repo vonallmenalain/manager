@@ -85,7 +85,7 @@ Deployment passiert vollständig über `git push`.
 | State/Sync | TanStack Query + IndexedDB (Dexie) | Server-State-Caching und Offline-Queue ohne eigenes Framework |
 | Backend | Node 22 + Fastify + TypeScript | Eine Sprache über den ganzen Stack, sehr schneller Upload-Pfad (Streams) |
 | Datenbank | SQLite (better-sqlite3, WAL) + Drizzle ORM | Für zwei Nutzer ideal: eine Datei, kein Server, trivial zu sichern |
-| Volltextsuche | SQLite FTS5 (Unicode61, deutsche Stoppwörter) | Reicht für zehntausende Dokumente, keine Zusatzdienste |
+| Volltextsuche | Vereinheitlichte Spalte `search_text` + `LIKE` | FTS5 war geplant, wurde aber nicht gebraucht: Bei zwei Personen und einigen tausend Dokumenten ist `LIKE` schnell genug, und die Vereinheitlichung (Umlaute ausgeschrieben, Akzente entfernt) löst das Problem, an dem FTS5 hier gescheitert wäre – `LIKE` in SQLite kennt nur ASCII-Gross-/Kleinschreibung, `PRÄMIE` fände `Prämie` sonst nicht |
 | OCR | Tesseract (deu, fra, eng) | Solides C++-Werkzeug ohne Abhängigkeitskette. OCRmyPDF wurde verworfen: Es zöge Python und Ghostscript nach und blähte das Image um mehrere hundert Megabyte auf – spürbar bei jedem Update über die Hausleitung. Sein Mehrwert wäre ein durchsuchbares PDF; den Text liefert Tesseract genauso, und er landet als .txt neben dem Original |
 | PDF-Tools | Poppler (`pdftotext`, `pdftoppm`) | Digital erzeugte PDFs brauchen gar kein OCR |
 | Jobs | Job-Tabelle in SQLite + In-Process-Worker | Kein Redis, keine zweite Infrastruktur für ~20 Jobs/Tag |
@@ -162,12 +162,19 @@ erDiagram
 * `categories` – id, name, icon, sort_order (Start-Set: Versicherung, Steuern, Wohnen,
   Fahrzeug, Gesundheit, Bank/Finanzen, Arbeit, Verträge, Garantie/Quittung, Behörden, Sonstiges)
 * `tags`, `document_tags` – freie Verschlagwortung neben den Kategorien
-* `documents_fts` – FTS5 über Titel, Absender, OCR-Text, Notizen
+* `documents.search_text` – Titel, Absender, Notiz und OCR-Text in einer vereinheitlichten
+  Spalte; dieselbe Aufbereitung nutzen auch `notes.search_text` und die Einkaufsliste
 * `activity` – wer hat wann was gemacht (upload, status_change, assign, edit, delete).
   Erfüllt direkt die Anforderung "wer hat wann was hochgeladen" und gibt dem
   Dokument-Detail eine kleine Verlaufsspur.
 * `jobs` – OCR-Warteschlange: id, document_id, type, state, attempts, error, timestamps
-* `shopping_items`, `notes`, `finance_year`, `income_entries`, `donations`, `sessions`
+* `shopping_items` – Einkaufsliste; `shopping_memory` – die gelernte Zuordnung
+  Artikel → Abteilung, bewusst getrennt, damit „Aufräumen" sie nicht mitlöscht
+* `notes` – Notizen mit Farbe, Anheftung und eigener Suchspalte
+* `finance_years` – Steuerbetrag, Satz, Steuerabzug ja/nein, Abrechnungsstand (je Jahr)
+* `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
+* `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum und Beleg-Notiz
+* `sessions` – angemeldete Geräte
 
 **Dokument-Status:** `offen` → `in_arbeit` → `erledigt` → `archiviert`.
 Bewusst nur vier, mit `offen` als Default. Alles was nicht `erledigt`/`archiviert` ist,
@@ -233,27 +240,51 @@ Suche über Titel und Text – mit denselben Regeln wie bei den Dokumenten, also
 
 Das Herzstück neben den Dokumenten.
 
-**Erfassung pro Monat** (ein Bildschirm, zwei Zahlen):
+**Erfassung pro Monat** – ein Bildschirm, zwei Zahlen:
 
 ```
-Juli 2026
-  Einkommen Alain      CHF  ________
-  Einkommen [Ehefrau]  CHF  ________
-  + weitere Einnahme hinzufügen
+September 2026
+  Einkommen Alain        CHF  6'200.00
+  Einkommen [Ehefrau]    CHF  3'800.00
+  + weitere Einnahme
+
+  Einkommen                 10'000.00
+  − Steueranteil             1'000.00
+  Zehnter                      900.00
 ```
 
-**Jahres-Einstellungen:** Steuerbetrag für das Jahr (CHF), Verteilmodus
-(gleichmässig auf 12 Monate *oder* nach tatsächlichen Zahlungsterminen),
-Zehnten-Satz (Standard 10 %) und Berechnungsbasis.
+Die Vorschau unten rechnet mit derselben Funktion wie die Jahresliste – hier kann keine
+andere Zahl stehen als gleich danach in der Übersicht.
 
-**Berechnungsbasis – konfigurierbar,** weil das eine persönliche Entscheidung ist:
+Die Beträge werden so gelesen, wie man sie in der Schweiz schreibt: `8'450.00`, `8’450`
+mit typografischem Apostroph, `8450,50` mit Komma. Gespeichert wird in Rappen, damit
+keine Gleitkommazahl je einen Rappen verliert.
 
-* `brutto` – 10 % vom gesamten Einkommen
-* `brutto_minus_steuern` – **Standard gemäss deinem Wunsch:** Steuern werden vom
-  Einkommen abgezogen, der Zehnte auf den Rest berechnet
-* `netto` – 10 % vom ausbezahlten Betrag
+**Jahres-Einstellungen:** Steuerbetrag für das Jahr, ein Schalter „Steuern vor dem
+Zehnten abziehen", der Satz (Standard 10 %) und der Abrechnungsstand.
 
-Rechenbeispiel im Standardmodus, Steuern 12 000 CHF/Jahr, gleichmässig verteilt:
+Das Konzept sah ursprünglich drei Berechnungsbasen vor (`brutto`, `brutto_minus_steuern`,
+`netto`). Gebaut wurde der Schalter, weil die drei auf zwei Verhalten hinauslaufen: Ob
+man das Bruttoeinkommen ohne Abzug oder das ausbezahlte Netto einträgt, ist dieselbe
+Rechnung mit einer anderen Zahl im Feld. Ein Schalter statt einer Auswahl mit drei
+Fachbegriffen – das trifft „alles muss möglichst einfach sein" besser.
+
+**Wie der Steuerabzug verteilt wird:** gleichmässig, ein Zwölftel pro Monat.
+
+Gerechnet wird **kumulativ**, nicht Monat für Monat. Der Grund: Die Steuer ist ein
+Jahresbetrag. Rechnete man jeden Monat für sich und schnitte negative Ergebnisse ab,
+stimmte die Jahressumme am Schluss nicht mehr mit `(Jahreseinkommen − Steuern) × Satz`
+überein – und genau diese Zahl zählt am Jahresende. Deshalb wird für jeden Monat der bis
+dahin aufgelaufene Zehnte gerechnet; der Monatswert ist die Differenz zum Vormonat. Die
+Monatswerte summieren sich damit exakt auf den Jahreswert.
+
+Die Folge, die man kennen muss: In einem erfassten Monat ohne Einkommen läuft der
+Steueranteil trotzdem weiter, der Monatswert ist dann negativ. Das ist keine Gutschrift
+zum Auszahlen, sondern die Verrechnung mit den Monaten davor – über das Jahr geht es
+genau auf. Monate, für die noch gar nichts erfasst ist, tragen weder Steueranteil noch
+Zehnten; sonst stünden dort Zahlen für Monate, die es noch nicht gab.
+
+Rechenbeispiel, Steuern 12 000 CHF/Jahr:
 
 ```
 Einkommen Juli (beide)      CHF 9 000.00
@@ -262,18 +293,32 @@ Einkommen Juli (beide)      CHF 9 000.00
 → Zehnter (10 %)            CHF   800.00
 ```
 
-**Abrechnungsstand:** In `donations` werden geleistete Zahlungen erfasst
-(Datum, Betrag, Art: Zehnten / Fastopfer / andere Spende, "abgerechnet bis Monat").
+**Abrechnungsstand:** In `donations` werden geleistete Zahlungen erfasst (Datum, Betrag,
+Art: Zehnten / Fastopfer / andere Spende, beim Zehnten zusätzlich „rechnet ab bis
+Monat"). Eine Zahlung, die weiter reicht als der bisherige Stand, schiebt ihn nach.
+Zurück geht es nur von Hand in den Einstellungen – sonst würde ein nachgetragener alter
+Beleg den Stand versehentlich zurückstellen.
+
 Das Dashboard zeigt daraus dauerhaft:
 
-> **Zehnten abgerechnet bis:** Mai 2026 · **Offen:** CHF 1 640.00 (Juni, Juli)
+> **Zehnter 2026 · CHF 2 050.00** offen für Juni, Juli, August
+> *Abgerechnet bis und mit Mai.*
 
-**Fastopfer** wird separat geführt – freier Monatsbetrag, keine Berechnung, nur Erfassung
-und Jahressumme.
+**Zwei Zahlen, absichtlich beide sichtbar:** „abgerechnet" folgt dem Monatsstand,
+„einbezahlt" ist die Summe der erfassten Zahlungen. Gehen sie auseinander, steht ein
+Hinweis dabei – ein Beleg zu viel oder zu wenig fällt so im Februar auf und nicht erst
+im Dezember.
 
-**Jahresübersicht:** Tabelle Monat × (Einkommen A, Einkommen B, Steuern, Basis, Zehnter,
-bezahlt, Differenz) mit Jahressummen. Export als PDF und CSV – praktisch für das
-Jahresgespräch im Dezember.
+**Fastopfer** läuft getrennt – freier Betrag, keine Berechnung, nur Erfassung und
+Jahressumme. Es rechnet keine Monate ab und verändert den Zehnten nicht.
+
+**Jahresübersicht:** Monatsliste mit Einkommen, Steueranteil und Zehnten, dazu die
+Jahressummen und der Abgleich mit den Zahlungen. Export als CSV, mit Semikolon und einem
+BOM voran, damit Excel die Datei ohne Import-Dialog und mit richtigen Umlauten öffnet.
+Die Zahlungen stehen in derselben Datei – fürs Jahresgespräch soll man nicht zwei Sachen
+zusammensuchen müssen. **Kein PDF-Export:** Das Handy druckt jede Ansicht über
+„Teilen → Drucken → Als PDF sichern"; eine eigene PDF-Erzeugung im Container wäre
+Aufwand für etwas, das das Betriebssystem schon kann.
 
 ---
 
@@ -283,24 +328,22 @@ Jahresgespräch im Dezember.
 flowchart LR
     A["Upload"] --> B{"PDF mit<br/>Textebene?"}
     B -->|ja| C["pdftotext<br/>≈0.2 s"]
-    B -->|nein| D["OCRmyPDF + Tesseract<br/>deu+fra+eng"]
-    D --> E["durchsuchbares PDF<br/>+ .txt"]
-    C --> F["FTS5-Index"]
+    B -->|nein| D["pdftoppm + Tesseract<br/>deu+fra+eng"]
+    D --> E[".txt neben dem Original"]
+    C --> F["search_text<br/>vereinheitlicht"]
     E --> F
-    F --> G{"Metadaten-<br/>Extraktion"}
-    G --> H["Betrag · Fälligkeit ·<br/>Absender · Kategorie"]
+    F --> G["Suche über Titel,<br/>Absender, Notiz, Inhalt"]
 ```
 
 * **Schritt 1 – gratis abkürzen:** Digital erzeugte PDFs (die Mehrheit aus E-Mails) haben
   bereits eine Textebene. `pdftotext` liefert sie in Millisekunden, ohne OCR.
-* **Schritt 2 – OCR nur wenn nötig:** Fotos und gescannte PDFs laufen durch OCRmyPDF.
-  Ergebnis: das Original bleibt unangetastet, daneben entsteht ein durchsuchbares PDF
-  und eine `.txt`-Datei. Rechenzeit auf dem QNAP: grob 3–10 s pro Seite.
-* **Schritt 3 – Metadaten:** Zuerst Regex/Heuristik auf Schweizer Muster
-  (Beträge `1'234.55`, Datumsformate, IBAN, "zahlbar bis"). Optional und zuschaltbar:
-  Claude API für strukturierte Extraktion und Kategorie-Vorschlag, wenn die Heuristik
-  unsicher ist. Das bleibt eine austauschbare Komponente – die App funktioniert
-  vollständig ohne.
+* **Schritt 2 – OCR nur wenn nötig:** Fotos und gescannte PDFs werden mit `pdftoppm`
+  in Bilder zerlegt und von Tesseract gelesen. Das Original bleibt unangetastet,
+  daneben entsteht eine `.txt`-Datei. Rechenzeit auf dem QNAP: grob 3–10 s pro Seite.
+* **Schritt 3 – Metadaten:** Noch offen. Vorgesehen ist zuerst Regex/Heuristik auf
+  Schweizer Muster (Beträge `1'234.55`, Datumsformate, IBAN, "zahlbar bis"), optional
+  zuschaltbar die Claude API für strukturierte Extraktion. Das bleibt eine austauschbare
+  Komponente – die App funktioniert vollständig ohne.
 * **Später (Etappe 6): Schweizer QR-Rechnung.** Der QR-Code auf praktisch jeder Rechnung
   enthält Betrag, Empfänger und Referenz strukturiert und fehlerfrei. Auslesen ist
   deutlich verlässlicher als jedes OCR – für unseren Alltag der grösste Einzelgewinn.
@@ -471,11 +514,11 @@ eine funktionierende App auf dem Handy.
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Kamera-Aufnahme, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
 | **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen mit Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
-| **5** | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, Jahresexport | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
+| **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
 
-Reihenfolge ist verschiebbar. Wenn die Zehnten-Abrechnung dringender ist als OCR,
-ziehen wir Etappe 5 vor – sie hängt von nichts ab ausser Etappe 0.
+Etappen 0 bis 5 sind gebaut. Was in Etappe 6 noch aussteht, steht in der Tabelle oben;
+nichts davon hält den täglichen Gebrauch auf.
 
 ---
 
@@ -486,14 +529,18 @@ ziehen wir Etappe 5 vor – sie hängt von nichts ab ausser Etappe 0.
 | Handy-Plattform | **Beide Android** | Web Share Target wird nativ gebaut, kein iOS-Kurzbefehl nötig |
 | DNS `alae.app` | **Cloudflare** | Cloudflare Tunnel für `manager-api.alae.app`, keine offenen Ports |
 | Container-Updates | **Watchtower** | Wie im Konzept beschrieben, identisch zur Share-App |
-| Reihenfolge | **Etappe 0 → 1 → 2** | Fundament, Dokumente, dann der schnelle Handy-Upload |
+| Reihenfolge | **Etappe 0 → 1 → 2 → 3 → 4 → 5** | Fundament, Dokumente, Handy-Upload, Texterkennung, Alltag, Finanzen |
+| Volltextsuche | **Vereinheitlichte Spalte statt FTS5** | Löst zusätzlich die Umlaut-Frage, die FTS5 hier nicht gelöst hätte |
+| Zehnten-Rechnung | **Kumulativ über das Jahr** | Die Monatswerte summieren sich exakt auf `(Jahreseinkommen − Steuern) × Satz` |
+| Berechnungsbasis | **Ein Schalter statt drei Modi** | „brutto" und „netto" sind dieselbe Rechnung mit einer anderen Zahl im Feld |
+| Jahresexport | **CSV, kein eigenes PDF** | Das Handy druckt jede Ansicht als PDF; eine eigene Erzeugung wäre Aufwand ohne Gewinn |
 
 ## 14. Noch offen
 
 | # | Frage | Wann relevant |
 |---|---|---|
 | 1 | Speicherort der Ablage auf dem QNAP (welche Freigabe?) | Beim Einrichten des Containers – bis dahin gelten die Standardpfade |
-| 2 | Claude API für Metadaten-Extraktion gewünscht? | Etappe 3; ohne funktioniert alles, mit wird das Ausfüllen komfortabler |
-| 3 | Vorname deiner Frau für ihr Konto | Beim Anlegen der Konten in Etappe 0 |
+| 2 | Claude API für Metadaten-Extraktion gewünscht? | Etappe 6; ohne funktioniert alles, mit wird das Ausfüllen komfortabler |
+| 3 | Vorname deiner Frau für ihr Konto | Beim Anlegen des zweiten Kontos – die Finanzen beschriften die Felder mit den Kontonamen |
 
 Das Image wird für **amd64 und arm64** gebaut – damit ist das QNAP-Modell irrelevant.

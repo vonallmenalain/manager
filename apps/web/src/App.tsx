@@ -1,15 +1,14 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from './components/AppShell'
-import { CoinIcon } from './components/icons'
 import { useSession } from './lib/session'
 import { BackendUnreachable } from './screens/BackendUnreachable'
 import { Dashboard } from './screens/Dashboard'
 import { DocumentDetail } from './screens/DocumentDetail'
 import { Documents } from './screens/Documents'
+import { Finance } from './screens/Finance'
 import { Login } from './screens/Login'
 import { Notes } from './screens/Notes'
-import { Placeholder } from './screens/Placeholder'
 import { Setup } from './screens/Setup'
 import { Shopping } from './screens/Shopping'
 
@@ -31,17 +30,7 @@ export function App() {
           <Route path="dokumente/:id" element={<DocumentDetail />} />
           <Route path="einkauf" element={<Shopping />} />
           <Route path="notizen" element={<Notes />} />
-          <Route
-            path="finanzen"
-            element={
-              <Placeholder
-                title="Finanzen"
-                stage={5}
-                description="Einkommen pro Monat, Steuerabzug, Zehnten und Fastopfer abrechnen."
-                icon={<CoinIcon className="size-8" />}
-              />
-            }
-          />
+          <Route path="finanzen" element={<Finance />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

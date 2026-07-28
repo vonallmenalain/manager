@@ -3,12 +3,14 @@
 Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen
 und Finanzen (Zehnten / Fastopfer) für zwei Personen.
 
-**Stand: Etappe 4 abgeschlossen** – Dokumente lassen sich teilen, aufnehmen,
-verwalten und **über ihren Inhalt durchsuchen**: Gescannte Rechnungen werden
-automatisch gelesen. Dazu kommen die **Einkaufsliste**, die sich nach
-Ladenabteilungen sortiert und Korrekturen dauerhaft merkt, sowie **Notizen**
-mit Anheften, Farben und Suche. Weiter geht es mit den Finanzen (Zehnten und
-Fastopfer), siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
+**Stand: Etappe 5 abgeschlossen** – alle geplanten Bereiche sind gebaut.
+Dokumente lassen sich teilen, aufnehmen, verwalten und **über ihren Inhalt
+durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Die
+**Einkaufsliste** sortiert nach Ladenabteilungen und merkt sich Korrekturen
+dauerhaft, **Notizen** haben Anheften, Farben und Suche, und die **Finanzen**
+rechnen Zehnten und Fastopfer ab – mit Steuerabzug, Abrechnungsstand und
+CSV-Export. Offen ist nur noch der Feinschliff, siehe
+[Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz
 

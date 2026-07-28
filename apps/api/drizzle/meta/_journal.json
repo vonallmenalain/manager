@@ -43,6 +43,13 @@
       "when": 1785253162885,
       "tag": "0005_silly_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785255148636,
+      "tag": "0006_productive_may_parker",
+      "breakpoints": true
     }
   ]
 }

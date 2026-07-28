@@ -1,4 +1,4 @@
-import type { PublicUser } from '@manager/shared'
+import { formatAmount, monthName, type PublicUser } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -21,6 +21,8 @@ export function Dashboard({ user }: { user: PublicUser }) {
       </section>
 
       <PendingCard />
+
+      <TithingCard />
 
       <HouseholdCard />
 
@@ -47,8 +49,6 @@ export function Dashboard({ user }: { user: PublicUser }) {
           ) : null}
         </dl>
       </section>
-
-      <Roadmap />
     </div>
   )
 }
@@ -221,30 +221,54 @@ function HouseholdCard() {
   )
 }
 
-const ROADMAP = [
-  { stage: 2, title: 'Mobil', detail: 'Teilen-Menü, Kamera-Scan, Offline' },
-  { stage: 3, title: 'Texterkennung', detail: 'OCR und Volltextsuche' },
-  { stage: 4, title: 'Einkauf & Notizen', detail: 'Gemeinsame Listen, offline nutzbar' },
-  { stage: 5, title: 'Finanzen', detail: 'Einkommen, Steuern, Zehnten, Fastopfer' },
-] as const
+/**
+ * Der Zehnten-Stand des laufenden Jahres. Steht hier, weil man ihn sonst
+ * nur beim Nachsehen bemerkt – und dann ist der Monat oft schon vorbei.
+ */
+function TithingCard() {
+  const year = new Date().getFullYear()
+  const finance = useQuery({
+    queryKey: ['finanzen', year],
+    queryFn: () => api.getFinanceYear(year),
+  })
 
-function Roadmap() {
+  if (finance.isLoading) {
+    return <div className="h-24 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
+  }
+  if (!finance.data) return null
+
+  const { figures, settings } = finance.data
+
   return (
-    <section className="rounded-2xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
-      <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400">Als Nächstes</h2>
-      <ol className="mt-3 space-y-3">
-        {ROADMAP.map((item) => (
-          <li key={item.stage} className="flex gap-3">
-            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-              {item.stage}
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{item.title}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{item.detail}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400">Zehnter {year}</h2>
+        <Link to="/finanzen" className="text-sm font-medium text-brand-700 dark:text-brand-300">
+          Abrechnen
+        </Link>
+      </div>
+
+      {figures.lastEnteredMonth === 0 ? (
+        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+          Für {year} ist noch kein Einkommen erfasst.
+        </p>
+      ) : (
+        <>
+          <p className="mt-2 text-3xl font-bold tabular-nums">
+            CHF {formatAmount(figures.openTithingCents)}
+          </p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {figures.openMonths.length === 0
+              ? 'Alles Erfasste ist abgerechnet.'
+              : `offen für ${figures.openMonths.map(monthName).join(', ')}`}
+          </p>
+          {settings.settledThroughMonth > 0 ? (
+            <p className="mt-1 text-xs text-slate-400">
+              Abgerechnet bis und mit {monthName(settings.settledThroughMonth)}.
+            </p>
+          ) : null}
+        </>
+      )}
     </section>
   )
 }

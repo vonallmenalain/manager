@@ -238,3 +238,75 @@ export const notes = sqliteTable(
 )
 
 export type NoteRow = typeof notes.$inferSelect
+
+/**
+ * Einstellungen pro Jahr: Steuerbetrag, Zehnten-Satz und der Stand der
+ * Abrechnung. Eine Zeile je Jahr, angelegt beim ersten Zugriff.
+ */
+export const financeYears = sqliteTable('finance_years', {
+  year: integer('year').primaryKey(),
+  /** Steuerbetrag für das ganze Jahr, in Rappen. */
+  taxCents: integer('tax_cents').notNull().default(0),
+  /** Ob die Steuer vom Einkommen abgezogen wird, bevor der Zehnte läuft. */
+  deductTax: integer('deduct_tax', { mode: 'boolean' }).notNull().default(true),
+  /** 1000 = 10 %. In Hundertstelprozent, damit 10,5 % möglich bleibt. */
+  rateBasisPoints: integer('rate_basis_points').notNull().default(1000),
+  /** Bis und mit welchem Monat der Zehnte abgerechnet ist. 0 = noch nichts. */
+  settledThroughMonth: integer('settled_through_month').notNull().default(0),
+  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: text('updated_at').notNull().default(now),
+})
+
+export type FinanceYearRow = typeof financeYears.$inferSelect
+
+/**
+ * Einnahmen, eine Zeile je Person und Monat – plus optional weitere Zeilen
+ * für Bonus, Nebenverdienst und Ähnliches.
+ */
+export const incomeEntries = sqliteTable(
+  'income_entries',
+  {
+    id: text('id').primaryKey(),
+    year: integer('year').notNull(),
+    month: integer('month').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Leer für den normalen Lohn, sonst z. B. „Bonus". */
+    label: text('label').notNull().default(''),
+    amountCents: integer('amount_cents').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [index('income_entries_year_month_idx').on(table.year, table.month)],
+)
+
+export type IncomeEntryRow = typeof incomeEntries.$inferSelect
+
+/**
+ * Geleistete Zahlungen: Zehnter, Fastopfer, weitere Spenden. Beim Zehnten
+ * hält `covers_through_month` fest, bis wann die Zahlung abrechnet – daraus
+ * ergibt sich die Antwort auf „bis wann haben wir abgerechnet?".
+ */
+export const donations = sqliteTable(
+  'donations',
+  {
+    id: text('id').primaryKey(),
+    year: integer('year').notNull(),
+    kind: text('kind').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    /** Zahltag als ISO-Datum ohne Zeit – die Uhrzeit spielt hier keine Rolle. */
+    paidOn: text('paid_on').notNull(),
+    note: text('note').notNull().default(''),
+    coversThroughMonth: integer('covers_through_month'),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [index('donations_year_kind_idx').on(table.year, table.kind)],
+)
+
+export type DonationRow = typeof donations.$inferSelect

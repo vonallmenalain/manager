@@ -1,18 +1,24 @@
 import type {
   Category,
+  CreateDonationInput,
   CreateShoppingItemInput,
   CreateUserInput,
   DocumentDetail,
+  Donation,
+  FinanceSettings,
   Health,
+  IncomeEntry,
   LoginInput,
   ManagedDocument,
   Note,
   PublicUser,
+  SaveMonthInput,
   SetupInput,
   ShoppingItem,
   UpdateDocumentInput,
   UpdateShoppingItemInput,
   UpsertNoteInput,
+  YearFigures,
 } from '@manager/shared'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
@@ -174,4 +180,35 @@ export const api = {
     request<{ note: Note }>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(note) }),
 
   deleteNote: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
+
+  getFinanceYear: (year: number) => request<FinanceYear>(`/api/finanzen/${year}`),
+
+  saveFinanceSettings: (year: number, settings: FinanceSettings) =>
+    request<FinanceYear>(`/api/finanzen/${year}/einstellungen`, {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
+  saveFinanceMonth: (year: number, month: number, input: SaveMonthInput) =>
+    request<FinanceYear>(`/api/finanzen/${year}/monat/${month}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  addDonation: (year: number, donation: CreateDonationInput) =>
+    request<FinanceYear>(`/api/finanzen/${year}/zahlungen`, {
+      method: 'POST',
+      body: JSON.stringify(donation),
+    }),
+
+  deleteDonation: (year: number, id: string) =>
+    request<FinanceYear>(`/api/finanzen/${year}/zahlungen/${id}`, { method: 'DELETE' }),
+}
+
+export interface FinanceYear {
+  year: number
+  settings: FinanceSettings
+  entries: IncomeEntry[]
+  donations: Donation[]
+  figures: YearFigures
 }
