@@ -10,10 +10,10 @@ import {
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef, useState } from 'react'
 
-import { useFullScreenOverlay } from '../lib/overlay'
+import { Modal, ModalCloseButton } from '../components/Modal'
+import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useDeleteNote, useNotes, useSaveNote } from '../lib/household'
 
 /** Gedeckte Töne – die Liste soll ruhig bleiben, nicht bunt blinken. */
@@ -174,11 +174,6 @@ function ChecklistPreview({ body }: { body: string }) {
   )
 }
 
-/** Wie lange nach dem letzten Tastendruck gewartet wird, bevor gespeichert wird. */
-const AUTOSAVE_MS = 900
-
-type SaveState = 'ruht' | 'speichert' | 'gespeichert' | 'fehler'
-
 /**
  * Der Notizeditor – ein Fenster über der Liste, kein eigener Bildschirm.
  *
@@ -200,7 +195,6 @@ function NoteEditor({
 }) {
   const save = useSaveNote()
   const remove = useDeleteNote()
-  useFullScreenOverlay()
 
   // Die Art wird beim Anlegen gewählt und bleibt dann, was sie ist.
   const kind = note?.kind ?? newKind
@@ -220,121 +214,35 @@ function NoteEditor({
   const [pinned, setPinned] = useState(note?.pinned ?? false)
   const [shared, setShared] = useState(note?.shared ?? false)
   const [color, setColor] = useState<NoteColor>(note?.color ?? 'default')
-  const [state, setState] = useState<SaveState>(note ? 'gespeichert' : 'ruht')
 
   const body = kind === 'liste' ? serializeChecklist(items) : text
   const leer = title.trim() === '' && body.trim() === ''
 
-  // Der jeweils neueste Stand, damit auch das Speichern beim Schliessen ihn
-  // sieht – zu dem Zeitpunkt rendert die Komponente nicht mehr.
-  const current = useRef({ id: note?.id, title, body, kind, pinned, shared, color })
-  current.current = {
-    id: current.current.id ?? note?.id,
-    title,
-    body,
-    kind,
-    pinned,
-    shared,
-    color,
-  }
+  // Ab dem ersten Speichern wird dieselbe Notiz weitergeschrieben, statt eine
+  // zweite anzulegen.
+  const idRef = useRef(note?.id)
 
-  // Auf Refs statt im Zustand: Beides darf das Fenster nicht neu zeichnen,
-  // und beides muss auch nach dem Ausblenden noch stimmen.
-  const dirty = useRef(false)
-  const running = useRef(false)
-  const removed = useRef(false)
-  // Die Mutation wechselt bei jeder Änderung ihre Identität – über eine Ref
-  // bleibt `flush` stabil, sonst liefe das Speichern bei jedem Zeichen einmal.
-  const saveRef = useRef(save)
-  saveRef.current = save
-
-  const flush = useCallback(async () => {
-    const entry = current.current
-    if (removed.current || !dirty.current || running.current) return
+  const autosave = useAutosave(
+    { title, body, kind, pinned, shared, color },
+    async (entwurf) => {
+      const result = await save.mutateAsync({ id: idRef.current, note: entwurf })
+      idRef.current = result.note.id
+      setSavedId(result.note.id)
+    },
     // Der Server verlangt Titel oder Text. Eine leere Notiz wird deshalb nicht
     // angelegt und eine geleerte behält ihren letzten Stand.
-    if (entry.title.trim() === '' && entry.body.trim() === '') return
+    { savable: (entwurf) => entwurf.title.trim() !== '' || entwurf.body.trim() !== '' },
+  )
 
-    running.current = true
-    dirty.current = false
-    setState('speichert')
-
-    try {
-      const result = await saveRef.current.mutateAsync({
-        id: entry.id,
-        note: {
-          title: entry.title,
-          body: entry.body,
-          kind: entry.kind,
-          pinned: entry.pinned,
-          shared: entry.shared,
-          color: entry.color,
-        },
-      })
-      // Ab jetzt wird dieselbe Notiz weitergeschrieben statt eine zweite anzulegen.
-      current.current.id = result.note.id
-      setSavedId(result.note.id)
-      setState('gespeichert')
-    } catch {
-      dirty.current = true
-      setState('fehler')
-    } finally {
-      running.current = false
-      // Wurde während des Speicherns weitergetippt, gleich nochmals.
-      if (dirty.current) void flush()
-    }
-  }, [])
-
-  // Beim ersten Durchlauf ist noch nichts geändert – ohne diese Bremse
-  // schriebe schon das Öffnen einer Notiz sie unverändert zurück.
-  const first = useRef(true)
-  useEffect(() => {
-    if (first.current) {
-      first.current = false
-      return
-    }
-
-    dirty.current = true
-    const timer = setTimeout(() => void flush(), AUTOSAVE_MS)
-    return () => clearTimeout(timer)
-  }, [title, body, kind, pinned, shared, color, flush])
-
-  // Beim Schliessen – auch über die Zurück-Geste – das Angefangene sichern.
-  useEffect(() => () => void flush(), [flush])
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-40 grid place-items-center bg-slate-900/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        // Der Klick im Fenster darf nicht bis zum Hintergrund durchfallen,
-        // sonst schlösse jeder Tastendruck auf ein Feld die Notiz.
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={note ? 'Notiz bearbeiten' : 'Neue Notiz'}
-        className={`flex max-h-[85dvh] w-full max-w-lg flex-col rounded-2xl border shadow-xl ${COLOR_STYLES[color]}`}
-      >
-        <div className="flex items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
+  return (
+    <Modal
+      onClose={onClose}
+      label={note ? 'Notiz bearbeiten' : 'Neue Notiz'}
+      className={COLOR_STYLES[color]}
+      header={
+        <>
           <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400">
-            {leer
-              ? 'Titel oder Text ausfüllen'
-              : state === 'speichert'
-                ? 'Speichert …'
-                : state === 'fehler'
-                  ? 'Nicht gespeichert'
-                  : state === 'gespeichert'
-                    ? 'Gespeichert'
-                    : ''}
+            {saveStateLabel(autosave.state, leer ? 'Titel oder Text ausfüllen' : undefined)}
           </span>
           <div className="flex items-center gap-1">
             {/* Beschriftet statt nur ein Symbol: Wem eine Notiz gehört und wer
@@ -358,25 +266,43 @@ function NoteEditor({
             >
               📌
             </button>
-            <button
-              onClick={onClose}
-              aria-label="Notiz schliessen"
-              className="grid size-11 min-h-11 place-items-center rounded-full text-slate-500 transition active:bg-black/5 dark:active:bg-white/10"
-            >
-              <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M6 6l12 12M18 6L6 18"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
+            <ModalCloseButton onClick={onClose} label="Notiz schliessen" />
           </div>
-        </div>
+        </>
+      }
+      footer={
+        <div className="flex items-center gap-2">
+          {NOTE_COLORS.map((option) => (
+            <button
+              key={option}
+              onClick={() => setColor(option)}
+              aria-label={`Farbe ${option}`}
+              aria-pressed={color === option}
+              className={`size-8 rounded-full ${COLOR_SWATCHES[option]} ${
+                color === option ? 'ring-2 ring-brand-600 ring-offset-2 dark:ring-offset-slate-950' : ''
+              }`}
+            />
+          ))}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <input
+          {savedId ? (
+            <button
+              onClick={() => {
+                if (!window.confirm('Notiz löschen?')) return
+                // Verhindert, dass das Speichern beim Schliessen die eben
+                // gelöschte Notiz wieder anlegt.
+                autosave.stop()
+                remove.mutate(savedId, { onSuccess: onClose })
+              }}
+              className="ml-auto min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 dark:text-red-400"
+            >
+              Löschen
+            </button>
+          ) : null}
+        </div>
+      }
+    >
+      <>
+        <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Titel"
@@ -386,53 +312,20 @@ function NoteEditor({
             className="w-full bg-transparent text-lg font-semibold outline-none"
           />
 
-          {kind === 'liste' ? (
-            <Checklist items={items} onChange={setItems} />
-          ) : (
-            <textarea
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              placeholder="Text …"
-              aria-label="Text"
-              rows={8}
-              className="mt-3 w-full resize-none bg-transparent text-base outline-none"
-            />
-          )}
-        </div>
-
-        <div className="border-t border-black/5 px-4 py-3 dark:border-white/10">
-          <div className="flex items-center gap-2">
-            {NOTE_COLORS.map((option) => (
-              <button
-                key={option}
-                onClick={() => setColor(option)}
-                aria-label={`Farbe ${option}`}
-                aria-pressed={color === option}
-                className={`size-8 rounded-full ${COLOR_SWATCHES[option]} ${
-                  color === option ? 'ring-2 ring-brand-600 ring-offset-2 dark:ring-offset-slate-950' : ''
-                }`}
-              />
-            ))}
-
-            {savedId ? (
-              <button
-                onClick={() => {
-                  if (!window.confirm('Notiz löschen?')) return
-                  // Verhindert, dass das Speichern beim Schliessen die eben
-                  // gelöschte Notiz wieder anlegt.
-                  removed.current = true
-                  remove.mutate(savedId, { onSuccess: onClose })
-                }}
-                className="ml-auto min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 dark:text-red-400"
-              >
-                Löschen
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+        {kind === 'liste' ? (
+          <Checklist items={items} onChange={setItems} />
+        ) : (
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Text …"
+            aria-label="Text"
+            rows={8}
+            className="mt-3 w-full resize-none bg-transparent text-base outline-none"
+          />
+        )}
+      </>
+    </Modal>
   )
 }
 

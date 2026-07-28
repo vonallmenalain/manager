@@ -259,14 +259,12 @@ export type NoteRow = typeof notes.$inferSelect
  */
 export const financeYears = sqliteTable('finance_years', {
   year: integer('year').primaryKey(),
-  /** Steuerbetrag für das ganze Jahr, in Rappen. */
+  /**
+   * Steuerbetrag für das ganze Jahr, in Rappen. Das Einzige, was zu einem
+   * Jahr eingestellt wird – wie viel davon abgezogen wird, entscheidet sich
+   * bei jeder Zahlung, und der Satz ist immer ein Zehntel.
+   */
   taxCents: integer('tax_cents').notNull().default(0),
-  /** Ob die Steuer vom Einkommen abgezogen wird, bevor der Zehnte läuft. */
-  deductTax: integer('deduct_tax', { mode: 'boolean' }).notNull().default(true),
-  /** 1000 = 10 %. In Hundertstelprozent, damit 10,5 % möglich bleibt. */
-  rateBasisPoints: integer('rate_basis_points').notNull().default(1000),
-  /** Bis und mit welchem Monat der Zehnte abgerechnet ist. 0 = noch nichts. */
-  settledThroughMonth: integer('settled_through_month').notNull().default(0),
   updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
   updatedAt: text('updated_at').notNull().default(now),
 })
@@ -315,6 +313,8 @@ export const donations = sqliteTable(
     paidOn: text('paid_on').notNull(),
     note: text('note').notNull().default(''),
     coversThroughMonth: integer('covers_through_month'),
+    /** Nur beim Zehnten: wie viel der Jahressteuer diese Zahlung verrechnet. */
+    taxAppliedCents: integer('tax_applied_cents').notNull().default(0),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),

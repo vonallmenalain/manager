@@ -1,4 +1,4 @@
-import type { CreateDonationInput, FinanceSettings, SaveMonthInput } from '@manager/shared'
+import type { CreatePaymentInput, FinanceSettings, SaveMonthInput } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type FinanceYear } from './api'
@@ -40,8 +40,8 @@ export function useSaveFinanceMonth(year: number) {
   )
 }
 
-export function useAddDonation(year: number) {
-  return useFinanceMutation((donation: CreateDonationInput) => api.addDonation(year, donation))
+export function useAddPayment(year: number) {
+  return useFinanceMutation((payment: CreatePaymentInput) => api.addPayment(year, payment))
 }
 
 export function useDeleteDonation(year: number) {

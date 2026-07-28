@@ -177,9 +177,10 @@ erDiagram
   Artikel → Abteilung, bewusst getrennt, damit „Aufräumen" sie nicht mitlöscht
 * `notes` – Notizen mit Art (Text oder Checkliste), Sichtbarkeit (`shared`), Farbe,
   Anheftung und eigener Suchspalte
-* `finance_years` – Steuerbetrag, Satz, Steuerabzug ja/nein, Abrechnungsstand (je Jahr)
+* `finance_years` – Steuerbetrag je Jahr. Mehr wird zu einem Jahr nicht eingestellt
 * `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
-* `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum und Beleg-Notiz
+* `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum, Beleg-Notiz und –
+  beim Zehnten – dem abgerechneten Monat und den damit verrechneten Steuern
 * `sessions` – angemeldete Geräte
 
 **Dokument-Status:** `offen` → `in_arbeit` → `erledigt` → `archiviert`.
@@ -303,80 +304,84 @@ Zusatzarbeit (ohne die Kästchen, gesucht wird nach „Milch", nicht nach „[x]
 
 Das Herzstück neben den Dokumenten.
 
-**Erfassung pro Monat** – ein Bildschirm, zwei Zahlen:
+**Erfassung pro Monat** – ein Fenster über der Liste, zwei Zahlen:
 
 ```
-September 2026
+September 2026                            Gespeichert
   Einkommen Alain        CHF  6'200.00
   Einkommen [Ehefrau]    CHF  3'800.00
   + weitere Einnahme
 
   Einkommen                 10'000.00
-  − Steueranteil             1'000.00
-  Zehnter                      900.00
+  Zehnter (10 %)             1'000.00
 ```
 
-Die Vorschau unten rechnet mit derselben Funktion wie die Jahresliste – hier kann keine
-andere Zahl stehen als gleich danach in der Übersicht.
+Gespeichert wird von selbst – hier wie bei den Notizen, aus demselben Grund. Nur das
+Erfassen einer Zahlung hat einen Knopf: Eine Zahlung ist ein Ereignis und kein Text, an
+dem man arbeitet; beim Tippen gespeichert entstünde für jeden Zwischenstand ein Beleg.
 
 Die Beträge werden so gelesen, wie man sie in der Schweiz schreibt: `8'450.00`, `8’450`
 mit typografischem Apostroph, `8450,50` mit Komma. Gespeichert wird in Rappen, damit
 keine Gleitkommazahl je einen Rappen verliert.
 
-**Jahres-Einstellungen:** Steuerbetrag für das Jahr, ein Schalter „Steuern vor dem
-Zehnten abziehen", der Satz (Standard 10 %) und der Abrechnungsstand.
+**Steuern:** Zum Jahr wird genau eine Zahl hinterlegt – der Steuerbetrag. Der Satz steht
+nicht mehr zur Wahl (ein Zehntel ist ein Zehntel), und einen Abrechnungsstand von Hand
+gibt es auch nicht mehr; er folgt den Zahlungen.
 
 Das Konzept sah ursprünglich drei Berechnungsbasen vor (`brutto`, `brutto_minus_steuern`,
-`netto`). Gebaut wurde der Schalter, weil die drei auf zwei Verhalten hinauslaufen: Ob
-man das Bruttoeinkommen ohne Abzug oder das ausbezahlte Netto einträgt, ist dieselbe
-Rechnung mit einer anderen Zahl im Feld. Ein Schalter statt einer Auswahl mit drei
-Fachbegriffen – das trifft „alles muss möglichst einfach sein" besser.
+`netto`). Alle drei laufen auf dasselbe hinaus: Ob man das Bruttoeinkommen ohne Abzug
+oder das ausbezahlte Netto einträgt, ist dieselbe Rechnung mit einer anderen Zahl im
+Feld.
 
-**Wie der Steuerabzug verteilt wird:** gleichmässig, ein Zwölftel pro Monat.
+**Wie die Steuern abgezogen werden: bei der Zahlung, nicht über den Kalender.**
 
-Gerechnet wird **kumulativ**, nicht Monat für Monat. Der Grund: Die Steuer ist ein
-Jahresbetrag. Rechnete man jeden Monat für sich und schnitte negative Ergebnisse ab,
-stimmte die Jahressumme am Schluss nicht mehr mit `(Jahreseinkommen − Steuern) × Satz`
-überein – und genau diese Zahl zählt am Jahresende. Deshalb wird für jeden Monat der bis
-dahin aufgelaufene Zehnte gerechnet; der Monatswert ist die Differenz zum Vormonat. Die
-Monatswerte summieren sich damit exakt auf den Jahreswert.
+Ursprünglich verteilte die App den Jahressteuerbetrag gleichmässig auf zwölf Monate und
+rechnete kumulativ, damit die Monatswerte am Jahresende genau aufgingen. Das war
+rechnerisch sauber und im Alltag falsch herum: Wer im März zahlt, weiss selbst am besten,
+wie viel Steuern bis dahin angefallen sind – ein Zwölftel je Monat ist bloss eine
+Annahme. Und ein erfasster Monat ohne Lohn bekam einen negativen Zehnten, den am
+Bildschirm niemand erklären konnte.
 
-Die Folge, die man kennen muss: In einem erfassten Monat ohne Einkommen läuft der
-Steueranteil trotzdem weiter, der Monatswert ist dann negativ. Das ist keine Gutschrift
-zum Auszahlen, sondern die Verrechnung mit den Monaten davor – über das Jahr geht es
-genau auf. Monate, für die noch gar nichts erfasst ist, tragen weder Steueranteil noch
-Zehnten; sonst stünden dort Zahlen für Monate, die es noch nicht gab.
-
-Rechenbeispiel, Steuern 12 000 CHF/Jahr:
+Neu wird beim Erfassen einer Zahlung eingetragen, wie viel der Jahressteuer damit
+verrechnet wird – ganz oder in Teilen. Die Jahresrechnung ist dadurch eine schlichte
+Jahresrechnung:
 
 ```
-Einkommen Juli (beide)      CHF 9 000.00
-− Steueranteil Juli          CHF 1 000.00   (12 000 / 12)
-= Zehnten-Basis Juli        CHF 8 000.00
-→ Zehnter (10 %)            CHF   800.00
+Einkommen (alle erfassten Monate)   CHF 16 000.00
+- Steuern verrechnet                 CHF  4 000.00
+= Basis                              CHF 12 000.00
+-> Zehnter (10 %)                    CHF  1 200.00
+- bereits bezahlt                    CHF    400.00
+= offen                              CHF    800.00
 ```
+
+Der Monatswert in der Liste ist damit schlicht ein Zehntel des Monatseinkommens – der
+Zehnte vor Steuerabzug. Was die Steuern davon abziehen, steht in der Kachel zuoberst,
+zusammen mit dem Stand: wie viel der Jahressteuer schon verrechnet ist und wie viel noch
+offen.
 
 **Abrechnungsstand:** In `donations` werden geleistete Zahlungen erfasst (Datum, Betrag,
-Art: Zehnten / Fastopfer / andere Spende, beim Zehnten zusätzlich „rechnet ab bis
-Monat"). Eine Zahlung, die weiter reicht als der bisherige Stand, schiebt ihn nach.
-Zurück geht es nur von Hand in den Einstellungen – sonst würde ein nachgetragener alter
-Beleg den Stand versehentlich zurückstellen.
+Art: Zehnten / Fastopfer / andere Spende, beim Zehnten zusätzlich "rechnet ab bis Monat"
+und die verrechneten Steuern). Der Stand ist der weiteste Monat, den eine Zahlung
+abdeckt – er wird nicht mehr getrennt geführt. Eine gelöschte Zahlung nimmt ihn damit
+zurück, und ein nachgetragener alter Beleg stellt ihn nicht zurück, weil das Maximum
+zählt.
 
 Das Dashboard zeigt daraus dauerhaft:
 
 > **Zehnter 2026 · CHF 2 050.00** offen für Juni, Juli, August
 > *Abgerechnet bis und mit Mai.*
 
-**Zwei Zahlen, absichtlich beide sichtbar:** „abgerechnet" folgt dem Monatsstand,
-„einbezahlt" ist die Summe der erfassten Zahlungen. Gehen sie auseinander, steht ein
-Hinweis dabei – ein Beleg zu viel oder zu wenig fällt so im Februar auf und nicht erst
-im Dezember.
+**Eine Zahlung, zwei Beträge:** Zehnter und Fastopfer gehen im Alltag zusammen aufs Mal,
+für denselben Zeitraum – deshalb ein Fenster mit beiden Feldern statt zweier Formulare.
+Gespeichert werden trotzdem zwei Zeilen, weil die Kirche beides getrennt ausweist.
 
-**Fastopfer** läuft getrennt – freier Betrag, keine Berechnung, nur Erfassung und
-Jahressumme. Es rechnet keine Monate ab und verändert den Zehnten nicht.
+**Fastopfer** läuft rechnerisch getrennt – freier Betrag, keine Berechnung, nur
+Erfassung und Jahressumme. Es rechnet keine Monate ab und verändert den Zehnten nicht;
+erfasst wird es zusammen mit dem Zehnten im selben Fenster.
 
-**Jahresübersicht:** Monatsliste mit Einkommen, Steueranteil und Zehnten, dazu die
-Jahressummen und der Abgleich mit den Zahlungen. Export als CSV, mit Semikolon und einem
+**Jahresübersicht:** Zuoberst die Kachel mit dem Stand – offener Zehnter, Einkommen,
+verrechnete Steuern, Basis, bezahlt. Darunter die Monatsliste und die Zahlungen. Export als CSV, mit Semikolon und einem
 BOM voran, damit Excel die Datei ohne Import-Dialog und mit richtigen Umlauten öffnet.
 Die Zahlungen stehen in derselben Datei – fürs Jahresgespräch soll man nicht zwei Sachen
 zusammensuchen müssen. **Kein PDF-Export:** Das Handy druckt jede Ansicht über
@@ -594,8 +599,8 @@ nichts davon hält den täglichen Gebrauch auf.
 | Container-Updates | **Watchtower** | Wie im Konzept beschrieben, identisch zur Share-App |
 | Reihenfolge | **Etappe 0 → 1 → 2 → 3 → 4 → 5** | Fundament, Dokumente, Handy-Upload, Texterkennung, Alltag, Finanzen |
 | Volltextsuche | **Vereinheitlichte Spalte statt FTS5** | Löst zusätzlich die Umlaut-Frage, die FTS5 hier nicht gelöst hätte |
-| Zehnten-Rechnung | **Kumulativ über das Jahr** | Die Monatswerte summieren sich exakt auf `(Jahreseinkommen − Steuern) × Satz` |
-| Berechnungsbasis | **Ein Schalter statt drei Modi** | „brutto" und „netto" sind dieselbe Rechnung mit einer anderen Zahl im Feld |
+| Zehnten-Rechnung | **Jahresrechnung, Steuern bei der Zahlung verrechnet** | Wer zahlt, weiss am besten, wie viel Steuern bis dahin angefallen sind – ein Zwölftel je Monat war bloss eine Annahme |
+| Berechnungsbasis | **Kein Schalter, keine drei Modi** | „brutto" und „netto" sind dieselbe Rechnung mit einer anderen Zahl im Feld; wie viel Steuern abgezogen werden, entscheidet die Zahlung |
 | Jahresexport | **CSV, kein eigenes PDF** | Das Handy druckt jede Ansicht als PDF; eine eigene Erzeugung wäre Aufwand ohne Gewinn |
 
 ## 14. Noch offen

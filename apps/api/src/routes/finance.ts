@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import {
   computeYear,
-  createDonationSchema,
+  createPaymentSchema,
   DEFAULT_FINANCE_SETTINGS,
   DONATION_LABELS,
   financeSettingsSchema,
@@ -39,12 +39,7 @@ const monthParamSchema = yearParamSchema.extend({
 })
 
 function toSettings(row: FinanceYearRow): FinanceSettings {
-  return {
-    taxCents: row.taxCents,
-    deductTax: row.deductTax,
-    rateBasisPoints: row.rateBasisPoints,
-    settledThroughMonth: row.settledThroughMonth,
-  }
+  return { taxCents: row.taxCents }
 }
 
 function toIncome(row: IncomeEntryRow): IncomeEntry {
@@ -67,6 +62,7 @@ function toDonation(row: DonationRow): Donation {
     paidOn: row.paidOn,
     note: row.note,
     coversThroughMonth: row.coversThroughMonth,
+    taxAppliedCents: row.taxAppliedCents,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
   }
@@ -102,12 +98,13 @@ async function loadYear(year: number) {
   ])
 
   const entries = entryRows.map(toIncome)
+  const paid = donationRows.map(toDonation)
   return {
     year,
     settings,
     entries,
-    donations: donationRows.map(toDonation),
-    figures: computeYear(entries, settings),
+    donations: paid,
+    figures: computeYear(entries, paid, settings),
   }
 }
 
@@ -190,6 +187,14 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.send(await loadYear(year))
   })
 
+  /**
+   * Eine Zahlung: Zehnter und Fastopfer für denselben Zeitraum, dazu die
+   * Steuern, die dabei verrechnet werden.
+   *
+   * Gespeichert wird je Art eine Zeile – die Kirche weist beides getrennt
+   * aus, und die bestehende Auswertung zählt je Art zusammen. Beide entstehen
+   * in einer Transaktion: Eine halbe Zahlung wäre schlimmer als keine.
+   */
   fastify.post('/api/finanzen/:year/zahlungen', async (request, reply) => {
     const user = request.user
     if (!user) return reply.status(401).send(unauthorized())
@@ -197,35 +202,50 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     const params = yearParamSchema.safeParse(request.params)
     if (!params.success) return reply.status(400).send(validationError(params.error))
 
-    const parsed = createDonationSchema.safeParse(request.body)
+    const parsed = createPaymentSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const { year } = params.data
-    const settings = await loadSettings(year)
+    const payment = parsed.data
+    await loadSettings(year)
 
-    await db.insert(donations).values({
-      id: randomUUID(),
+    const gemeinsam = {
       year,
-      kind: parsed.data.kind,
-      amountCents: parsed.data.amountCents,
-      paidOn: parsed.data.paidOn,
-      note: parsed.data.note,
-      // Nur der Zehnte rechnet Monate ab; beim Fastopfer gibt es nichts
-      // nachzuführen.
-      coversThroughMonth: parsed.data.kind === 'zehnten' ? parsed.data.coversThroughMonth : null,
+      paidOn: payment.paidOn,
+      note: payment.note,
       createdBy: user.id,
-    })
-
-    // Eine Zahlung, die weiter reicht als der bisherige Stand, schiebt ihn
-    // nach. Zurück geht es nur von Hand – sonst würde ein nachgetragener
-    // alter Beleg den Stand versehentlich zurückstellen.
-    const covers = parsed.data.kind === 'zehnten' ? parsed.data.coversThroughMonth : null
-    if (covers !== null && covers > settings.settledThroughMonth) {
-      await db
-        .update(financeYears)
-        .set({ settledThroughMonth: covers, updatedBy: user.id, updatedAt: new Date().toISOString() })
-        .where(eq(financeYears.year, year))
     }
+
+    db.transaction((tx) => {
+      // Auch eine Zahlung über 0 wird festgehalten, wenn sie Steuern
+      // verrechnet: Der Steuerabzug ist dann ihr ganzer Zweck.
+      if (payment.tithingCents > 0 || payment.taxAppliedCents > 0) {
+        tx.insert(donations)
+          .values({
+            ...gemeinsam,
+            id: randomUUID(),
+            kind: 'zehnten',
+            amountCents: payment.tithingCents,
+            coversThroughMonth: payment.coversThroughMonth,
+            taxAppliedCents: payment.taxAppliedCents,
+          })
+          .run()
+      }
+
+      if (payment.fastOfferingCents > 0) {
+        tx.insert(donations)
+          .values({
+            ...gemeinsam,
+            id: randomUUID(),
+            kind: 'fastopfer',
+            amountCents: payment.fastOfferingCents,
+            // Das Fastopfer rechnet keine Monate ab und verrechnet keine Steuern.
+            coversThroughMonth: null,
+            taxAppliedCents: 0,
+          })
+          .run()
+      }
+    })
 
     return reply.status(201).send(await loadYear(year))
   })
@@ -242,9 +262,8 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (deleted.length === 0) return reply.status(404).send(notFound('Zahlung nicht gefunden.'))
 
-    // Der Abrechnungsstand bleibt stehen: Wer eine Zahlung löscht, will meist
-    // einen Tippfehler korrigieren, nicht die Abrechnung zurückdrehen. Das
-    // geht in den Einstellungen ausdrücklich.
+    // Abrechnungsstand und verrechnete Steuern folgen den Zahlungen: Mit der
+    // gelöschten Zeile verschwindet auch, was sie abgedeckt hat.
     return reply.send(await loadYear(params.data.year))
   })
 
@@ -259,42 +278,40 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     const { year, figures, settings, donations: paid } = await loadYear(params.data.year)
 
     const rows = [
-      ['Monat', 'Einkommen', 'Steueranteil', 'Basis', 'Zehnter'],
+      ['Monat', 'Einkommen', 'Zehnter (10 %)'],
       ...figures.months
         .filter((month) => month.entered)
         .map((month) => [
           monthName(month.month),
           formatAmount(month.incomeCents),
-          formatAmount(month.taxShareCents),
-          formatAmount(month.baseCents),
           formatAmount(month.tithingCents),
         ]),
       [],
-      [
-        'Total',
-        formatAmount(figures.totalIncomeCents),
-        formatAmount(figures.totalTaxCents),
-        formatAmount(figures.totalBaseCents),
-        formatAmount(figures.totalTithingCents),
-      ],
-      [],
-      ['Abgerechnet bis', settings.settledThroughMonth === 0 ? '–' : monthName(settings.settledThroughMonth)],
-      ['Bereits abgerechnet', formatAmount(figures.settledTithingCents)],
+      ['Einkommen', formatAmount(figures.totalIncomeCents)],
+      ['Steuern verrechnet', formatAmount(figures.taxAppliedCents)],
+      ['Steuern ganzes Jahr', formatAmount(settings.taxCents)],
+      ['Basis', formatAmount(figures.baseCents)],
+      ['Zehnter geschuldet', formatAmount(figures.owedTithingCents)],
+      ['Zehnter bezahlt', formatAmount(figures.paidTithingCents)],
       ['Noch offen', formatAmount(figures.openTithingCents)],
+      [
+        'Abgerechnet bis',
+        figures.settledThroughMonth === 0 ? '–' : monthName(figures.settledThroughMonth),
+      ],
       [],
       // Die Belege gehören in dieselbe Datei – sonst muss man fürs
       // Jahresgespräch zwei Sachen zusammensuchen.
-      ['Zahlungen', 'Datum', 'Betrag', 'Rechnet ab bis', 'Notiz'],
+      ['Zahlungen', 'Datum', 'Betrag', 'Steuern verrechnet', 'Rechnet ab bis', 'Notiz'],
       ...paid.map((donation) => [
         DONATION_LABELS[donation.kind],
         donation.paidOn,
         formatAmount(donation.amountCents),
+        donation.taxAppliedCents > 0 ? formatAmount(donation.taxAppliedCents) : '',
         donation.coversThroughMonth ? monthName(donation.coversThroughMonth) : '',
         donation.note,
       ]),
       [],
-      ['Zehnter einbezahlt', formatAmount(sumDonations(paid, 'zehnten'))],
-      ['Fastopfer einbezahlt', formatAmount(sumDonations(paid, 'fastopfer'))],
+      ['Fastopfer einbezahlt', formatAmount(figures.paidFastOfferingCents)],
       ['Weitere Spenden', formatAmount(sumDonations(paid, 'andere'))],
     ]
 

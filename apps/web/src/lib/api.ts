@@ -1,6 +1,6 @@
 import type {
   Category,
-  CreateDonationInput,
+  CreatePaymentInput,
   CreateShoppingItemInput,
   CreateUserInput,
   DocumentDetail,
@@ -248,10 +248,10 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  addDonation: (year: number, donation: CreateDonationInput) =>
+  addPayment: (year: number, payment: CreatePaymentInput) =>
     request<FinanceYear>(`/api/finanzen/${year}/zahlungen`, {
       method: 'POST',
-      body: JSON.stringify(donation),
+      body: JSON.stringify(payment),
     }),
 
   deleteDonation: (year: number, id: string) =>

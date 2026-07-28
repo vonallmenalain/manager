@@ -12,7 +12,8 @@ einzigen PDF, statt einzeln in der Ablage zu landen. Die
 **Einkaufsliste** sortiert nach Ladenabteilungen und merkt sich Korrekturen
 dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
 mit Autospeichern, Anheften, Farben und Suche –, und die **Finanzen** rechnen
-Zehnten und Fastopfer ab – mit Steuerabzug, Abrechnungsstand und CSV-Export.
+Zehnten und Fastopfer ab – Steuern werden bei der Zahlung verrechnet, dazu
+Abrechnungsstand und CSV-Export.
 Offen ist nur noch der Feinschliff, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz

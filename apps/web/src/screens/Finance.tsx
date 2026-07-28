@@ -1,24 +1,21 @@
 import {
-  computeYear,
   DONATION_LABELS,
   formatAmount,
   monthName,
   MONTH_NAMES,
   parseAmountToCents,
-  sumDonations,
-  type CreateDonationInput,
-  type DonationKind,
-  type FinanceSettings,
   type IncomeEntry,
   type MonthFigures,
 } from '@manager/shared'
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
 
 import { Button } from '../components/Button'
+import { Modal, ModalCloseButton } from '../components/Modal'
 import { API_BASE, type FinanceYear } from '../lib/api'
+import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useHouseholdUsers } from '../lib/documents'
 import {
-  useAddDonation,
+  useAddPayment,
   useDeleteDonation,
   useFinanceYear,
   useSaveFinanceMonth,
@@ -44,7 +41,7 @@ export function Finance() {
         <div className="h-40 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
       ) : (
         <>
-          <StatusCard data={data} onSettle={() => setSheet({ kind: 'zahlung', art: 'zehnten' })} />
+          <StatusCard data={data} onPay={() => setSheet({ kind: 'zahlung' })} />
 
           <section>
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -55,20 +52,18 @@ export function Finance() {
                 <MonthRow
                   key={figures.month}
                   figures={figures}
-                  settled={figures.month <= data.settings.settledThroughMonth}
+                  settled={figures.month <= data.figures.settledThroughMonth}
                   onClick={() => setSheet({ kind: 'monat', month: figures.month })}
                 />
               ))}
             </ul>
           </section>
 
-          <YearTotals data={data} />
-          <Fastopfer data={data} onAdd={() => setSheet({ kind: 'zahlung', art: 'fastopfer' })} />
           <Payments data={data} year={year} />
 
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="secondary" onClick={() => setSheet({ kind: 'einstellungen' })}>
-              Einstellungen
+            <Button variant="secondary" onClick={() => setSheet({ kind: 'steuern' })}>
+              Steuern
             </Button>
             <a
               href={`${API_BASE}/api/finanzen/${year}/export.csv`}
@@ -90,25 +85,17 @@ export function Finance() {
       ) : null}
 
       {data && sheet?.kind === 'zahlung' ? (
-        <PaymentEditor
-          data={data}
-          kind={sheet.art}
-          onClose={() => setSheet(null)}
-        />
+        <PaymentEditor data={data} onClose={() => setSheet(null)} />
       ) : null}
 
-      {data && sheet?.kind === 'einstellungen' ? (
-        <SettingsEditor data={data} onClose={() => setSheet(null)} />
+      {data && sheet?.kind === 'steuern' ? (
+        <TaxEditor data={data} onClose={() => setSheet(null)} />
       ) : null}
     </div>
   )
 }
 
-type SheetState =
-  | null
-  | { kind: 'monat'; month: number }
-  | { kind: 'zahlung'; art: DonationKind }
-  | { kind: 'einstellungen' }
+type SheetState = null | { kind: 'monat'; month: number } | { kind: 'zahlung' } | { kind: 'steuern' }
 
 function YearPicker({ year, onChange }: { year: number; onChange: (year: number) => void }) {
   return (
@@ -133,38 +120,78 @@ function YearPicker({ year, onChange }: { year: number; onChange: (year: number)
 }
 
 /**
- * Die eine Zahl, wegen der man den Bildschirm öffnet: Was ist noch offen und
- * bis wann ist abgerechnet.
+ * Die Kachel, wegen der man den Bildschirm öffnet – und deshalb ganz oben.
+ *
+ * Sie beantwortet die ganze Abrechnung in einer Spalte: Was kam herein, was
+ * wurde an Steuern verrechnet, was ist davon der Zehnte, was ist bezahlt, was
+ * bleibt offen.
  */
-function StatusCard({ data, onSettle }: { data: FinanceYear; onSettle: () => void }) {
-  const { figures, settings } = data
-  const offen = figures.openTithingCents
+function StatusCard({ data, onPay }: { data: FinanceYear; onPay: () => void }) {
+  const { figures } = data
 
   return (
     <section className="rounded-2xl bg-brand-800 p-4 text-white">
+      <p className="text-sm text-white/70">
+        {figures.lastEnteredMonth === 0
+          ? `Stand ${data.year}`
+          : `Stand bis und mit ${monthName(figures.lastEnteredMonth)}`}
+      </p>
+      <p className="mt-1 text-3xl font-bold tabular-nums">
+        CHF {formatAmount(figures.openTithingCents)}
+      </p>
       <p className="text-sm text-white/70">Zehnter noch offen</p>
-      <p className="mt-1 text-3xl font-bold tabular-nums">CHF {formatAmount(offen)}</p>
 
-      <p className="mt-3 text-sm text-white/80">
-        {settings.settledThroughMonth === 0
-          ? 'Noch nichts abgerechnet.'
-          : `Abgerechnet bis und mit ${monthName(settings.settledThroughMonth)}.`}
-        {figures.openMonths.length > 0
-          ? ` Offen: ${figures.openMonths.map(monthName).join(', ')}.`
-          : figures.lastEnteredMonth === 0
-            ? ' Noch kein Einkommen erfasst.'
-            : ' Alles Erfasste ist abgerechnet.'}
+      <dl className="mt-4 space-y-1 border-t border-white/20 pt-3 text-sm tabular-nums">
+        <Row label="Einkommen" value={figures.totalIncomeCents} tone="soft" />
+        <Row label="− Steuern verrechnet" value={figures.taxAppliedCents} tone="soft" />
+        <Row label="= Basis" value={figures.baseCents} tone="soft" />
+        <Row label="Zehnter (10 %)" value={figures.owedTithingCents} />
+        <Row label="− bereits bezahlt" value={figures.paidTithingCents} tone="soft" />
+        <Row label="= offen" value={figures.openTithingCents} />
+      </dl>
+
+      <p className="mt-3 text-xs text-white/70">
+        {figures.taxTotalCents > 0
+          ? `Steuern: CHF ${formatAmount(figures.taxAppliedCents)} von ${formatAmount(figures.taxTotalCents)} verrechnet, CHF ${formatAmount(figures.taxOpenCents)} noch offen.`
+          : 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'}
+        {figures.paidFastOfferingCents > 0
+          ? ` Fastopfer bezahlt: CHF ${formatAmount(figures.paidFastOfferingCents)}.`
+          : ''}
       </p>
 
-      {offen > 0 ? (
-        <button
-          onClick={onSettle}
-          className="mt-3 min-h-11 w-full rounded-xl bg-white/15 text-sm font-semibold backdrop-blur transition active:scale-[0.99]"
-        >
-          Zahlung erfassen
-        </button>
-      ) : null}
+      <p className="mt-1 text-xs text-white/70">
+        {figures.settledThroughMonth === 0
+          ? 'Noch nichts abgerechnet.'
+          : `Abgerechnet bis und mit ${monthName(figures.settledThroughMonth)}.`}
+        {figures.openMonths.length > 0
+          ? ` Offen: ${figures.openMonths.map(monthName).join(', ')}.`
+          : ''}
+      </p>
+
+      <button
+        onClick={onPay}
+        className="mt-3 min-h-11 w-full rounded-xl bg-white/15 text-sm font-semibold backdrop-blur transition active:scale-[0.99]"
+      >
+        Zahlung erfassen
+      </button>
     </section>
+  )
+}
+
+function Row({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone?: 'soft'
+}) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className={tone === 'soft' ? 'text-white/70' : 'font-semibold'}>{label}</dt>
+      <dd className={tone === 'soft' ? 'text-white/70' : 'font-semibold'}>{formatAmount(value)}</dd>
+    </div>
   )
 }
 
@@ -187,15 +214,10 @@ function MonthRow({
 
         {figures.entered ? (
           <>
-            {/* Nicht umbrechen: Eine Zeile je Monat lässt sich überfliegen,
-                zwei nicht mehr. Wird es zu eng, kürzt truncate von rechts. */}
             <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-slate-500 dark:text-slate-400">
               {formatAmount(figures.incomeCents)}
-              {figures.taxShareCents > 0 ? (
-                <span className="text-slate-400"> − {formatAmount(figures.taxShareCents)}</span>
-              ) : null}
             </span>
-            <span className="shrink-0 text-right tabular-nums font-semibold">
+            <span className="shrink-0 text-right font-semibold tabular-nums">
               {formatAmount(figures.tithingCents)}
             </span>
           </>
@@ -214,78 +236,6 @@ function MonthRow({
         </span>
       </button>
     </li>
-  )
-}
-
-function YearTotals({ data }: { data: FinanceYear }) {
-  const { figures, settings } = data
-  if (figures.lastEnteredMonth === 0) return null
-
-  // Zwei verschiedene Zahlen, absichtlich beide sichtbar: „abgerechnet" folgt
-  // dem Monatsstand, „einbezahlt" ist die Summe der erfassten Zahlungen.
-  // Gehen sie auseinander, ist irgendwo ein Beleg zu viel oder zu wenig – und
-  // das merkt man am besten hier, nicht im Dezember.
-  const einbezahlt = sumDonations(data.donations, 'zehnten')
-  const abweichung = einbezahlt - figures.settledTithingCents
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
-      <h2 className="mb-2 font-semibold">
-        Stand bis und mit {monthName(figures.lastEnteredMonth)}
-      </h2>
-      <dl className="space-y-1.5 tabular-nums">
-        <Line label="Einkommen" value={figures.totalIncomeCents} />
-        {settings.deductTax ? (
-          <Line label="− Steueranteil" value={figures.totalTaxCents} />
-        ) : null}
-        <Line label="= Basis" value={figures.totalBaseCents} />
-        <Line
-          label={`Zehnter (${(settings.rateBasisPoints / 100).toLocaleString('de-CH')} %)`}
-          value={figures.totalTithingCents}
-          strong
-        />
-        <Line label="davon abgerechnet" value={figures.settledTithingCents} />
-        <Line label="einbezahlt" value={einbezahlt} />
-      </dl>
-
-      {abweichung !== 0 ? (
-        <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-amber-700 dark:border-slate-800 dark:text-amber-500">
-          {abweichung > 0
-            ? `Es sind CHF ${formatAmount(abweichung)} mehr einbezahlt als bis ${monthName(settings.settledThroughMonth)} abgerechnet.`
-            : `Es fehlen CHF ${formatAmount(-abweichung)} gegenüber dem Abrechnungsstand.`}
-        </p>
-      ) : null}
-    </section>
-  )
-}
-
-function Line({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
-  return (
-    <div className={`flex justify-between gap-3 ${strong ? 'font-semibold' : ''}`}>
-      <dt className={strong ? '' : 'text-slate-500 dark:text-slate-400'}>{label}</dt>
-      <dd>{formatAmount(value)}</dd>
-    </div>
-  )
-}
-
-function Fastopfer({ data, onAdd }: { data: FinanceYear; onAdd: () => void }) {
-  const total = sumDonations(data.donations, 'fastopfer')
-
-  return (
-    <section className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <div>
-        <h2 className="font-semibold">Fastopfer {data.year}</h2>
-        <p className="text-sm tabular-nums text-slate-500 dark:text-slate-400">
-          CHF {formatAmount(total)}
-        </p>
-      </div>
-      <button
-        onClick={onAdd}
-        className="min-h-11 shrink-0 rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800"
-      >
-        Erfassen
-      </button>
-    </section>
   )
 }
 
@@ -313,10 +263,13 @@ function Payments({ data, year }: { data: FinanceYear; year: number }) {
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {formatDate(donation.paidOn)}
+                {donation.taxAppliedCents > 0
+                  ? ` · Steuern ${formatAmount(donation.taxAppliedCents)}`
+                  : ''}
                 {donation.note ? ` · ${donation.note}` : ''}
               </p>
             </div>
-            <span className="shrink-0 tabular-nums font-semibold">
+            <span className="shrink-0 font-semibold tabular-nums">
               {formatAmount(donation.amountCents)}
             </span>
             <button
@@ -340,29 +293,20 @@ function formatDate(iso: string): string {
   return day && month && year ? `${day}.${month}.${year}` : iso
 }
 
-// ---------------------------------------------------------------- Editoren
-
-function Sheet({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-white dark:bg-slate-950">
-      <div className="pt-safe border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-        <span className="text-sm font-semibold">{title}</span>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">{children}</div>
-    </div>
-  )
-}
+// ---------------------------------------------------------------- Fenster
 
 /** Betragsfeld: numerische Tastatur, akzeptiert 8'450.00 genauso wie 8450. */
 function AmountField({
   label,
   value,
   onChange,
+  hint,
   autoFocus,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
+  hint?: ReactNode
   autoFocus?: boolean
 }) {
   return (
@@ -376,8 +320,17 @@ function AmountField({
         autoFocus={autoFocus}
         className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-right text-lg tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40 dark:border-slate-700 dark:bg-slate-900"
       />
+      {hint ? (
+        <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{hint}</span>
+      ) : null}
     </label>
   )
+}
+
+/** Liest ein Betragsfeld: leer ist erlaubt, Unlesbares nicht. */
+function readAmount(raw: string): number | null | 'fehler' {
+  if (raw.trim() === '') return null
+  return parseAmountToCents(raw) ?? 'fehler'
 }
 
 function MonthEditor({
@@ -415,7 +368,37 @@ function MonthEditor({
       })),
   )
 
-  const [error, setError] = useState<string | null>(null)
+  /** Alle Felder zusammen, wie sie gespeichert würden – oder null bei Unlesbarem. */
+  const entries = useMemo(() => {
+    const result: { userId: string; label: string; amountCents: number }[] = []
+
+    for (const user of users) {
+      const cents = readAmount(amounts[user.id] ?? '')
+      if (cents === 'fehler') return null
+      // Leer heisst „nicht erfasst" und wird weggelassen; eine ausdrückliche
+      // 0 bleibt erhalten – sie ist eine Angabe.
+      if (cents === null) continue
+      result.push({ userId: user.id, label: '', amountCents: cents })
+    }
+
+    for (const extra of extras) {
+      const cents = readAmount(extra.amount)
+      if (cents === 'fehler') return null
+      if (cents === null) continue
+      result.push({ userId: extra.userId, label: extra.label.trim(), amountCents: cents })
+    }
+
+    return result
+  }, [amounts, extras, users])
+
+  const autosave = useAutosave(
+    { entries },
+    async (stand) => {
+      if (!stand.entries) return
+      await save.mutateAsync({ month, input: { entries: stand.entries } })
+    },
+    { savable: (stand) => stand.entries !== null },
+  )
 
   /**
    * Was die Eingabe bedeutet – gerechnet mit derselben Funktion wie die Liste,
@@ -423,64 +406,55 @@ function MonthEditor({
    * stehen als gleich danach im Jahr.
    */
   const vorschau = useMemo(() => {
-    const geplant: IncomeEntry[] = []
-    for (const [userId, raw] of Object.entries(amounts)) {
-      const cents = raw.trim() === '' ? null : parseAmountToCents(raw)
-      if (cents === null) continue
-      geplant.push({ id: '', year: data.year, month, userId, label: '', amountCents: cents })
-    }
-    for (const extra of extras) {
-      const cents = extra.amount.trim() === '' ? null : parseAmountToCents(extra.amount)
-      if (cents === null) continue
-      geplant.push({
-        id: '',
-        year: data.year,
-        month,
-        userId: extra.userId,
-        label: extra.label,
-        amountCents: cents,
-      })
-    }
-    if (geplant.length === 0) return null
-
+    if (!entries || entries.length === 0) return null
+    const geplant: IncomeEntry[] = entries.map((entry, index) => ({
+      id: String(index),
+      year: data.year,
+      month,
+      userId: entry.userId,
+      label: entry.label,
+      amountCents: entry.amountCents,
+    }))
     const ohneDiesenMonat = data.entries.filter((entry) => entry.month !== month)
-    return computeYear([...ohneDiesenMonat, ...geplant], data.settings).months[month - 1] ?? null
-  }, [amounts, extras, data, month])
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-
-    const entries: { userId: string; label: string; amountCents: number }[] = []
-
-    for (const user of users) {
-      const raw = amounts[user.id]?.trim() ?? ''
-      // Leer heisst „nicht erfasst" und wird weggelassen; eine ausdrückliche
-      // 0 bleibt erhalten – sie ist eine Angabe.
-      if (raw === '') continue
-      const cents = parseAmountToCents(raw)
-      if (cents === null) {
-        setError(`Betrag von ${user.name} nicht lesbar: „${raw}"`)
-        return
-      }
-      entries.push({ userId: user.id, label: '', amountCents: cents })
-    }
-
-    for (const extra of extras) {
-      if (extra.amount.trim() === '') continue
-      const cents = parseAmountToCents(extra.amount)
-      if (cents === null) {
-        setError(`Betrag nicht lesbar: „${extra.amount}"`)
-        return
-      }
-      entries.push({ userId: extra.userId, label: extra.label.trim(), amountCents: cents })
-    }
-
-    save.mutate({ month, input: { entries } }, { onSuccess: onClose })
-  }
+    return computeMonth([...ohneDiesenMonat, ...geplant], month)
+  }, [entries, data, month])
 
   return (
-    <Sheet title={`${monthName(month)} ${data.year}`}>
-      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+    <Modal
+      onClose={onClose}
+      label={`${monthName(month)} ${data.year}`}
+      header={
+        <>
+          <span className="text-sm font-semibold">
+            {monthName(month)} {data.year}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {saveStateLabel(
+                autosave.state,
+                entries === null ? 'Betrag nicht lesbar' : undefined,
+              )}
+            </span>
+            <ModalCloseButton onClick={onClose} label="Monat schliessen" />
+          </div>
+        </>
+      }
+      footer={
+        vorschau ? (
+          <dl className="space-y-1 text-sm tabular-nums">
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500 dark:text-slate-400">Einkommen</dt>
+              <dd>{formatAmount(vorschau.incomeCents)}</dd>
+            </div>
+            <div className="flex justify-between gap-3 font-semibold">
+              <dt>Zehnter (10 %)</dt>
+              <dd>{formatAmount(vorschau.tithingCents)}</dd>
+            </div>
+          </dl>
+        ) : null
+      }
+    >
+      <div className="space-y-4">
         {users.map((user) => (
           <AmountField
             key={user.id}
@@ -555,86 +529,121 @@ function MonthEditor({
         <button
           type="button"
           onClick={() =>
-            setExtras((current) => [
-              ...current,
-              { userId: users[0]?.id ?? '', label: '', amount: '' },
-            ])
+            setExtras((current) => [...current, { userId: users[0]?.id ?? '', label: '', amount: '' }])
           }
           className="text-left text-sm font-medium text-brand-700 dark:text-brand-400"
         >
           + weitere Einnahme
         </button>
-
-        {vorschau ? (
-          <dl className="space-y-1 rounded-xl bg-slate-100 p-3 text-sm tabular-nums dark:bg-slate-900">
-            <Line label="Einkommen" value={vorschau.incomeCents} />
-            {vorschau.taxShareCents !== 0 ? (
-              <Line label="− Steueranteil" value={vorschau.taxShareCents} />
-            ) : null}
-            <Line label="Zehnter" value={vorschau.tithingCents} strong />
-          </dl>
-        ) : null}
-
-        {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-
-        <div className="mt-auto flex gap-2 pt-4">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button type="submit" loading={save.isPending}>
-            Speichern
-          </Button>
-        </div>
-      </form>
-    </Sheet>
+      </div>
+    </Modal>
   )
 }
 
-function PaymentEditor({
-  data,
-  kind,
-  onClose,
-}: {
-  data: FinanceYear
-  kind: DonationKind
-  onClose: () => void
-}) {
-  const add = useAddDonation(data.year)
+/** Der Monatswert, wie ihn die Jahresrechnung sieht. */
+function computeMonth(entries: readonly IncomeEntry[], month: number): MonthFigures {
+  const incomeCents = entries
+    .filter((entry) => entry.month === month)
+    .reduce((sum, entry) => sum + entry.amountCents, 0)
+  return { month, incomeCents, tithingCents: Math.round(incomeCents / 10), entered: true }
+}
 
-  const [amount, setAmount] = useState(() =>
-    kind === 'zehnten' && data.figures.openTithingCents > 0
-      ? formatAmount(data.figures.openTithingCents)
-      : '',
+/**
+ * Zahlung erfassen – Zehnter und Fastopfer in einem Vorgang.
+ *
+ * Als Einziges hier ohne Autospeichern: Eine Zahlung ist ein Ereignis, kein
+ * Text, an dem man arbeitet. Würde beim Tippen gespeichert, entstünde für
+ * jeden Zwischenstand ein Beleg.
+ */
+function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }) {
+  const add = useAddPayment(data.year)
+  const { figures } = data
+
+  const [tithing, setTithing] = useState(() =>
+    figures.openTithingCents > 0 ? formatAmount(figures.openTithingCents) : '',
   )
+  const [fastOffering, setFastOffering] = useState('')
+  const [tax, setTax] = useState('')
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
-  const [covers, setCovers] = useState(() =>
-    kind === 'zehnten' ? Math.max(data.figures.lastEnteredMonth, 1) : 0,
-  )
+  const [covers, setCovers] = useState(() => Math.max(figures.lastEnteredMonth, 1))
   const [error, setError] = useState<string | null>(null)
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    const cents = parseAmountToCents(amount)
-    if (cents === null || cents === 0) {
+
+    const betraege = {
+      tithingCents: readAmount(tithing),
+      fastOfferingCents: readAmount(fastOffering),
+      taxAppliedCents: readAmount(tax),
+    }
+
+    for (const wert of Object.values(betraege)) {
+      if (wert === 'fehler') {
+        setError('Bitte einen lesbaren Betrag eingeben.')
+        return
+      }
+    }
+
+    const tithingCents = betraege.tithingCents === 'fehler' ? 0 : (betraege.tithingCents ?? 0)
+    const fastOfferingCents =
+      betraege.fastOfferingCents === 'fehler' ? 0 : (betraege.fastOfferingCents ?? 0)
+    const taxAppliedCents = betraege.taxAppliedCents === 'fehler' ? 0 : (betraege.taxAppliedCents ?? 0)
+
+    if (tithingCents === 0 && fastOfferingCents === 0 && taxAppliedCents === 0) {
       setError('Bitte einen Betrag eingeben.')
       return
     }
 
-    const donation: CreateDonationInput = {
-      kind,
-      amountCents: cents,
-      paidOn,
-      note: note.trim(),
-      coversThroughMonth: kind === 'zehnten' ? covers : null,
-    }
-    add.mutate(donation, { onSuccess: onClose })
+    add.mutate(
+      {
+        tithingCents,
+        fastOfferingCents,
+        taxAppliedCents,
+        paidOn,
+        note: note.trim(),
+        coversThroughMonth: tithingCents > 0 || taxAppliedCents > 0 ? covers : null,
+      },
+      { onSuccess: onClose },
+    )
   }
 
   return (
-    <Sheet title={`${DONATION_LABELS[kind]} erfassen`}>
-      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
-        <AmountField label="Betrag" value={amount} onChange={setAmount} autoFocus />
+    <Modal
+      onClose={onClose}
+      label="Zahlung erfassen"
+      header={
+        <>
+          <span className="text-sm font-semibold">Zahlung erfassen</span>
+          <ModalCloseButton onClick={onClose} label="Fenster schliessen" />
+        </>
+      }
+    >
+      <form id="zahlung" onSubmit={handleSubmit} className="space-y-4">
+        <AmountField
+          label="Betrag Zehnten"
+          value={tithing}
+          onChange={setTithing}
+          autoFocus
+          hint={
+            figures.openTithingCents > 0
+              ? `Offen sind CHF ${formatAmount(figures.openTithingCents)}.`
+              : undefined
+          }
+        />
+
+        <AmountField label="Betrag Fastopfer" value={fastOffering} onChange={setFastOffering} />
+
+        <AmountField
+          label="Steuern verrechnen"
+          value={tax}
+          onChange={setTax}
+          hint={
+            figures.taxTotalCents > 0
+              ? `Von CHF ${formatAmount(figures.taxTotalCents)} sind noch CHF ${formatAmount(figures.taxOpenCents)} nicht verrechnet.`
+              : 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'
+          }
+        />
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium">Bezahlt am</span>
@@ -646,25 +655,20 @@ function PaymentEditor({
           />
         </label>
 
-        {kind === 'zehnten' ? (
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium">Rechnet ab bis und mit</span>
-            <select
-              value={covers}
-              onChange={(event) => setCovers(Number(event.target.value))}
-              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base dark:border-slate-700 dark:bg-slate-900"
-            >
-              {MONTH_NAMES.map((name, index) => (
-                <option key={name} value={index + 1}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-              Damit steht auf dem Bildschirm, bis wann ihr abgerechnet habt.
-            </span>
-          </label>
-        ) : null}
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">Rechnet ab bis und mit</span>
+          <select
+            value={covers}
+            onChange={(event) => setCovers(Number(event.target.value))}
+            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base dark:border-slate-700 dark:bg-slate-900"
+          >
+            {MONTH_NAMES.map((name, index) => (
+              <option key={name} value={index + 1}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium">Notiz (freiwillig)</span>
@@ -677,120 +681,68 @@ function PaymentEditor({
 
         {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
 
-        <div className="mt-auto flex gap-2 pt-4">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button type="submit" loading={add.isPending}>
-            Speichern
-          </Button>
-        </div>
+        <Button type="submit" loading={add.isPending}>
+          Zahlung erfassen
+        </Button>
       </form>
-    </Sheet>
+    </Modal>
   )
 }
 
-function SettingsEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }) {
+/**
+ * Die Steuern des Jahres – das Einzige, was zu einem Jahr eingestellt wird.
+ *
+ * Wie viel davon abgezogen wird, steht hier bewusst nicht: Das entscheidet
+ * sich bei jeder Zahlung.
+ */
+function TaxEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }) {
   const save = useSaveFinanceSettings(data.year)
-
   const [tax, setTax] = useState(() => formatAmount(data.settings.taxCents))
-  const [deductTax, setDeductTax] = useState(data.settings.deductTax)
-  const [rate, setRate] = useState(() =>
-    (data.settings.rateBasisPoints / 100).toString().replace('.', ','),
+
+  const cents = readAmount(tax)
+  const lesbar = cents !== 'fehler'
+
+  const autosave = useAutosave(
+    { tax },
+    async (stand) => {
+      const wert = readAmount(stand.tax)
+      if (wert === 'fehler') return
+      await save.mutateAsync({ taxCents: wert ?? 0 })
+    },
+    { savable: (stand) => readAmount(stand.tax) !== 'fehler' },
   )
-  const [settled, setSettled] = useState(data.settings.settledThroughMonth)
-  const [error, setError] = useState<string | null>(null)
-
-  const vorschau = useMemo(() => {
-    const taxCents = parseAmountToCents(tax) ?? 0
-    return deductTax ? formatAmount(Math.round(taxCents / 12)) : null
-  }, [tax, deductTax])
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-
-    const taxCents = tax.trim() === '' ? 0 : parseAmountToCents(tax)
-    if (taxCents === null) {
-      setError(`Steuerbetrag nicht lesbar: „${tax}"`)
-      return
-    }
-
-    const rateValue = Number(rate.replace(',', '.'))
-    if (!Number.isFinite(rateValue) || rateValue < 0 || rateValue > 100) {
-      setError('Der Satz muss zwischen 0 und 100 liegen.')
-      return
-    }
-
-    const settings: FinanceSettings = {
-      taxCents,
-      deductTax,
-      rateBasisPoints: Math.round(rateValue * 100),
-      settledThroughMonth: settled,
-    }
-    save.mutate(settings, { onSuccess: onClose })
-  }
 
   return (
-    <Sheet title={`Einstellungen ${data.year}`}>
-      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
-        <AmountField label="Steuern für das ganze Jahr" value={tax} onChange={setTax} />
-
-        <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <input
-            type="checkbox"
-            checked={deductTax}
-            onChange={(event) => setDeductTax(event.target.checked)}
-            className="mt-1 size-5 shrink-0 accent-brand-800"
-          />
-          <span>
-            <span className="block text-sm font-medium">
-              Steuern vor dem Zehnten abziehen
+    <Modal
+      onClose={onClose}
+      label={`Steuern ${data.year}`}
+      header={
+        <>
+          <span className="text-sm font-semibold">Steuern {data.year}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {saveStateLabel(autosave.state, lesbar ? undefined : 'Betrag nicht lesbar')}
             </span>
-            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
-              {vorschau
-                ? `Pro Monat werden CHF ${vorschau} vom Einkommen abgezogen.`
-                : 'Der Zehnte wird auf dem vollen erfassten Einkommen gerechnet.'}
-            </span>
-          </span>
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Satz in Prozent</span>
-          <input
-            value={rate}
-            onChange={(event) => setRate(event.target.value)}
-            inputMode="decimal"
-            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-right text-lg tabular-nums dark:border-slate-700 dark:bg-slate-900"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Zehnter abgerechnet bis und mit</span>
-          <select
-            value={settled}
-            onChange={(event) => setSettled(Number(event.target.value))}
-            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base dark:border-slate-700 dark:bg-slate-900"
-          >
-            <option value={0}>noch nichts</option>
-            {MONTH_NAMES.map((name, index) => (
-              <option key={name} value={index + 1}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-
-        <div className="mt-auto flex gap-2 pt-4">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button type="submit" loading={save.isPending}>
-            Speichern
-          </Button>
-        </div>
-      </form>
-    </Sheet>
+            <ModalCloseButton onClick={onClose} label="Fenster schliessen" />
+          </div>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <AmountField
+          label={`Steuern für das ganze Jahr ${data.year}`}
+          value={tax}
+          onChange={setTax}
+          autoFocus
+        />
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Dieser Betrag wird nicht von selbst abgezogen. Beim Erfassen einer Zahlung lässt sich
+          bestimmen, wie viel davon verrechnet wird – ganz oder in Teilen.
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Bisher verrechnet: CHF {formatAmount(data.figures.taxAppliedCents)}.
+        </p>
+      </div>
+    </Modal>
   )
 }
