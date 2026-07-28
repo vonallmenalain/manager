@@ -12,16 +12,74 @@ System zu stehen.
 
 | Schritt | Wo | Dauer |
 |---|---|---|
-| 1 | Cloudflare: Tunnel anlegen | 10 Min |
-| 2 | QNAP: Ordner anlegen | 5 Min |
-| 3 | QNAP: Container starten | 10 Min |
-| 4 | Cloudflare: `api.alae.app` verbinden | 5 Min |
-| 5 | Netlify: Frontend veröffentlichen | 10 Min |
-| 6 | Erste Anmeldung und Installation aufs Handy | 5 Min |
+| 1 | GitHub: Image veröffentlichen und freigeben | 5 Min |
+| 2 | Cloudflare: Tunnel anlegen | 10 Min |
+| 3 | QNAP: Ordner anlegen | 5 Min |
+| 4 | QNAP: Container starten | 10 Min |
+| 5 | Cloudflare: `api.alae.app` verbinden | 5 Min |
+| 6 | Netlify: Frontend veröffentlichen | 10 Min |
+| 7 | Erste Anmeldung und Installation aufs Handy | 5 Min |
 
 ---
 
-## Schritt 1 – Cloudflare Tunnel anlegen
+## Schritt 1 – Image veröffentlichen und freigeben
+
+Bevor das QNAP etwas herunterladen kann, muss es das Image überhaupt geben.
+Beides ist einmalig nötig: **bauen** und **lesbar machen**.
+
+### 1a) Image bauen lassen
+
+Der Workflow *Container veröffentlichen* baut das Image und legt es unter
+`ghcr.io/vonallmenalain/manager-api:latest` ab. Er läuft automatisch bei jedem
+Push auf `main`.
+
+Solange es noch keinen `main`-Branch gibt, einmalig von Hand anstossen:
+**GitHub → Actions → „Container veröffentlichen" → Run workflow**, dabei den
+Entwicklungs-Branch auswählen.
+
+Erst wenn dieser Lauf grün ist, existiert das Image.
+
+### 1b) Paket lesbar machen
+
+GitHub legt neue Pakete **immer privat** an – auch bei einem öffentlichen
+Repository. Ohne Freigabe antwortet GHCR jedem anonymen Abruf mit `denied`,
+egal ob das Image existiert oder nicht.
+
+**Empfohlen – Paket öffentlich schalten:**
+
+1. <https://github.com/vonallmenalain?tab=packages> → `manager-api`
+2. **Package settings** → ganz unten **Danger Zone**
+3. **Change visibility → Public**
+
+Damit braucht das NAS keine Zugangsdaten, und Watchtower kann ohne Anmeldung
+aktualisieren. Das Image enthält nur Anwendungscode, der ohnehin im
+öffentlichen Repository liegt – alle Geheimnisse kommen erst zur Laufzeit aus
+der `.env`.
+
+**Alternative – Paket privat lassen:** Dann muss sich das NAS anmelden. Auf
+GitHub unter *Settings → Developer settings → Personal access tokens* ein
+Token mit der Berechtigung `read:packages` erzeugen und auf dem QNAP einmalig:
+
+```sh
+echo '<TOKEN>' | docker login ghcr.io -u vonallmenalain --password-stdin
+```
+
+Die Zugangsdaten landen in `~/.docker/config.json` und gelten auch für Watchtower.
+
+### 1c) Prüfen
+
+Auf dem QNAP:
+
+```sh
+docker pull ghcr.io/vonallmenalain/manager-api:latest
+```
+
+Das muss durchlaufen, bevor du weitermachst. Bei `denied` ist entweder der
+Workflow aus 1a noch nicht fertig oder die Freigabe aus 1b fehlt.
+
+---
+
+## Schritt 2 – Cloudflare Tunnel anlegen
 
 Der Tunnel baut die Verbindung **von deinem NAS nach aussen** auf. Dadurch
 braucht die QNAP-Firewall keine eingehende Regel, dein Router kein
@@ -32,14 +90,14 @@ Port-Forwarding, und das Zertifikat für `api.alae.app` verwaltet Cloudflare.
 3. Typ **Cloudflared** wählen, Name z.B. `qnap-manager`
 4. Im nächsten Bildschirm den **Tunnel-Token** kopieren
    (die lange Zeichenkette nach `--token` im angezeigten Befehl)
-5. Den Token bereithalten – er kommt in Schritt 3 in die `.env`
+5. Den Token bereithalten – er kommt in Schritt 4 in die `.env`
 
-> Die Zuordnung zu `api.alae.app` machen wir erst in Schritt 4, wenn der
+> Die Zuordnung zu `api.alae.app` machen wir erst in Schritt 5, wenn der
 > Container schon läuft. Andersherum zeigt Cloudflare eine Weile Fehler an.
 
 ---
 
-## Schritt 2 – Ordner auf dem QNAP anlegen
+## Schritt 3 – Ordner auf dem QNAP anlegen
 
 In der **File Station** zwei Ordner anlegen:
 
@@ -61,9 +119,9 @@ Die beiden Zahlen (`uid` und `gid`) notieren.
 
 ---
 
-## Schritt 3 – Container starten
+## Schritt 4 – Container starten
 
-### 3a) Dateien ablegen
+### 4a) Dateien ablegen
 
 `infra/docker-compose.yml` und `infra/.env.example` aus diesem Repository nach
 `/share/Container/manager/` kopieren, dann:
@@ -73,7 +131,7 @@ cd /share/Container/manager
 cp .env.example .env
 ```
 
-### 3b) `.env` ausfüllen
+### 4b) `.env` ausfüllen
 
 ```sh
 # Zufallswerte erzeugen:
@@ -86,16 +144,16 @@ Alle Werte eintragen:
 ```ini
 SESSION_SECRET=<die 48-Byte-Zeichenkette>
 SETUP_TOKEN=<die 16-Byte-Zeichenkette>
-TUNNEL_TOKEN=<Token aus Schritt 1>
+TUNNEL_TOKEN=<Token aus Schritt 2>
 DATA_PATH=/share/Container/manager/data
 STORAGE_PATH=/share/Dokumente/Manager
 PUID=1000
 PGID=100
 ```
 
-`PUID`/`PGID` sind die Zahlen aus Schritt 2.
+`PUID`/`PGID` sind die Zahlen aus Schritt 3.
 
-### 3c) Starten
+### 4c) Starten
 
 In der **Container Station → Anwendungen → Erstellen** den Inhalt der
 `docker-compose.yml` einfügen, oder per SSH:
@@ -105,7 +163,7 @@ cd /share/Container/manager
 docker compose up -d
 ```
 
-### 3d) Prüfen
+### 4d) Prüfen
 
 ```sh
 docker compose logs -f manager-api
@@ -131,7 +189,7 @@ docker exec manager-api node -e \
 
 ---
 
-## Schritt 4 – `api.alae.app` mit dem Tunnel verbinden
+## Schritt 5 – `api.alae.app` mit dem Tunnel verbinden
 
 Zurück in Cloudflare Zero Trust, im angelegten Tunnel:
 
@@ -153,7 +211,7 @@ Es muss `{"status":"ok",...}` erscheinen. Falls nicht, zuerst in den
 
 ---
 
-## Schritt 5 – Netlify
+## Schritt 6 – Netlify
 
 1. Auf [netlify.com](https://app.netlify.com) → **Add new site → Import an existing project**
 2. Das Repository `vonallmenalain/manager` verbinden
@@ -176,7 +234,7 @@ Prüfen: `https://manager.alae.app` zeigt den Einrichtungsbildschirm.
 
 ---
 
-## Schritt 6 – Erste Anmeldung
+## Schritt 7 – Erste Anmeldung
 
 1. `https://manager.alae.app` auf dem Handy öffnen
 2. Der Bildschirm **Ersteinrichtung** erscheint, weil noch kein Konto existiert
@@ -197,10 +255,16 @@ kann auch nicht verloren gehen.
 ## Wie Aktualisierungen ab jetzt ablaufen
 
 ```
-git push  →  GitHub Actions baut  →  GHCR  →  Watchtower zieht (max. 5 Min)  →  läuft
+git push auf main  →  GitHub Actions baut  →  GHCR  →  Watchtower zieht (max. 5 Min)  →  läuft
 ```
 
 Für das Frontend baut Netlify parallel und veröffentlicht direkt.
+
+> **Voraussetzung: ein `main`-Branch.** Die Entwicklung läuft auf
+> Feature-Branches, veröffentlicht wird nur von `main`. Sobald der erste
+> Branch dorthin zusammengeführt ist, greift die Automatik. Bis dahin lässt
+> sich jeder Build von Hand anstossen (Actions → *Container veröffentlichen*
+> → **Run workflow**).
 
 **Kontrolle, ob eine Änderung angekommen ist:** `https://api.alae.app/api/health`
 zeigt `version` (der Git-SHA des laufenden Standes) und `uptime` (Sekunden
@@ -244,9 +308,10 @@ Dokumenten-Backup mitgenommen.
 
 | Symptom | Wahrscheinliche Ursache |
 |---|---|
+| `docker pull` meldet `denied` | Das Image existiert noch nicht (Workflow aus Schritt 1a nie gelaufen) **oder** das Paket ist noch privat (Schritt 1b). GHCR unterscheidet die beiden Fälle für anonyme Abrufe nicht – die Meldung ist immer `denied` |
 | `api.alae.app` nicht erreichbar | `cloudflared`-Container läuft nicht, oder Public Hostname zeigt auf `localhost` statt `manager-api:8080` |
 | Anmeldung klappt, nach dem Neuladen wieder abgemeldet | `COOKIE_DOMAIN` ist nicht `.alae.app`, oder `VITE_API_URL` zeigt auf eine andere Domain als das Cookie |
-| `permission denied` im Log | `PUID`/`PGID` passen nicht zum Besitzer der Ordner (Schritt 2) |
+| `permission denied` im Log | `PUID`/`PGID` passen nicht zum Besitzer der Ordner (Schritt 3) |
 | Frontend zeigt „Keine Verbindung zum Server" | `VITE_API_URL` in Netlify fehlt oder ist falsch – nach Änderung neu deployen |
 | Watchtower aktualisiert nicht | Label `com.centurylinklabs.watchtower.enable=true` fehlt am Container |
 | Setup-Bildschirm erscheint erneut | Das `data`-Volume ist nicht korrekt gemountet – die Datenbank landet sonst im Container und ist nach jedem Update weg |
