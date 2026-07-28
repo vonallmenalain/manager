@@ -10,6 +10,13 @@ export interface SessionState {
   isLoading: boolean
   /** true, solange noch kein einziges Konto existiert – dann zeigt die App die Ersteinrichtung. */
   needsSetup: boolean
+  /**
+   * Das Backend antwortet gar nicht. Muss getrennt behandelt werden: Sonst
+   * landet man auf dem Anmeldebildschirm und hält sein Passwort für falsch,
+   * obwohl die Anfrage nie beim Server ankam.
+   */
+  connectionError: boolean
+  retry: () => void
 }
 
 export function useSession(): SessionState {
@@ -39,10 +46,20 @@ export function useSession(): SessionState {
     retry: false,
   })
 
+  const connectionError =
+    sessionQuery.isError &&
+    sessionQuery.error instanceof ApiRequestError &&
+    sessionQuery.error.code === 'network_error'
+
   return {
     user: sessionQuery.data ?? null,
     isLoading: sessionQuery.isLoading || (isLoggedOut && setupQuery.isLoading),
     needsSetup: setupQuery.data?.needsSetup ?? false,
+    connectionError,
+    retry: () => {
+      void sessionQuery.refetch()
+      void setupQuery.refetch()
+    },
   }
 }
 
