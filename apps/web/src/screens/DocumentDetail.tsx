@@ -4,6 +4,7 @@ import {
   formatAmount,
   formatFileSize,
   parseAmountToCents,
+  UNCATEGORIZED_LABEL,
   type DocumentDetail,
   type DocumentStatus,
   type UpdateDocumentInput,
@@ -116,7 +117,7 @@ export function DocumentDetail() {
       ) : (
         <dl className="divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
           <Row label="Datum" value={document.docDate} />
-          <Row label="Kategorie" value={category?.name ?? 'Unsortiert'} />
+          <Row label="Kategorie" value={category?.name ?? UNCATEGORIZED_LABEL} />
           <Row label="Zuständig" value={assignee?.name ?? 'beide'} />
           <Row label="Fällig" value={document.dueDate ?? '–'} />
           <Row
@@ -282,7 +283,7 @@ function EditForm({ document, categories, users, saving, onSave }: EditFormProps
           onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
           className={inputClass}
         >
-          <option value="">Unsortiert</option>
+          <option value="">{UNCATEGORIZED_LABEL}</option>
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name}

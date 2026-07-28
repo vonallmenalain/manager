@@ -48,12 +48,12 @@ describe('buildStoragePath', () => {
   it('legt nach Jahr und Kategorie ab und bleibt lesbar', () => {
     const path = buildStoragePath({
       docDate: '2026-03-14',
-      categoryName: 'Versicherung',
+      categoryName: 'Rechnungen',
       title: 'Krankenkasse Prämie März',
       documentId: 'a3f9c1d2-0000-4000-8000-000000000000',
       extension: 'pdf',
     })
-    assert.equal(path, '2026/Versicherung/2026-03-14__Krankenkasse-Praemie-Maerz__a3f9c1d2.pdf')
+    assert.equal(path, '2026/Rechnungen/2026-03-14__Krankenkasse-Praemie-Maerz__a3f9c1d2.pdf')
   })
 
   it('nutzt "Unsortiert", solange keine Kategorie gesetzt ist', () => {

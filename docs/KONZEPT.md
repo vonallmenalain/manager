@@ -116,11 +116,11 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
 ```
 /share/Dokumente/Manager/
 ├── 2026/
-│   ├── Versicherung/
+│   ├── Rechnungen/
 │   │   ├── 2026-03-14__Krankenkasse-Praemie-Maerz__a3f9.pdf
 │   │   └── 2026-03-14__Krankenkasse-Praemie-Maerz__a3f9.txt   ← OCR-Text
-│   ├── Steuern/
-│   └── Wohnen/
+│   ├── Steuererklaerung/
+│   └── Unsortiert/                      ← alles frisch Hochgeladene
 ├── 2025/
 ├── .previews/                           ← gerasterte PDF-Seiten, jederzeit neu erzeugbar
 └── .trash/                              ← 30 Tage Papierkorb, dann echt gelöscht
@@ -160,8 +160,12 @@ erDiagram
 * `documents` – id, title, storage_path, mime, size_bytes, sha256, **uploaded_by**,
   **uploaded_at**, doc_date, category_id, **assigned_to**, **status**, due_date,
   amount_chf, vendor, ocr_status, ocr_text, notes, deleted_at
-* `categories` – id, name, icon, sort_order (Start-Set: Versicherung, Steuern, Wohnen,
-  Fahrzeug, Gesundheit, Bank/Finanzen, Arbeit, Verträge, Garantie/Quittung, Behörden, Sonstiges)
+* `categories` – id, name, icon, sort_order (Steuererklärung, Kinder, Rechnungen,
+  Wichtige Dokumente, Sonstiges). „Unsortiert" steht bewusst nicht darin: Das ist das
+  Fehlen einer Zuordnung und damit der Zustand jedes frisch hochgeladenen Dokuments –
+  als eigene Zeile gäbe es zwei Arten, dasselbe zu sagen. Die Liste im Code ist die
+  Wahrheit und wird bei jedem Start abgeglichen (`syncCategories`); Dokumente einer
+  entfernten Kategorie werden unsortiert und ihre Dateien wandern mit.
 * `tags`, `document_tags` – freie Verschlagwortung neben den Kategorien
 * `documents.search_text` – Titel, Absender, Notiz und OCR-Text in einer vereinheitlichten
   Spalte; dieselbe Aufbereitung nutzen auch `notes.search_text` und die Einkaufsliste

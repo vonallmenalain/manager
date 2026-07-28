@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { buildApp } from './app.js'
 import { deleteExpiredSessions } from './auth/session.js'
 import { closeDb, runMigrations } from './db/index.js'
-import { backfillSearchText, seedCategories } from './db/seed.js'
+import { backfillSearchText, syncCategories } from './db/seed.js'
 import { env } from './env.js'
 import { cleanStaleTemporaryFiles } from './lib/storage.js'
 import { startOcrWorker, stopOcrWorker } from './ocr/index.js'
@@ -21,8 +21,13 @@ async function main(): Promise<void> {
 
   const app = await buildApp()
 
-  const seeded = await seedCategories()
-  if (seeded > 0) app.log.info({ count: seeded }, 'Start-Kategorien angelegt')
+  const kategorien = await syncCategories()
+  if (kategorien.added.length > 0 || kategorien.removed.length > 0) {
+    app.log.info(
+      { added: kategorien.added, removed: kategorien.removed, unsorted: kategorien.unsorted },
+      'Kategorien abgeglichen',
+    )
+  }
 
   const backfilled = await backfillSearchText()
   if (backfilled > 0) app.log.info({ count: backfilled }, 'Suchtext nachgetragen')
