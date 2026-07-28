@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -78,6 +78,26 @@ export async function moveWithinStorage(from: string, to: string): Promise<boole
   await mkdir(dirname(target), { recursive: true })
   await rename(source, target)
   return true
+}
+
+/**
+ * Räumt ein Verzeichnis weg, wenn nichts mehr darin liegt.
+ *
+ * Gedacht für den Ordner einer Kategorie, die es nicht mehr gibt: Bliebe er
+ * leer stehen, sähe es in der Freigabe aus, als wäre die Umstellung nur halb
+ * passiert. `rmdir` scheitert von sich aus, sobald noch etwas darin liegt –
+ * eine zusätzliche Prüfung wäre nur ein Zeitfenster für Fehler.
+ */
+export async function removeEmptyDirectory(relativePath: string): Promise<boolean> {
+  // Der Wurzelordner der Ablage bleibt immer stehen.
+  if (!relativePath || relativePath === '.' || relativePath === '/') return false
+
+  try {
+    await rmdir(resolveInStorage(relativePath))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

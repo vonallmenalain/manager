@@ -1,4 +1,9 @@
-import { formatAmount, type ManagedDocument } from '@manager/shared'
+import {
+  formatAmount,
+  UNCATEGORIZED,
+  UNCATEGORIZED_LABEL,
+  type ManagedDocument,
+} from '@manager/shared'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -123,6 +128,15 @@ function FilterChips({ filters, onChange, categories, users }: FilterChipsProps)
           {user.name}
         </Chip>
       ))}
+      {/* Unsortiert steht zuerst und ist keine Zeile in der Kategorientabelle,
+          sondern das Fehlen einer Zuordnung – die Liste dessen, was nach dem
+          Hochladen noch einsortiert werden will. */}
+      <Chip
+        active={filters.categoryId === UNCATEGORIZED}
+        onClick={() => toggle('categoryId', UNCATEGORIZED)}
+      >
+        {UNCATEGORIZED_LABEL}
+      </Chip>
       {categories.map((category) => (
         <Chip
           key={category.id}

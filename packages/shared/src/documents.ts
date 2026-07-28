@@ -36,6 +36,17 @@ export const ALLOWED_MIME_TYPES = [
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
+/**
+ * Wie nach „hat noch keine Kategorie" gefiltert wird.
+ *
+ * Unsortiert ist keine Zeile in der Kategorientabelle, sondern das Fehlen
+ * einer Zuordnung – der Zustand jedes frisch hochgeladenen Dokuments. Für den
+ * Filter braucht es trotzdem einen Wert, den man in die Adresse schreiben
+ * kann. Eine UUID sieht anders aus, eine Verwechslung ist also ausgeschlossen.
+ */
+export const UNCATEGORIZED = 'unsortiert'
+export const UNCATEGORIZED_LABEL = 'Unsortiert'
+
 export const categorySchema = z.object({
   id: z.string(),
   name: z.string(),

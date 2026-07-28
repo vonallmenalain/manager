@@ -9,6 +9,7 @@ import {
   MAX_UPLOAD_BYTES,
   normalizeForSearch,
   OPEN_STATUSES,
+  UNCATEGORIZED,
   updateDocumentSchema,
   type PreviewInfo,
 } from '@manager/shared'
@@ -193,7 +194,13 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (status) conditions.push(eq(documents.status, status))
     if (pending) conditions.push(inArray(documents.status, [...OPEN_STATUSES]))
-    if (categoryId) conditions.push(eq(documents.categoryId, categoryId))
+    if (categoryId) {
+      conditions.push(
+        categoryId === UNCATEGORIZED
+          ? isNull(documents.categoryId)
+          : eq(documents.categoryId, categoryId),
+      )
+    }
     if (assignedTo) conditions.push(eq(documents.assignedTo, assignedTo))
     if (year) conditions.push(like(documents.docDate, `${year}-%`))
 
