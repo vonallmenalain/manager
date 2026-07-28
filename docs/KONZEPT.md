@@ -204,16 +204,30 @@ Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).
 
 ### 6.2 Einkaufsliste
 
-Eine gemeinsame Liste, offline-fähig. Neuer Eintrag über ein einzeiliges Feld am unteren
-Rand (immer erreichbar). Tap = erledigt, wandert nach unten und wird ausgegraut.
-Automatische Sortierung nach Ladenkategorie (Früchte, Molkerei, …) auf Basis der
-zuletzt verwendeten Zuordnung. "Erledigte löschen" räumt auf. Änderungen der einen Person
-erscheinen bei der anderen live (Polling im Vordergrund, Push optional).
+Eine gemeinsame Liste. Neuer Eintrag über ein einzeiliges Feld am unteren Rand (immer
+erreichbar, der Fokus bleibt nach dem Absenden darin – man trägt selten nur eine Sache
+ein). Die ganze Zeile ist die Trefferfläche zum Abhaken; im Laden trifft man kein kleines
+Kästchen. Erledigtes rutscht in einen eigenen Block, „Aufräumen" leert ihn.
+
+**Nach Abteilungen sortiert**, in der Reihenfolge des Ladenrundgangs (Früchte & Gemüse →
+… → Haushalt). Ein neuer Eintrag bekommt seine Abteilung aus einer schlichten
+Stichwortliste (`Vollmilch` → Molkerei, `Ruchbrot` → Brot & Backwaren). Liegt sie falsch,
+korrigiert man sie einmal – **die Korrektur wird dauerhaft gemerkt** und gilt beim
+nächsten Mal von selbst.
+
+Das Gelernte steht bewusst in einer eigenen Tabelle (`shopping_memory`), nicht am Eintrag:
+„Aufräumen" läuft nach jedem Einkauf und würde das Gelernte sonst jedes Mal mitlöschen.
+
+Jede Änderung erscheint sofort in der Liste und wird erst danach zum Server geschickt
+(bei einem Fehler zurückgerollt). Im Laden zählt das mehr als anderswo – mit einem Balken
+Empfang fühlt sich eine halbe Sekunde Verzögerung an, als hätte die App den Tipp
+verschluckt. Änderungen der anderen Person kommen alle 20 Sekunden nach.
 
 ### 6.3 Notizen
 
-Kurze Notizen mit Titel und Markdown-Text, optional als Checkliste. Anheften, Farbe,
-Volltextsuche. Bewusst schlicht – kein zweites Notion.
+Kurze Notizen mit Titel und Text. Anheften (steht dann zuoberst), fünf gedeckte Farben,
+Suche über Titel und Text – mit denselben Regeln wie bei den Dokumenten, also findet
+`zuegeltermin` auch „Zügeltermin". Bewusst schlicht – kein zweites Notion.
 
 ### 6.4 Finanzen: Zehnten und Fastopfer
 
@@ -304,9 +318,15 @@ Manifest mit `display: standalone`, Icons bis 512 px, Maskable-Icon, Theme-Color
 `orientation: portrait`. Auf Android über den Installations-Prompt, auf iOS über
 "Zum Home-Bildschirm". Ab iOS 26 öffnen Home-Screen-Sites standardmässig als Web-App.
 
-**Offline:** App-Shell und letzte Dokumentenliste werden vorgehalten. Einkaufsliste und
-Notizen sind vollständig offline nutzbar (lokale Änderungen in IndexedDB, Sync-Queue bei
-Verbindung). Uploads ohne Netz werden vorgemerkt und automatisch nachgeholt.
+**Offline:** App-Shell und zuletzt geladene Listen werden vorgehalten, ein Hinweisband
+zeigt an, dass keine Verbindung besteht – man sieht also weiterhin, was auf der
+Einkaufsliste steht und was in den Notizen. Änderungen ohne Netz sind noch nicht
+möglich: Sie erscheinen kurz und werden zurückgerollt, sobald der Server nicht antwortet.
+
+Eine echte Warteschlange (lokale Änderungen zwischenspeichern und bei Verbindung
+nachschicken) ist bewusst auf **Etappe 6** verschoben. Sie bringt Konfliktfälle mit sich
+– zwei Personen ändern dieselbe Zeile, beide offline –, die eine eigene Runde verdienen,
+statt nebenbei mitgebaut zu werden.
 
 ### 8.2 Das Teilen-Thema – ehrlich betrachtet
 
@@ -450,9 +470,9 @@ eine funktionierende App auf dem Handy.
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Kamera-Aufnahme, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
-| **4** | **Alltag** | Einkaufsliste, Notizen, beides offline-fähig mit Sync | Die App wird täglich benutzt, nicht nur bei Post |
+| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen mit Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, Jahresexport | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
-| **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Backup-Automatik, Papierkorb | Die App denkt mit |
+| **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
 
 Reihenfolge ist verschiebbar. Wenn die Zehnten-Abrechnung dringender ist als OCR,
 ziehen wir Etappe 5 vor – sie hängt von nichts ab ausser Etappe 0.

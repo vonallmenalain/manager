@@ -1,15 +1,17 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from './components/AppShell'
-import { CartIcon, CoinIcon, NoteIcon } from './components/icons'
+import { CoinIcon } from './components/icons'
 import { useSession } from './lib/session'
 import { BackendUnreachable } from './screens/BackendUnreachable'
 import { Dashboard } from './screens/Dashboard'
 import { DocumentDetail } from './screens/DocumentDetail'
 import { Documents } from './screens/Documents'
 import { Login } from './screens/Login'
+import { Notes } from './screens/Notes'
 import { Placeholder } from './screens/Placeholder'
 import { Setup } from './screens/Setup'
+import { Shopping } from './screens/Shopping'
 
 export function App() {
   const { user, isLoading, needsSetup, connectionError, retry } = useSession()
@@ -27,28 +29,8 @@ export function App() {
           <Route index element={<Dashboard user={user} />} />
           <Route path="dokumente" element={<Documents />} />
           <Route path="dokumente/:id" element={<DocumentDetail />} />
-          <Route
-            path="einkauf"
-            element={
-              <Placeholder
-                title="Einkauf"
-                stage={4}
-                description="Eine gemeinsame Liste, die auch ohne Empfang im Laden funktioniert."
-                icon={<CartIcon className="size-8" />}
-              />
-            }
-          />
-          <Route
-            path="notizen"
-            element={
-              <Placeholder
-                title="Notizen"
-                stage={4}
-                description="Kurze Notizen und Checklisten für beide."
-                icon={<NoteIcon className="size-8" />}
-              />
-            }
-          />
+          <Route path="einkauf" element={<Shopping />} />
+          <Route path="notizen" element={<Notes />} />
           <Route
             path="finanzen"
             element={

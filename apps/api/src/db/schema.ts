@@ -158,3 +158,83 @@ export const activity = sqliteTable(
 )
 
 export type ActivityRow = typeof activity.$inferSelect
+
+/**
+ * Einkaufsliste – eine gemeinsame Liste für den ganzen Haushalt.
+ *
+ * Bewusst ohne Mengeneinheiten und ohne Rezeptverknüpfung: Was man im Laden
+ * braucht, ist eine Zeile Text und ein Häkchen.
+ */
+export const shoppingItems = sqliteTable(
+  'shopping_items',
+  {
+    id: text('id').primaryKey(),
+    text: text('text').notNull(),
+    /** Vereinheitlicht, um dasselbe Produkt beim nächsten Mal wiederzuerkennen. */
+    normalizedText: text('normalized_text').notNull(),
+    /** Abteilung im Laden, damit die Liste der Wegführung folgt. */
+    section: text('section').notNull().default('Sonstiges'),
+
+    done: integer('done', { mode: 'boolean' }).notNull().default(false),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    doneBy: text('done_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull().default(now),
+    doneAt: text('done_at'),
+  },
+  (table) => [
+    index('shopping_done_idx').on(table.done),
+    index('shopping_normalized_idx').on(table.normalizedText),
+  ],
+)
+
+export type ShoppingItemRow = typeof shoppingItems.$inferSelect
+
+/**
+ * Gedächtnis der Einkaufsliste: In welcher Abteilung stand dieser Artikel
+ * zuletzt?
+ *
+ * Bewusst getrennt von den Einträgen selbst. „Erledigte löschen" passiert nach
+ * jedem Einkauf – läge die Zuordnung nur an den Einträgen, wäre das Gelernte
+ * jedes Mal weg und die Liste würde nie besser werden.
+ */
+export const shoppingMemory = sqliteTable('shopping_memory', {
+  normalizedText: text('normalized_text').primaryKey(),
+  section: text('section').notNull(),
+  updatedAt: text('updated_at').notNull().default(now),
+})
+
+export type ShoppingMemoryRow = typeof shoppingMemory.$inferSelect
+
+/**
+ * Notizen. Kurz gehalten – wer eine Gliederung mit Unterseiten braucht,
+ * nimmt ein anderes Werkzeug.
+ */
+export const notes = sqliteTable(
+  'notes',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull().default(''),
+    body: text('body').notNull().default(''),
+    /** Angeheftete stehen immer oben. */
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    color: text('color').notNull().default('default'),
+
+    /** Titel und Text vereinheitlicht – dieselbe Suchlogik wie bei Dokumenten. */
+    searchText: text('search_text').notNull().default(''),
+
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: text('created_at').notNull().default(now),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (table) => [
+    index('notes_pinned_idx').on(table.pinned, table.updatedAt),
+    index('notes_search_idx').on(table.searchText),
+  ],
+)
+
+export type NoteRow = typeof notes.$inferSelect
