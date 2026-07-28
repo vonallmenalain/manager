@@ -186,14 +186,19 @@ Der Tunnel steht jetzt zwar (*Status: Healthy*), weiss aber noch nicht, wohin
 er Anfragen schicken soll – die Übersicht zeigt **Routes: 0**. Das ändern wir:
 
 1. Im Tunnel `qnap-manager` auf **+ Add route** (oder Reiter **Routes → Add route**)
-2. Als Typ **Public hostname** wählen
-3. Subdomain: `api` · Domain: `alae.app` · Path: leer lassen
-4. Service – Type: **HTTP** · URL: `manager-api:8080`
-5. Speichern
+2. Subdomain: `api` · Domain: `alae.app` · Path: leer lassen
+3. **Service URL:** `http://manager-api:8080`
+4. **Add route**
 
-> **`manager-api:8080`, nicht `localhost:8080`.** Der `cloudflared`-Container
-> hat sein eigenes `localhost` – dort läuft nichts. Beide Container hängen im
-> selben Docker-Netzwerk und finden sich über den Container-Namen.
+Zwei Fallstricke in diesem einen Feld:
+
+* **Das Protokoll muss mit.** Ohne `http://` weist die Oberfläche die Eingabe
+  ab („Invalid service URL format").
+* **`manager-api`, nicht `localhost`.** Der Platzhalter im Feld schlägt
+  `https://localhost:8080` vor – hier doppelt falsch: Der `cloudflared`-Container
+  hat sein eigenes `localhost`, dort läuft nichts. Beide Container hängen im
+  selben Docker-Netzwerk und finden sich über den Container-Namen. Und intern
+  wird unverschlüsselt gesprochen; das TLS nach aussen übernimmt Cloudflare.
 
 Den DNS-Eintrag für `api.alae.app` legt Cloudflare dabei selbst an, ebenso das
 Zertifikat. Ein Blick in die DNS-Einstellungen ist nicht nötig.
@@ -209,7 +214,7 @@ Es muss `{"status":"ok","version":"…","uptime":…}` erscheinen.
 | Antwort | Bedeutung |
 |---|---|
 | `{"status":"ok",…}` | Alles richtig, weiter zu Schritt 6 |
-| Fehler **1033** | Route zeigt ins Leere – meist `localhost` statt `manager-api` |
+| Fehler **1033** | Route zeigt ins Leere – meist `http://localhost:8080` statt `http://manager-api:8080` |
 | Fehler **502** | Route stimmt, aber `manager-api` läuft nicht: `docker compose logs manager-api` |
 | `{"error":{"code":"not_found"…}}` | Die API antwortet, nur der Pfad ist falsch – es muss `/api/health` sein |
 
