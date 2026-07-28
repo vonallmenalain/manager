@@ -3,8 +3,9 @@
 Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen
 und Finanzen (Zehnten / Fastopfer) für zwei Personen.
 
-**Stand: Etappe 0 abgeschlossen** – Fundament steht, Anmeldung funktioniert.
-Die Fachfunktionen folgen etappenweise, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
+**Stand: Etappe 1 abgeschlossen** – Dokumente lassen sich hochladen,
+kategorisieren, zuweisen und wiederfinden. Weiter geht es mit dem schnellen
+Handy-Upload, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz
 

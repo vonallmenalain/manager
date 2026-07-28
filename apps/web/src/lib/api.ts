@@ -1,12 +1,19 @@
 import type {
+  Category,
   CreateUserInput,
+  DocumentDetail,
   Health,
   LoginInput,
+  ManagedDocument,
   PublicUser,
   SetupInput,
+  UpdateDocumentInput,
 } from '@manager/shared'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+
+/** Für Adressen, die der Browser direkt lädt (Bilder, Downloads). */
+export const API_BASE = API_URL
 
 /**
  * Trägt Code und Feldfehler der API mit – damit kann ein Formular die Meldung
@@ -35,7 +42,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       // manager-api.alae.app – die häufigste Ursache für 'plötzlich abgemeldet'.
       credentials: 'include',
       headers: {
-        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        // Nur bei JSON selbst setzen. Bei FormData muss der Browser den
+        // content-type samt multipart-Grenze bestimmen – setzt man ihn hier,
+        // kann der Server den Datenstrom nicht mehr zerlegen.
+        ...(typeof init.body === 'string' ? { 'content-type': 'application/json' } : {}),
         ...init.headers,
       },
     })
@@ -98,4 +108,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  listCategories: () => request<{ categories: Category[] }>('/api/categories'),
+
+  listDocuments: (query = '') =>
+    request<{ documents: ManagedDocument[]; total: number }>(`/api/documents${query}`),
+
+  getDocument: (id: string) => request<{ document: DocumentDetail }>(`/api/documents/${id}`),
+
+  uploadDocument: (file: File, allowDuplicate = false) => {
+    const body = new FormData()
+    body.append('file', file)
+    // Kein content-type setzen: Der Browser muss die multipart-Grenze selbst
+    // bestimmen, sonst kann der Server den Datenstrom nicht zerlegen.
+    return request<{ document: ManagedDocument }>(
+      `/api/documents${allowDuplicate ? '?allowDuplicate=1' : ''}`,
+      { method: 'POST', body },
+    )
+  },
+
+  updateDocument: (id: string, changes: UpdateDocumentInput) =>
+    request<{ document: DocumentDetail }>(`/api/documents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
+
+  deleteDocument: (id: string) =>
+    request<void>(`/api/documents/${id}`, { method: 'DELETE' }),
 }

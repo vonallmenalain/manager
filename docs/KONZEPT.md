@@ -446,8 +446,8 @@ eine funktionierende App auf dem Handy.
 
 | # | Etappe | Inhalt | Ergebnis für dich |
 |---|---|---|---|
-| **0** | **Fundament** | Monorepo, CI/CD, Container, Tunnel, Domain, Login | `manager.alae.app` ist erreichbar, ihr könnt euch anmelden |
-| **1** | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
+| **0** ✅ | **Fundament** | Monorepo, CI/CD, Container, Tunnel, Domain, Login | `manager.alae.app` ist erreichbar, ihr könnt euch anmelden |
+| **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** | **Mobil** | PWA-Installation, Share Target (Android) bzw. Kurzbefehl (iOS), Kamera-Scan, Offline-Shell | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** | **OCR** | Job-Worker, OCRmyPDF, Volltextindex, Suche mit Textausschnitten, Metadaten-Heuristik | Suche findet Inhalte, nicht nur Titel |
 | **4** | **Alltag** | Einkaufsliste, Notizen, beides offline-fähig mit Sync | Die App wird täglich benutzt, nicht nur bei Post |

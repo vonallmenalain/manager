@@ -1,14 +1,17 @@
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
-import { API_ERROR_CODES } from '@manager/shared'
+import { API_ERROR_CODES, MAX_UPLOAD_BYTES } from '@manager/shared'
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify'
 
 import { env, isProduction } from './env.js'
 import { apiError, internalError } from './lib/errors.js'
 import authPlugin from './plugins/auth.js'
 import authRoutes from './routes/auth.js'
+import categoryRoutes from './routes/categories.js'
+import documentRoutes from './routes/documents.js'
 import healthRoutes from './routes/health.js'
 import setupRoutes from './routes/setup.js'
 import userRoutes from './routes/users.js'
@@ -41,6 +44,15 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(cookie, { secret: env.SESSION_SECRET })
 
+  await app.register(multipart, {
+    limits: {
+      fileSize: MAX_UPLOAD_BYTES,
+      // Ein Upload pro Anfrage. Mehrfachauswahl im UI schickt mehrere
+      // Anfragen – so schlägt bei einer defekten Datei nicht alles fehl.
+      files: 1,
+    },
+  })
+
   await app.register(rateLimit, {
     global: false,
     max: 300,
@@ -53,6 +65,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(setupRoutes)
   await app.register(authRoutes)
   await app.register(userRoutes)
+  await app.register(categoryRoutes)
+  await app.register(documentRoutes)
 
   app.setNotFoundHandler(async (_request, reply) => {
     return reply.status(404).send(apiError(API_ERROR_CODES.notFound, 'Endpunkt nicht gefunden.'))

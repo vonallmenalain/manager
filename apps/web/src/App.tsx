@@ -1,9 +1,11 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from './components/AppShell'
-import { CartIcon, CoinIcon, DocumentIcon, NoteIcon } from './components/icons'
+import { CartIcon, CoinIcon, NoteIcon } from './components/icons'
 import { useSession } from './lib/session'
 import { Dashboard } from './screens/Dashboard'
+import { DocumentDetail } from './screens/DocumentDetail'
+import { Documents } from './screens/Documents'
 import { Login } from './screens/Login'
 import { Placeholder } from './screens/Placeholder'
 import { Setup } from './screens/Setup'
@@ -19,17 +21,8 @@ export function App() {
       <Routes>
         <Route element={<AppShell user={user} />}>
           <Route index element={<Dashboard user={user} />} />
-          <Route
-            path="dokumente"
-            element={
-              <Placeholder
-                title="Dokumente"
-                stage={1}
-                description="Rechnungen und Post erfassen, kategorisieren, zuweisen und wiederfinden."
-                icon={<DocumentIcon className="size-8" />}
-              />
-            }
-          />
+          <Route path="dokumente" element={<Documents />} />
+          <Route path="dokumente/:id" element={<DocumentDetail />} />
           <Route
             path="einkauf"
             element={

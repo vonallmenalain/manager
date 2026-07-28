@@ -1,10 +1,12 @@
 import type { PublicUser } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { Button } from '../components/Button'
 import { Field } from '../components/Field'
 import { api, ApiRequestError } from '../lib/api'
+import { useDocuments } from '../lib/documents'
 
 export function Dashboard({ user }: { user: PublicUser }) {
   const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: 1 })
@@ -14,9 +16,11 @@ export function Dashboard({ user }: { user: PublicUser }) {
       <section>
         <h1 className="text-2xl font-bold">{greeting()}, {user.name.split(' ')[0]}.</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Das Fundament steht. Die Bereiche unten füllen wir Schritt für Schritt.
+          Was heute offen ist, steht gleich unten.
         </p>
       </section>
+
+      <PendingCard />
 
       <HouseholdCard />
 
@@ -55,6 +59,72 @@ function greeting(): string {
   if (hour < 11) return 'Guten Morgen'
   if (hour < 18) return 'Hallo'
   return 'Guten Abend'
+}
+
+/**
+ * Beantwortet die Frage, für die man die App am ehesten öffnet: Was ist
+ * noch offen? Fälligkeiten stehen zuerst, danach der Rest.
+ */
+function PendingCard() {
+  const pending = useDocuments({ pending: true })
+  const documents = pending.data?.documents ?? []
+
+  const today = new Date().toISOString().slice(0, 10)
+  const due = documents
+    .filter((document) => document.dueDate !== null)
+    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+
+  if (pending.isLoading) {
+    return <div className="h-24 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400">Pendent</h2>
+        <Link to="/dokumente" className="text-sm font-medium text-brand-700 dark:text-brand-300">
+          Alle ansehen
+        </Link>
+      </div>
+
+      {documents.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+          Nichts offen. Angenehm.
+        </p>
+      ) : (
+        <>
+          <p className="mt-2 text-3xl font-bold">{pending.data?.total ?? documents.length}</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {(pending.data?.total ?? 0) === 1 ? 'Dokument wartet' : 'Dokumente warten'}
+          </p>
+
+          {due.length > 0 ? (
+            <ul className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
+              {due.slice(0, 3).map((document) => (
+                <li key={document.id}>
+                  <Link
+                    to={`/dokumente/${document.id}`}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <span className="truncate">{document.title}</span>
+                    <span
+                      className={`shrink-0 text-xs font-medium ${
+                        (document.dueDate ?? '') < today
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      {(document.dueDate ?? '') < today ? 'überfällig' : `bis ${document.dueDate}`}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </section>
+  )
 }
 
 function HouseholdCard() {
@@ -152,7 +222,6 @@ function HouseholdCard() {
 }
 
 const ROADMAP = [
-  { stage: 1, title: 'Dokumente', detail: 'Upload, Kategorien, Status, Zuweisung, Suche' },
   { stage: 2, title: 'Mobil', detail: 'Teilen-Menü, Kamera-Scan, Offline' },
   { stage: 3, title: 'Texterkennung', detail: 'OCR und Volltextsuche' },
   { stage: 4, title: 'Einkauf & Notizen', detail: 'Gemeinsame Listen, offline nutzbar' },
