@@ -28,3 +28,13 @@ Thumbs.db
 # Von tsc -b erzeugte Zwischenstände
 *.tsbuildinfo
 **/*.tsbuildinfo
+
+# Von tsc versehentlich neben die Quelle emittierte Artefakte.
+# Besonders heikel: Ein vite.config.js hat Vorrang vor vite.config.ts und
+# überschreibt die Konfiguration stillschweigend mit einem alten Stand.
+apps/web/vite.config.js
+apps/web/vite.config.js.map
+apps/web/vite.config.d.ts
+apps/web/vite.config.d.ts.map
+apps/web/src/**/*.js
+apps/web/src/**/*.d.ts

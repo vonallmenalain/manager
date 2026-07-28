@@ -3,9 +3,9 @@
 Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen
 und Finanzen (Zehnten / Fastopfer) für zwei Personen.
 
-**Stand: Etappe 1 abgeschlossen** – Dokumente lassen sich hochladen,
-kategorisieren, zuweisen und wiederfinden. Weiter geht es mit dem schnellen
-Handy-Upload, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
+**Stand: Etappe 2 abgeschlossen** – Dokumente lassen sich aus jeder Android-App
+direkt in Manager teilen, per Kamera aufnehmen und verwalten. Weiter geht es mit
+der Texterkennung, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz
 

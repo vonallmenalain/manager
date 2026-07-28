@@ -1,15 +1,14 @@
 import { formatAmount, type ManagedDocument } from '@manager/shared'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { DocumentIcon } from '../components/icons'
 import { StatusBadge } from '../components/StatusBadge'
-import { ApiRequestError } from '../lib/api'
+import { UploadControls } from '../components/UploadControls'
 import {
   useCategories,
   useDocuments,
   useHouseholdUsers,
-  useUploadDocument,
   type DocumentFilters,
 } from '../lib/documents'
 
@@ -62,7 +61,7 @@ export function Documents() {
         </ul>
       )}
 
-      <UploadButton />
+      <UploadControls />
     </div>
   )
 }
@@ -219,90 +218,5 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
           : 'Unten rechts hinzufügen – PDF oder Foto.'}
       </p>
     </div>
-  )
-}
-
-/**
- * Schwebende Schaltfläche unten rechts, über der Navigationsleiste. Der
- * versteckte Datei-Dialog erlaubt Mehrfachauswahl; jede Datei geht als eigene
- * Anfrage raus, damit eine defekte nicht alle anderen mitreisst.
- */
-function UploadButton() {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const upload = useUploadDocument()
-  const [message, setMessage] = useState<string | null>(null)
-  const [pendingCount, setPendingCount] = useState(0)
-
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) return
-    setMessage(null)
-    setPendingCount(files.length)
-
-    let uploaded = 0
-    const problems: string[] = []
-
-    for (const file of Array.from(files)) {
-      try {
-        await upload.mutateAsync({ file })
-        uploaded += 1
-      } catch (error) {
-        if (error instanceof ApiRequestError && error.code === 'duplicate') {
-          problems.push(`${file.name}: liegt bereits in der Ablage`)
-        } else {
-          problems.push(`${file.name}: ${error instanceof Error ? error.message : 'Fehler'}`)
-        }
-      }
-      setPendingCount((count) => count - 1)
-    }
-
-    setMessage(
-      problems.length === 0
-        ? `${uploaded} ${uploaded === 1 ? 'Dokument' : 'Dokumente'} hinzugefügt.`
-        : problems.join(' · '),
-    )
-    if (inputRef.current) inputRef.current.value = ''
-  }
-
-  return (
-    <>
-      {message ? (
-        <p
-          role="status"
-          // bottom-40 statt bottom-24: Die Plus-Schaltfläche reicht bis rund
-          // 8.5rem hinauf, darunter läge die Meldung teilweise verdeckt.
-          className="fixed inset-x-4 bottom-40 z-20 mx-auto max-w-md rounded-xl bg-slate-900 px-4 py-3 text-center text-sm text-white shadow-lg dark:bg-slate-100 dark:text-slate-900"
-          onClick={() => setMessage(null)}
-        >
-          {message}
-        </p>
-      ) : null}
-
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept="application/pdf,image/*"
-        className="hidden"
-        onChange={(event) => void handleFiles(event.target.files)}
-      />
-
-      <button
-        onClick={() => inputRef.current?.click()}
-        disabled={pendingCount > 0}
-        className="fixed bottom-20 right-4 z-20 grid size-14 place-items-center rounded-full bg-brand-800 text-white shadow-lg transition active:scale-95 disabled:opacity-70"
-        aria-label="Dokument hinzufügen"
-      >
-        {pendingCount > 0 ? (
-          <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          </svg>
-        ) : (
-          <svg className="size-7" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        )}
-      </button>
-    </>
   )
 }
