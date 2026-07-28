@@ -98,9 +98,23 @@ export const documents = sqliteTable(
      */
     searchText: text('search_text').notNull().default(''),
 
-    /** Ab Etappe 3 befüllt; hier schon angelegt, damit später keine Migration nötig ist. */
+    /**
+     * Zustand der Texterkennung – zugleich die Warteschlange. Eine eigene
+     * Job-Tabelle wäre hier Ballast: Es gibt genau einen Auftrag pro Dokument,
+     * und die Oberfläche muss den Zustand ohnehin am Dokument anzeigen.
+     *
+     * pending → running → done | failed, dazu 'skipped' für Dateitypen, aus
+     * denen sich kein Text gewinnen lässt.
+     */
     ocrStatus: text('ocr_status').notNull().default('pending'),
+    /** Der erkannte Rohtext, für Textausschnitte in den Suchergebnissen. */
     ocrText: text('ocr_text'),
+    /** Wie der Text gewonnen wurde: 'textebene' (schnell) oder 'ocr'. */
+    ocrMethod: text('ocr_method'),
+    /** Fehlgeschlagene Anläufe. Nach dreien wird nicht weiter versucht. */
+    ocrAttempts: integer('ocr_attempts').notNull().default(0),
+    ocrError: text('ocr_error'),
+    ocrFinishedAt: text('ocr_finished_at'),
 
     /** Papierkorb statt echtem Löschen – 30 Tage Gnadenfrist. */
     deletedAt: text('deleted_at'),
@@ -114,6 +128,7 @@ export const documents = sqliteTable(
     index('documents_sha256_idx').on(table.sha256),
     index('documents_deleted_at_idx').on(table.deletedAt),
     index('documents_search_text_idx').on(table.searchText),
+    index('documents_ocr_status_idx').on(table.ocrStatus),
   ],
 )
 

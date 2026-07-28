@@ -68,6 +68,25 @@ export const activityEntrySchema = z.object({
 
 export type ActivityEntry = z.infer<typeof activityEntrySchema>
 
+export const OCR_STATUSES = ['pending', 'running', 'done', 'failed', 'skipped'] as const
+export type OcrStatus = (typeof OCR_STATUSES)[number]
+
+export const OCR_STATUS_LABELS: Record<OcrStatus, string> = {
+  pending: 'Text wird gelesen',
+  running: 'Text wird gelesen',
+  done: 'Text erkannt',
+  failed: 'Texterkennung fehlgeschlagen',
+  skipped: 'Kein Text',
+}
+
+export const ocrStatusSchema = z.enum(OCR_STATUSES)
+
+export const textSnippetSchema = z.object({
+  text: z.string(),
+  matchStart: z.number(),
+  matchEnd: z.number(),
+})
+
 export const documentSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -87,12 +106,19 @@ export const documentSchema = z.object({
   vendor: z.string().nullable(),
   notes: z.string().nullable(),
   hasFile: z.boolean(),
+  ocrStatus: ocrStatusSchema,
+  /** Nur in Suchergebnissen gesetzt: die Fundstelle im erkannten Text. */
+  snippet: textSnippetSchema.nullable().optional(),
 })
 
 export type ManagedDocument = z.infer<typeof documentSchema>
 
 export const documentDetailSchema = documentSchema.extend({
   activity: z.array(activityEntrySchema),
+  /** Der vollständige erkannte Text, für die Ansicht im Detail. */
+  ocrText: z.string().nullable(),
+  ocrMethod: z.string().nullable(),
+  ocrError: z.string().nullable(),
 })
 
 export type DocumentDetail = z.infer<typeof documentDetailSchema>
@@ -167,34 +193,144 @@ const SEARCH_FOLD: Record<string, string> = {
 }
 
 /**
- * Vereinheitlicht Text für die Suche: klein geschrieben, Umlaute
- * ausgeschrieben, Akzente entfernt.
+ * Vereinheitlicht Text für die Suche und merkt sich zugleich, aus welchem
+ * Zeichen des Ursprungstexts jedes Ergebniszeichen entstanden ist.
  *
  * SQLite vergleicht bei `LIKE` nur ASCII-Buchstaben unabhängig von der
  * Schreibweise – „PRÄMIE" findet „Prämie" also nicht. Und niemand tippt
  * unterwegs zuverlässig Umlaute. Gerade weil unsere Dateinamen auf dem NAS
  * ohnehin „Praemie" schreiben, muss diese Schreibweise auch etwas finden.
  *
- * Wird auf beide Seiten angewandt: auf den gespeicherten Suchtext und auf
- * die Eingabe. Ab Etappe 3 fliesst hier auch der OCR-Text ein.
+ * Die Positionszuordnung braucht es für Textausschnitte in den
+ * Suchergebnissen: Gefunden wird im vereinheitlichten Text, angezeigt werden
+ * muss das Original. Ohne sie stünde in der Trefferliste „praemie" statt
+ * „Prämie" – und die Längen unterscheiden sich, weil ein Umlaut zu zwei
+ * Zeichen wird.
  */
-export function normalizeForSearch(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[äöüß]/g, (char) => SEARCH_FOLD[char] ?? char)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+export function normalizeWithMap(input: string): { text: string; map: number[] } {
+  let text = ''
+  const map: number[] = []
+  let spacePending = false
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index] as string
+
+    if (WHITESPACE.test(char)) {
+      // Leerraum wird zu höchstens einem Leerzeichen, und nie am Anfang –
+      // das entspricht dem früheren \s+ → ' ' samt trim().
+      if (text.length > 0) spacePending = true
+      continue
+    }
+
+    if (spacePending) {
+      text += ' '
+      map.push(index)
+      spacePending = false
+    }
+
+    const folded = char
+      .toLowerCase()
+      .replace(/[äöüß]/g, (c) => SEARCH_FOLD[c] ?? c)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+
+    for (const produced of folded) {
+      text += produced
+      map.push(index)
+    }
+  }
+
+  return { text, map }
 }
 
-/** Baut den durchsuchbaren Text eines Dokuments aus seinen Metadaten. */
+const WHITESPACE = /\s/
+
+/**
+ * Vereinheitlichte Fassung für die Suche. Bewusst über normalizeWithMap
+ * gebaut: Liefen die beiden auseinander, würde die Suche Treffer liefern,
+ * für die sich kein Textausschnitt finden lässt – oder umgekehrt.
+ */
+export function normalizeForSearch(input: string): string {
+  return normalizeWithMap(input).text
+}
+
+export interface TextSnippet {
+  text: string
+  /** Bereich innerhalb von `text`, der zur Suche passt – zum Hervorheben. */
+  matchStart: number
+  matchEnd: number
+}
+
+/**
+ * Sucht den Begriff im Text und gibt die Umgebung zurück, in der er steht.
+ * Beantwortet in der Trefferliste die Frage „warum ist das ein Treffer?" –
+ * gerade wenn der Begriff nur tief im erkannten Text vorkommt.
+ */
+export function findSnippet(
+  raw: string,
+  query: string,
+  contextChars = 70,
+): TextSnippet | null {
+  const needle = normalizeForSearch(query)
+  if (!needle || !raw) return null
+
+  const { text: haystack, map } = normalizeWithMap(raw)
+  const hit = haystack.indexOf(needle)
+  if (hit === -1) return null
+
+  const rawStart = map[hit] ?? 0
+  const rawEnd = (map[hit + needle.length - 1] ?? rawStart) + 1
+
+  let from = Math.max(0, rawStart - contextChars)
+  let to = Math.min(raw.length, rawEnd + contextChars)
+
+  // An Wortgrenzen ausrichten, damit der Ausschnitt nicht mitten im Wort beginnt.
+  if (from > 0) {
+    const space = raw.indexOf(' ', from)
+    if (space !== -1 && space < rawStart) from = space + 1
+  }
+  if (to < raw.length) {
+    const space = raw.lastIndexOf(' ', to)
+    if (space !== -1 && space > rawEnd) to = space
+  }
+
+  const prefix = from > 0 ? '… ' : ''
+  const suffix = to < raw.length ? ' …' : ''
+  const snippet = raw.slice(from, to).replace(/\s+/g, ' ').trim()
+
+  // Nach dem Zusammenfassen der Leerzeichen stimmen die alten Positionen nicht
+  // mehr; der Treffer wird deshalb im fertigen Ausschnitt neu gesucht.
+  const shown = `${prefix}${snippet}${suffix}`
+  const matchText = raw.slice(rawStart, rawEnd)
+  const matchStart = shown.toLowerCase().indexOf(matchText.toLowerCase())
+
+  return {
+    text: shown,
+    matchStart: matchStart === -1 ? 0 : matchStart,
+    matchEnd: matchStart === -1 ? 0 : matchStart + matchText.length,
+  }
+}
+
+/**
+ * Obergrenze für den erkannten Text in der Suchspalte.
+ *
+ * Ein 25-seitiges Dokument liefert schnell mehrere hunderttausend Zeichen.
+ * Ungebremst stünde in jeder Zeile der Dokumententabelle ein Roman, und jede
+ * Abfrage würde ihn mitlesen. Der vollständige Text bleibt in `ocrText` und
+ * in der .txt-Datei erhalten – gesucht wird im Anfang, wo bei Rechnungen und
+ * Briefen praktisch immer das Wesentliche steht.
+ */
+export const MAX_SEARCHABLE_OCR_CHARS = 40_000
+
+/** Baut den durchsuchbaren Text eines Dokuments aus Metadaten und erkanntem Text. */
 export function buildSearchText(parts: {
   title: string
   vendor?: string | null
   notes?: string | null
+  ocrText?: string | null
 }): string {
-  return normalizeForSearch([parts.title, parts.vendor, parts.notes].filter(Boolean).join(' '))
+  const ocr = parts.ocrText ? parts.ocrText.slice(0, MAX_SEARCHABLE_OCR_CHARS) : null
+  return normalizeForSearch([parts.title, parts.vendor, parts.notes, ocr].filter(Boolean).join(' '))
 }
 
 export function formatAmount(cents: number | null): string {

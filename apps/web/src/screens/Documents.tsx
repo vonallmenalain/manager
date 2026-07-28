@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { DocumentIcon } from '../components/icons'
+import { SearchSnippet } from '../components/SearchSnippet'
 import { StatusBadge } from '../components/StatusBadge'
 import { UploadControls } from '../components/UploadControls'
 import {
@@ -192,6 +193,8 @@ function DocumentRow({
             {document.docDate}
             {details.length > 0 ? ` · ${details.join(' · ')}` : ''}
           </span>
+          {document.snippet ? <SearchSnippet snippet={document.snippet} /> : null}
+          <OcrHint status={document.ocrStatus} />
         </span>
       </Link>
     </li>
@@ -219,4 +222,30 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       </p>
     </div>
   )
+}
+
+/**
+ * Nur sichtbar, solange die Texterkennung noch läuft oder gescheitert ist.
+ * Im Normalfall – Text erkannt – steht hier bewusst nichts: Ein Häkchen an
+ * jedem Eintrag wäre reines Rauschen.
+ */
+function OcrHint({ status }: { status: ManagedDocument['ocrStatus'] }) {
+  if (status === 'pending' || status === 'running') {
+    return (
+      <span className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
+        <span className="size-1.5 animate-pulse rounded-full bg-slate-400" aria-hidden="true" />
+        Text wird gelesen …
+      </span>
+    )
+  }
+
+  if (status === 'failed') {
+    return (
+      <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
+        Texterkennung fehlgeschlagen – Inhalt nicht durchsuchbar
+      </span>
+    )
+  }
+
+  return null
 }

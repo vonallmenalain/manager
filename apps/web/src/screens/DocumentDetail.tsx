@@ -4,6 +4,7 @@ import {
   formatAmount,
   formatFileSize,
   parseAmountToCents,
+  type DocumentDetail,
   type DocumentStatus,
   type UpdateDocumentInput,
 } from '@manager/shared'
@@ -18,6 +19,7 @@ import {
   useDeleteDocument,
   useDocument,
   useHouseholdUsers,
+  useRetryOcr,
   useUpdateDocument,
 } from '../lib/documents'
 
@@ -27,6 +29,7 @@ export function DocumentDetail() {
   const query = useDocument(id)
   const update = useUpdateDocument(id ?? '')
   const remove = useDeleteDocument()
+  const retryOcr = useRetryOcr(id ?? '')
   const categories = useCategories()
   const users = useHouseholdUsers()
 
@@ -124,6 +127,15 @@ export function DocumentDetail() {
           <Row label="Datei" value={formatFileSize(document.sizeBytes)} />
         </dl>
       )}
+
+      <RecognisedText
+        status={document.ocrStatus}
+        text={document.ocrText}
+        method={document.ocrMethod}
+        error={document.ocrError}
+        onRetry={() => retryOcr.mutate()}
+        retrying={retryOcr.isPending}
+      />
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Verlauf</h2>
@@ -389,5 +401,79 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
       <span className="block text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
       {children}
     </label>
+  )
+}
+
+/**
+ * Der erkannte Text, eingeklappt.
+ *
+ * Ausgeklappt braucht er den halben Bildschirm, und im Alltag will man ihn
+ * fast nie sehen – er arbeitet unsichtbar in der Suche. Sichtbar sein muss
+ * nur, ob die Erkennung gelaufen ist, und im Fehlerfall der Weg zurück.
+ */
+function RecognisedText({
+  status,
+  text,
+  method,
+  error,
+  onRetry,
+  retrying,
+}: {
+  status: DocumentDetail['ocrStatus']
+  text: string | null
+  method: string | null
+  error: string | null
+  onRetry: () => void
+  retrying: boolean
+}) {
+  if (status === 'pending' || status === 'running') {
+    return (
+      <p className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <span className="size-2 animate-pulse rounded-full bg-slate-400" aria-hidden="true" />
+        Der Text wird gerade gelesen. Danach ist das Dokument über seinen Inhalt auffindbar.
+      </p>
+    )
+  }
+
+  if (status === 'failed') {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/50">
+        <p className="font-medium text-amber-900 dark:text-amber-200">
+          Texterkennung fehlgeschlagen
+        </p>
+        <p className="mt-1 text-amber-800 dark:text-amber-300">
+          Das Dokument ist gespeichert, aber nicht über seinen Inhalt auffindbar.
+        </p>
+        {error ? (
+          <p className="mt-2 break-words font-mono text-xs text-amber-700 dark:text-amber-400">
+            {error}
+          </p>
+        ) : null}
+        <button
+          onClick={onRetry}
+          disabled={retrying}
+          className="mt-3 text-sm font-medium text-amber-900 underline disabled:opacity-60 dark:text-amber-200"
+        >
+          {retrying ? 'Wird erneut versucht …' : 'Nochmals versuchen'}
+        </button>
+      </div>
+    )
+  }
+
+  if (!text) return null
+
+  return (
+    <details className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+        Erkannter Text{' '}
+        <span className="font-normal text-slate-500 dark:text-slate-400">
+          {method === 'textebene' ? 'aus dem PDF gelesen' : 'per Texterkennung'} ·{' '}
+          {text.length.toLocaleString('de-CH')} Zeichen
+        </span>
+      </summary>
+      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border-t border-slate-200 px-4 py-3 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:text-slate-400">
+        {text}
+      </pre>
+    </details>
   )
 }

@@ -49,19 +49,26 @@ RUN npm ci --omit=dev --include-workspace-root \
 # ---------------------------------------------------------------------------
 FROM node:22-bookworm-slim AS runtime
 
-# Texterkennung wird erst ab Etappe 3 genutzt, aber schon jetzt installiert:
-# Damit bleibt das Image über alle Etappen stabil und der spätere Ausbau
-# braucht keinen Eingriff am NAS. Dank Layer-Caching wird diese Schicht nur
-# einmal übertragen, spätere Deploys laden nur die kleine Anwendungsschicht.
+# Werkzeuge der Texterkennung.
+#
+# Bewusst ohne OCRmyPDF: Es zöge Python, Ghostscript, qpdf und weitere
+# Abhängigkeiten nach und würde das Image um mehrere hundert Megabyte
+# aufblähen – bei jedem Update spürbar, wenn Watchtower über eine Hausleitung
+# zieht. Sein Mehrwert wäre ein durchsuchbares PDF; den durchsuchbaren Text
+# liefern pdftotext und Tesseract genauso, und er landet zusätzlich als
+# .txt-Datei neben dem Original. Sollte das durchsuchbare PDF später doch
+# gewünscht sein, kommt OCRmyPDF hier wieder dazu.
+#
+# poppler-utils: pdftotext für digital erzeugte PDFs (der schnelle Weg),
+#                pdftoppm zum Rastern gescannter Seiten
+# tesseract:     die eigentliche Texterkennung auf Bildern
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ocrmypdf \
     tesseract-ocr \
     tesseract-ocr-deu \
     tesseract-ocr-fra \
     tesseract-ocr-eng \
     poppler-utils \
-    ghostscript \
     gosu \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*

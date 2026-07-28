@@ -15,6 +15,7 @@ import { and, desc, eq, inArray, isNull, like, sql, type SQL } from 'drizzle-orm
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
+import { ocrWorker } from '../ocr/index.js'
 import { categories, documents, type DocumentRow } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
 import {
@@ -161,6 +162,10 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     await logActivity(documentId, user.id, 'upload', `„${title}" hochgeladen`)
 
+    // Sofort wecken statt bis zum nächsten Durchlauf zu warten: Ein Dokument
+    // soll durchsuchbar sein, bevor man es überhaupt fertig kategorisiert hat.
+    ocrWorker?.notify()
+
     request.log.info({ documentId, sizeBytes: stored.sizeBytes }, 'Dokument hochgeladen')
     return reply.status(201).send({ document: toApiDocument(row) })
   })
@@ -207,7 +212,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       .where(where)
 
     return reply.send({
-      documents: rows.map(toApiDocument),
+      documents: rows.map((row) => toApiDocument(row, q)),
       total: counted[0]?.count ?? 0,
     })
   })
@@ -221,7 +226,13 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
 
     return reply.send({
-      document: { ...toApiDocument(row), activity: await getActivity(id) },
+      document: {
+        ...toApiDocument(row),
+        activity: await getActivity(id),
+        ocrText: row.ocrText,
+        ocrMethod: row.ocrMethod,
+        ocrError: row.ocrError,
+      },
     })
   })
 
@@ -246,6 +257,13 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       `${download === '1' ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(filename)}`,
     )
     reply.header('cache-control', 'private, max-age=300')
+    // Helmet setzt global 'same-site'. Das blockiert die Bildvorschau, sobald
+    // Frontend und API auf getrennten Adressen liegen – also immer.
+    // Unbedenklich, weil hier nicht diese Kopfzeile die Grenze zieht, sondern
+    // die Anmeldung: Das Sitzungs-Cookie ist SameSite=Lax und wird bei einer
+    // Einbettung von fremder Seite gar nicht erst mitgeschickt. Eine solche
+    // Anfrage landet bei 401, nicht beim Dokument.
+    reply.header('cross-origin-resource-policy', 'cross-origin')
     return reply.type(row.mimeType).send(createReadStream(absolute))
   })
 
@@ -305,6 +323,8 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       .set({
         ...changes,
         storagePath,
+        // merged enthält den erkannten Text – ohne ihn wäre er nach
+        // jeder Bearbeitung aus der Suche verschwunden.
         searchText: buildSearchText(merged),
         updatedAt: new Date().toISOString(),
       })
@@ -320,8 +340,33 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     return reply.send({
-      document: { ...toApiDocument(row), activity: await getActivity(id) },
+      document: {
+        ...toApiDocument(row),
+        activity: await getActivity(id),
+        ocrText: row.ocrText,
+        ocrMethod: row.ocrMethod,
+        ocrError: row.ocrError,
+      },
     })
+  })
+
+  // -------------------------------------------------------------------------
+  // Texterkennung erneut anstossen
+  // -------------------------------------------------------------------------
+  fastify.post('/api/documents/:id/ocr', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const row = await findDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    // Zähler zurücksetzen: Ein neuer Anlauf von Hand soll wieder die vollen
+    // drei Versuche bekommen, sonst bringt der Knopf nach einem Fehlschlag nichts.
+    await db
+      .update(documents)
+      .set({ ocrStatus: 'pending', ocrAttempts: 0, ocrError: null })
+      .where(eq(documents.id, id))
+
+    ocrWorker?.notify()
+    return reply.status(202).send({ ocrStatus: 'pending' })
   })
 
   // -------------------------------------------------------------------------
