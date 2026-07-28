@@ -1,0 +1,13 @@
+{
+  // Wie im Backend: Die Tests werden nie kompiliert – Node führt sie direkt
+  // aus und entfernt die Typen zur Laufzeit. Geprüft werden sie trotzdem,
+  // sonst fällt ein veralteter Test erst auf, wenn er falsch durchläuft.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "types": ["node"]
+  },
+  "include": ["src/lib/scan"],
+  "exclude": []
+}

@@ -6,6 +6,9 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    // Die Module des Scanners importieren einander mit .ts-Endung, damit
+    // `node --test` sie ohne Bündler ausführen kann. Vite stört das nicht.
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
@@ -14,5 +17,8 @@
     "noUnusedParameters": true
   },
   "include": ["src"],
+  // Tests laufen unter Node und werden von tsconfig.test.json geprüft – dort
+  // stehen die Node-Typen zur Verfügung, die die App selbst nicht kennt.
+  "exclude": ["src/**/*.test.ts"],
   "references": [{ "path": "../../packages/shared" }]
 }

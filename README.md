@@ -5,7 +5,10 @@ und Finanzen (Zehnten / Fastopfer) für zwei Personen.
 
 **Stand: Etappe 5 abgeschlossen** – alle geplanten Bereiche sind gebaut.
 Dokumente lassen sich teilen, aufnehmen, verwalten und **über ihren Inhalt
-durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Die
+durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Der
+**Dokumentenmodus** schneidet ein abfotografiertes Blatt selbst zu, entzerrt es
+und rechnet den Schatten heraus; **mehrere Seiten** sammeln sich zu einem
+einzigen PDF, statt einzeln in der Ablage zu landen. Die
 **Einkaufsliste** sortiert nach Ladenabteilungen und merkt sich Korrekturen
 dauerhaft, **Notizen** haben Anheften, Farben und Suche, und die **Finanzen**
 rechnen Zehnten und Fastopfer ab – mit Steuerabzug, Abrechnungsstand und
