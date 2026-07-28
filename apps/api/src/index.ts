@@ -7,6 +7,7 @@ import { closeDb, runMigrations } from './db/index.js'
 import { backfillSearchText, seedCategories } from './db/seed.js'
 import { env } from './env.js'
 import { cleanStaleTemporaryFiles } from './lib/storage.js'
+import { startOcrWorker, stopOcrWorker } from './ocr/index.js'
 import { APP_VERSION } from './version.js'
 
 const HOUR_MS = 60 * 60 * 1000
@@ -25,6 +26,10 @@ async function main(): Promise<void> {
 
   const backfilled = await backfillSearchText()
   if (backfilled > 0) app.log.info({ count: backfilled }, 'Suchtext nachgetragen')
+
+  // Läuft im selben Prozess: Bei einer Handvoll Dokumente pro Tag wäre ein
+  // eigener Dienst samt Warteschlangen-Infrastruktur reine Bürokratie.
+  await startOcrWorker(app.log)
 
   const cleanup = setInterval(() => {
     void deleteExpiredSessions()
@@ -45,6 +50,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'Fahre herunter')
     clearInterval(cleanup)
+    await stopOcrWorker()
     await app.close()
     closeDb()
     process.exit(0)

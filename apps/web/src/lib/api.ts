@@ -135,4 +135,7 @@ export const api = {
 
   deleteDocument: (id: string) =>
     request<void>(`/api/documents/${id}`, { method: 'DELETE' }),
+
+  retryOcr: (id: string) =>
+    request<{ ocrStatus: string }>(`/api/documents/${id}/ocr`, { method: 'POST' }),
 }

@@ -22,6 +22,13 @@
       "when": 1785247846198,
       "tag": "0002_late_rumiko_fujikawa",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785251936491,
+      "tag": "0003_true_songbird",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,11 @@ services:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
 
+      # Sprachen der Texterkennung. Nicht installierte werden beim Start
+      # automatisch aussortiert – Tesseract würde sonst bei jedem Dokument
+      # abbrechen statt die fehlende Sprache zu überspringen.
+      OCR_LANGUAGES: deu+fra+eng
+
       LOG_LEVEL: info
 
     volumes:

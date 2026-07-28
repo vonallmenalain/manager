@@ -42,6 +42,13 @@ export function useDocument(id: string | undefined) {
     queryKey: ['document', id],
     queryFn: () => api.getDocument(id as string),
     enabled: Boolean(id),
+    // Solange der Text noch gelesen wird, alle drei Sekunden nachfragen –
+    // danach von selbst aufhören. So erscheint das Ergebnis ohne Zutun,
+    // ohne dass die App dauerhaft pollt.
+    refetchInterval: (query) => {
+      const status = query.state.data?.document.ocrStatus
+      return status === 'pending' || status === 'running' ? 3000 : false
+    },
   })
 }
 
@@ -83,6 +90,17 @@ export function useUpdateDocument(id: string) {
     mutationFn: (changes: UpdateDocumentInput) => api.updateDocument(id, changes),
     onSuccess: (data) => {
       queryClient.setQueryData(['document', id], data)
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+}
+
+export function useRetryOcr(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.retryOcr(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['document', id] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
     },
   })

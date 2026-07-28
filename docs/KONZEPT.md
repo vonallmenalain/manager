@@ -86,7 +86,7 @@ Deployment passiert vollständig über `git push`.
 | Backend | Node 22 + Fastify + TypeScript | Eine Sprache über den ganzen Stack, sehr schneller Upload-Pfad (Streams) |
 | Datenbank | SQLite (better-sqlite3, WAL) + Drizzle ORM | Für zwei Nutzer ideal: eine Datei, kein Server, trivial zu sichern |
 | Volltextsuche | SQLite FTS5 (Unicode61, deutsche Stoppwörter) | Reicht für zehntausende Dokumente, keine Zusatzdienste |
-| OCR | OCRmyPDF + Tesseract (deu, fra, eng) | Erzeugt durchsuchbare PDFs, Standard im Dokumenten-Umfeld |
+| OCR | Tesseract (deu, fra, eng) | Solides C++-Werkzeug ohne Abhängigkeitskette. OCRmyPDF wurde verworfen: Es zöge Python und Ghostscript nach und blähte das Image um mehrere hundert Megabyte auf – spürbar bei jedem Update über die Hausleitung. Sein Mehrwert wäre ein durchsuchbares PDF; den Text liefert Tesseract genauso, und er landet als .txt neben dem Original |
 | PDF-Tools | Poppler (`pdftotext`, `pdftoppm`) | Digital erzeugte PDFs brauchen gar kein OCR |
 | Jobs | Job-Tabelle in SQLite + In-Process-Worker | Kein Redis, keine zweite Infrastruktur für ~20 Jobs/Tag |
 | Auth | Passwort (argon2id) + HttpOnly-Session-Cookie | Zwei Konten, kein Identity-Provider nötig |
@@ -449,7 +449,7 @@ eine funktionierende App auf dem Handy.
 | **0** ✅ | **Fundament** | Monorepo, CI/CD, Container, Tunnel, Domain, Login | `manager.alae.app` ist erreichbar, ihr könnt euch anmelden |
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Kamera-Aufnahme, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
-| **3** | **OCR** | Job-Worker, OCRmyPDF, Volltextindex, Suche mit Textausschnitten, Metadaten-Heuristik | Suche findet Inhalte, nicht nur Titel |
+| **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
 | **4** | **Alltag** | Einkaufsliste, Notizen, beides offline-fähig mit Sync | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, Jahresexport | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Backup-Automatik, Papierkorb | Die App denkt mit |

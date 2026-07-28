@@ -31,6 +31,13 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
+  /**
+   * Sprachen für die Texterkennung, durch '+' getrennt. Nicht installierte
+   * Sprachen werden beim Start automatisch aussortiert – Tesseract würde
+   * sonst bei jeder einzelnen Erkennung abbrechen statt sie zu überspringen.
+   */
+  OCR_LANGUAGES: z.string().default('deu+fra+eng'),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 })
 

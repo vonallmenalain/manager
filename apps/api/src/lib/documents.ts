@@ -2,16 +2,18 @@ import { randomUUID } from 'node:crypto'
 
 import {
   DOCUMENT_STATUS_LABELS,
+  findSnippet,
   type ActivityAction,
   type DocumentStatus,
   type ManagedDocument,
+  type OcrStatus,
 } from '@manager/shared'
 import { asc, eq } from 'drizzle-orm'
 
 import { db } from '../db/index.js'
 import { activity, documents, users, type DocumentRow } from '../db/schema.js'
 
-export function toApiDocument(row: DocumentRow): ManagedDocument {
+export function toApiDocument(row: DocumentRow, query?: string): ManagedDocument {
   return {
     id: row.id,
     title: row.title,
@@ -28,6 +30,10 @@ export function toApiDocument(row: DocumentRow): ManagedDocument {
     vendor: row.vendor,
     notes: row.notes,
     hasFile: true,
+    ocrStatus: row.ocrStatus as OcrStatus,
+    // Nur bei einer Suche: zeigt, an welcher Stelle im erkannten Text der
+    // Begriff steht. Beantwortet die Frage „warum ist das ein Treffer?".
+    snippet: query && row.ocrText ? findSnippet(row.ocrText, query) : null,
   }
 }
 
