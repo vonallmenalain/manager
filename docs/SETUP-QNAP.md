@@ -331,4 +331,7 @@ Dokumenten-Backup mitgenommen.
 | `permission denied` im Log | `PUID`/`PGID` passen nicht zum Besitzer der Ordner (Schritt 3) |
 | Frontend zeigt „Keine Verbindung zum Server" | `VITE_API_URL` in Netlify fehlt oder ist falsch – nach Änderung neu deployen |
 | Watchtower aktualisiert nicht | Label `com.centurylinklabs.watchtower.enable=true` fehlt am Container |
+| Container Station zeigt bei der Anwendung „Others" statt „Running" | Kosmetisch. Container Station kennt für Anwendungen nur „alle laufen" oder „alle stehen". `manager-api` und `watchtower` melden zusätzlich einen Gesundheitszustand, `cloudflared` nicht – diese Mischung landet unter „Others". Massgeblich ist `docker ps`: Steht dort überall `Up`, ist alles in Ordnung |
+| App kurz nach einem Deploy nicht erreichbar | Watchtower tauscht den Container aus und stoppt dabei kurz den alten. Nach ein bis zwei Minuten von selbst behoben – `docker ps` zeigt dann eine niedrige Laufzeit bei `manager-api` |
+| Anmeldebildschirm statt Ersteinrichtung, obwohl noch kein Konto existiert | Die App erreicht das Backend nicht. Prüfen mit `curl -H "Origin: https://manager.alae.app" https://manager-api.alae.app/api/setup/status` – kommt dort `{"needsSetup":true}` samt `access-control-allow-origin`, liegt es an `VITE_API_URL` in Netlify |
 | Setup-Bildschirm erscheint erneut | Das `data`-Volume ist nicht korrekt gemountet – die Datenbank landet sonst im Container und ist nach jedem Update weg |
