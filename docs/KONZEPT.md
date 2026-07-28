@@ -201,9 +201,13 @@ Nach dem Upload landet das Dokument sofort in der Liste – der Nutzer wartet **
 Die Verarbeitung läuft im Hintergrund, der Status wird live nachgeführt.
 
 **Der Dokumentenmodus** (`apps/web/src/lib/scan/`) ist der Unterschied zwischen Foto und
-Scan. Aus dem Live-Bild der Kamera wird die Seite gesucht (Otsu-Schwelle, zusammenhängende
-Fläche um die Bildmitte, konvexe Hülle auf vier Ecken zurückgeführt), zur Kontrolle
-angezeigt und von Hand nachziehbar. Danach wird perspektivisch entzerrt und – der Schritt,
+Scan. Der Auslöser holt über `ImageCapture.takePhoto()` ein Standbild in der vollen
+Auflösung des Sensors – der Videostrom der Live-Vorschau hätte selten mehr als 1920
+Zeilen, und davon bliebe bei einer A4-Seite, die zwei Drittel des Suchers füllt, keine
+150 dpi für die Texterkennung. Kann ein Gerät das nicht, wird das Bild aus dem Live-Strom
+genommen und in dieser Sitzung nicht mehr nachgefragt. Darin wird die Seite gesucht
+(Otsu-Schwelle, zusammenhängende Fläche um die Bildmitte, konvexe Hülle auf vier Ecken
+zurückgeführt), zur Kontrolle angezeigt und von Hand nachziehbar. Danach wird perspektivisch entzerrt und – der Schritt,
 der am meisten ausmacht – der Helligkeitsverlauf herausgerechnet: Jeder Bildpunkt wird
 durch die geschätzte Papierhelligkeit an seiner Stelle geteilt, womit der Schatten des
 eigenen Kopfes verschwindet. Zur Wahl stehen Farbe, Graustufen und Schwarz-Weiss.

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   cameraAvailable,
   canvasToJpeg,
+  capturePhoto,
   drawToCanvas,
   findCorners,
   renderScan,
@@ -35,10 +36,20 @@ import {
  *
  * Nicht kleiner: Nach dem Zuschneiden bleibt von der Bildbreite oft nur zwei
  * Drittel übrig, und darunter wird die Texterkennung merklich schlechter.
- * Nicht grösser: Jeder Bildpunkt kostet in der Entzerrung Rechenzeit, die auf
- * dem Handy zwischen Auslöser und Vorschau spürbar wird.
+ * Nicht grösser: Ein Bild dieser Kantenlänge belegt beim Entzerren rund 27 MB
+ * Arbeitsspeicher, und das Standbild einer heutigen Kamera hätte das Doppelte –
+ * mehr, als eine fertige Seite (2000 Bildpunkte) je gebrauchen kann.
  */
-const CAPTURE_MAX_EDGE = 2600
+const CAPTURE_MAX_EDGE = 3000
+
+/**
+ * Auflösung der Vorschau beim Zuschneiden.
+ *
+ * Sie wird nur auf dem Bildschirm angeschaut, nie weiterverarbeitet – die
+ * Ecken rechnet die App in den Koordinaten der vollen Aufnahme. Ein
+ * gleichgrosses Vorschaubild zu kodieren würde den Auslöser nur verzögern.
+ */
+const PREVIEW_MAX_EDGE = 1400
 
 interface Captured {
   canvas: HTMLCanvasElement
@@ -63,6 +74,10 @@ export function DocumentScanner({
   onFallback,
 }: DocumentScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const trackRef = useRef<MediaStreamTrack | null>(null)
+  // Sobald ein Gerät beim Standbild einmal nicht mitspielt, wird es nicht bei
+  // jeder weiteren Seite erneut gefragt – die Wartezeit hätte man sonst immer.
+  const stillPhotoRef = useRef(true)
   const [captured, setCaptured] = useState<Captured | null>(null)
   const [quad, setQuad] = useState<Quad | null>(null)
   const [filter, setFilter] = useState<ScanFilter>('farbe')
@@ -119,6 +134,8 @@ export function DocumentScanner({
         return
       }
 
+      trackRef.current = stream.getVideoTracks()[0] ?? null
+
       const video = videoRef.current
       if (video) {
         video.srcObject = stream
@@ -135,6 +152,7 @@ export function DocumentScanner({
 
     return () => {
       stopped = true
+      trackRef.current = null
       if (stream) for (const track of stream.getTracks()) track.stop()
     }
   }, [attempt])
@@ -156,9 +174,22 @@ export function DocumentScanner({
     setNotice(null)
     setWorking(true)
     try {
-      const canvas = drawToCanvas(video, video.videoWidth, video.videoHeight, CAPTURE_MAX_EDGE)
+      // Erst das Standbild in voller Auflösung versuchen; kommt keines,
+      // bleibt es beim Bild aus dem Live-Strom.
+      const track = trackRef.current
+      let still: HTMLCanvasElement | null = null
+      if (track && stillPhotoRef.current) {
+        still = await capturePhoto(track, CAPTURE_MAX_EDGE, video.videoWidth * video.videoHeight)
+        if (!still) stillPhotoRef.current = false
+      }
+
+      const canvas =
+        still ?? drawToCanvas(video, video.videoWidth, video.videoHeight, CAPTURE_MAX_EDGE)
       const corners = findCorners(canvas)
-      const preview = await canvasToJpeg(canvas, 0.9)
+      const preview = await canvasToJpeg(
+        drawToCanvas(canvas, canvas.width, canvas.height, PREVIEW_MAX_EDGE),
+        0.85,
+      )
 
       setQuad(corners)
       setCaptured({
@@ -287,7 +318,9 @@ function CameraStage({
           className="absolute inset-0 h-full w-full object-contain"
         />
         <p className="absolute inset-x-0 bottom-2 text-center text-xs text-slate-300">
-          Das ganze Blatt ins Bild nehmen – die Ränder findet die App selbst.
+          {working
+            ? 'Bild wird aufgenommen – bitte ruhig halten …'
+            : 'Das ganze Blatt ins Bild nehmen – die Ränder findet die App selbst.'}
         </p>
       </div>
 

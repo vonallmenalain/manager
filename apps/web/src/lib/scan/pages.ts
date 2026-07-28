@@ -94,6 +94,90 @@ async function withImage<T>(
   }
 }
 
+/**
+ * Wie lange auf das Standbild gewartet wird, bevor das Live-Bild einspringt.
+ *
+ * Auf einem Gerät, das die Aufnahme sauber beantwortet, dauert sie einen
+ * Bruchteil davon. Es gibt aber Kameras, die auf takePhoto gar nicht antworten –
+ * und ein Auslöser, der nichts tut, ist das Schlimmste, was hier passieren kann.
+ */
+const PHOTO_TIMEOUT_MS = 5000
+
+function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), milliseconds)),
+  ])
+}
+
+/**
+ * Nimmt ein Standbild in der vollen Auflösung des Sensors auf.
+ *
+ * Das Live-Bild ist ein Videostrom, und ein Videostrom ist selten mehr als
+ * 1920 Zeilen breit – bei einer A4-Seite, die zwei Drittel des Suchers füllt,
+ * bleiben davon keine 150 dpi übrig, und genau dort wird die Texterkennung
+ * unzuverlässig. `takePhoto` fragt stattdessen die Fotofunktion der Kamera an
+ * und liefert, was sie hergibt: auf heutigen Geräten oft das Vierfache.
+ *
+ * Nicht jedes Gerät kann das. Deshalb gibt jeder Fehlschlag null zurück, und
+ * der Aufrufer bleibt beim Bild aus dem Videostrom – lieber ein Scan mit
+ * weniger Auflösung als ein Auslöser, der nichts tut.
+ */
+export async function capturePhoto(
+  track: MediaStreamTrack,
+  maxEdge: number,
+  /** Unterhalb dieser Bildpunktzahl lohnt sich das Standbild nicht. */
+  minPixels: number,
+): Promise<HTMLCanvasElement | null> {
+  // typeof auf einen unbekannten Namen ist erlaubt und wirft nicht – anders
+  // als der Zugriff darauf.
+  if (typeof ImageCapture !== 'function') return null
+
+  let capture: ImageCapture
+  try {
+    capture = new ImageCapture(track)
+  } catch {
+    return null
+  }
+
+  let settings: PhotoSettings | undefined
+  try {
+    // Ohne Wunschgrösse liefert Chrome nicht zwingend die höchste Auflösung,
+    // sondern eine, die zum Videostrom passt.
+    const largest = (await capture.getPhotoCapabilities()).imageWidth?.max
+    if (typeof largest === 'number' && largest > 0) settings = { imageWidth: largest }
+  } catch {
+    // Ohne Angaben über die Fotofunktion wird ohne Wunschgrösse ausgelöst.
+  }
+
+  let photo: Blob | null = null
+  try {
+    photo = await withTimeout(capture.takePhoto(settings), PHOTO_TIMEOUT_MS)
+  } catch {
+    // Manche Geräte lehnen die Wunschgrösse ab, lösen ohne sie aber aus.
+    if (!settings) return null
+    try {
+      photo = await withTimeout(capture.takePhoto(), PHOTO_TIMEOUT_MS)
+    } catch {
+      return null
+    }
+  }
+
+  if (!photo) return null
+
+  try {
+    return await withImage(photo, (image) => {
+      const pixels = image.naturalWidth * image.naturalHeight
+      // Kommt weniger heraus als das Live-Bild ohnehin liefert, war der
+      // Umweg umsonst.
+      if (pixels < minPixels) return null
+      return drawToCanvas(image, image.naturalWidth, image.naturalHeight, maxEdge)
+    })
+  } catch {
+    return null
+  }
+}
+
 /** Zeichnet eine Bildquelle verkleinert auf einen neuen Canvas. */
 export function drawToCanvas(
   source: CanvasImageSource,
