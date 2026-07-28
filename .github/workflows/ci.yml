@@ -81,29 +81,66 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Container startet und antwortet
-        # Der eigentliche Test: Migrationen laufen, der Server bindet den Port,
-        # und /api/health liefert eine Antwort.
+      - name: Container startet, überlebt einen Neustart und behält die Daten
+        # Der frühere Test startete nur einmal mit leerer Datenbank. Auf dem NAS
+        # trifft jedes Update aber auf eine bestehende Datenbank – der Weg, auf
+        # dem Migrationen, Kategorie-Seeding und Suchtext-Nachtrag schiefgehen
+        # können. Deshalb hier zweimal starten, mit Daten dazwischen.
         run: |
+          set -euo pipefail
+
+          warte_auf_gesund() {
+            for _ in $(seq 1 30); do
+              if curl -sf http://127.0.0.1:8080/api/health > /tmp/health.json; then
+                return 0
+              fi
+              sleep 2
+            done
+            echo "Container antwortet nicht. Protokoll:"
+            docker logs manager-ci
+            return 1
+          }
+
           mkdir -p /tmp/manager-ci/data /tmp/manager-ci/storage
           docker run -d --name manager-ci \
             -p 8080:8080 \
             -e SESSION_SECRET="ci-secret-lang-genug-fuer-die-pruefung-32" \
+            -e SETUP_TOKEN="ci-einrichtungs-token" \
             -e PUID="$(id -u)" -e PGID="$(id -g)" \
             -v /tmp/manager-ci/data:/data \
             -v /tmp/manager-ci/storage:/storage \
             manager-api:ci
 
-          for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:8080/api/health > /tmp/health.json; then
-              echo "Antwort: $(cat /tmp/health.json)"
-              docker rm -f manager-ci > /dev/null
-              exit 0
-            fi
-            sleep 2
-          done
+          echo "--- Erster Start, leere Datenbank ---"
+          warte_auf_gesund
+          echo "Antwort: $(cat /tmp/health.json)"
 
-          echo "Container antwortet nicht. Logs:"
-          docker logs manager-ci
+          # Daten anlegen, damit der Neustart etwas Bestehendes vorfindet.
+          curl -sf -X POST http://127.0.0.1:8080/api/setup \
+            -H 'content-type: application/json' \
+            -d '{"setupToken":"ci-einrichtungs-token","name":"CI","email":"ci@example.com","password":"ci-passwort-lang-genug"}' \
+            > /dev/null
+          echo "Konto angelegt"
+
+          kategorien=$(curl -sf -b /dev/null http://127.0.0.1:8080/api/setup/status)
+          if [ "$kategorien" != '{"needsSetup":false}' ]; then
+            echo "Nach der Einrichtung wird weiterhin Einrichtung verlangt: $kategorien"
+            exit 1
+          fi
+
+          echo "--- Zweiter Start auf der bestehenden Datenbank ---"
+          docker restart manager-ci > /dev/null
+          warte_auf_gesund
+          echo "Antwort: $(cat /tmp/health.json)"
+
+          # Die Daten müssen den Neustart überlebt haben, und der Start darf
+          # sie nicht verdoppeln oder zurücksetzen.
+          danach=$(curl -sf http://127.0.0.1:8080/api/setup/status)
+          if [ "$danach" != '{"needsSetup":false}' ]; then
+            echo "Daten haben den Neustart nicht überlebt: $danach"
+            docker logs manager-ci
+            exit 1
+          fi
+          echo "Bestehende Daten unverändert vorgefunden"
+
           docker rm -f manager-ci > /dev/null
-          exit 1

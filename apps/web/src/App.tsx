@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { CartIcon, CoinIcon, NoteIcon } from './components/icons'
 import { useSession } from './lib/session'
+import { BackendUnreachable } from './screens/BackendUnreachable'
 import { Dashboard } from './screens/Dashboard'
 import { DocumentDetail } from './screens/DocumentDetail'
 import { Documents } from './screens/Documents'
@@ -11,9 +12,12 @@ import { Placeholder } from './screens/Placeholder'
 import { Setup } from './screens/Setup'
 
 export function App() {
-  const { user, isLoading, needsSetup } = useSession()
+  const { user, isLoading, needsSetup, connectionError, retry } = useSession()
 
   if (isLoading) return <SplashScreen />
+  // Vor der Anmeldung prüfen: Ohne Backend ist jede Eingabe zwecklos, und
+  // die Anmeldemaske würde den Fehler dem Passwort zuschieben.
+  if (connectionError) return <BackendUnreachable onRetry={retry} />
   if (!user) return needsSetup ? <Setup /> : <Login />
 
   return (
