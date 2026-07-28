@@ -218,9 +218,9 @@ eigenen Kopfes verschwindet. Zur Wahl stehen Farbe, Graustufen und Schwarz-Weiss
 Gerechnet wird ohne Bildverarbeitungs-Bibliothek; OpenCV.js wöge ein Vielfaches der
 ganzen App.
 
-**Mehrere Seiten** landen zuerst in einem Stapel statt sofort in der Ablage. Nach jeder
-Aufnahme steht die Kamera wieder bereit; im Stapel lassen sich Seiten umsortieren und
-entfernen. Erst "Ablegen" schreibt sie in ein Dokument – ab zwei Seiten als PDF (die
+**Mehrere Seiten** landen zuerst in einem Stapel statt sofort in der Ablage. Jede
+übernommene Seite führt dorthin zurück; von dort geht es über „Weitere Seite" mit einer
+frisch geöffneten Kamera weiter, und Seiten lassen sich umsortieren und entfernen. Erst "Ablegen" schreibt sie in ein Dokument – ab zwei Seiten als PDF (die
 JPEGs wandern unverändert hinein, `DCTDecode`), bei einer einzelnen bleibt es beim Bild.
 Für die Texterkennung ändert sich dadurch nichts: Ein PDF ohne Textebene rastert der
 Server ohnehin und schickt es durch Tesseract.
