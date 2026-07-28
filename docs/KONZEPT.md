@@ -175,7 +175,7 @@ erDiagram
 * `jobs` – OCR-Warteschlange: id, document_id, type, state, attempts, error, timestamps
 * `shopping_items` – Einkaufsliste; `shopping_memory` – die gelernte Zuordnung
   Artikel → Abteilung, bewusst getrennt, damit „Aufräumen" sie nicht mitlöscht
-* `notes` – Notizen mit Farbe, Anheftung und eigener Suchspalte
+* `notes` – Notizen mit Art (Text oder Checkliste), Farbe, Anheftung und eigener Suchspalte
 * `finance_years` – Steuerbetrag, Satz, Steuerabzug ja/nein, Abrechnungsstand (je Jahr)
 * `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
 * `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum und Beleg-Notiz
@@ -264,9 +264,24 @@ verschluckt. Änderungen der anderen Person kommen alle 20 Sekunden nach.
 
 ### 6.3 Notizen
 
-Kurze Notizen mit Titel und Text. Anheften (steht dann zuoberst), fünf gedeckte Farben,
-Suche über Titel und Text – mit denselben Regeln wie bei den Dokumenten, also findet
-`zuegeltermin` auch „Zügeltermin". Bewusst schlicht – kein zweites Notion.
+Kurze Notizen mit Titel und Inhalt, in zwei Arten: **Fliesstext** oder **Checkliste** mit
+Einträgen zum Abhaken. Beim Anlegen wird gewählt, später lässt sich wechseln. Dazu
+Anheften (steht dann zuoberst), fünf gedeckte Farben und Suche über Titel und Inhalt –
+mit denselben Regeln wie bei den Dokumenten, also findet `zuegeltermin` auch
+„Zügeltermin". Bewusst schlicht – kein zweites Notion.
+
+Eine Notiz öffnet als **Fenster über der Liste**, nicht als eigener Bildschirm: Sie ist
+eine Randnotiz, kein Formular. Gespeichert wird **von selbst** – kurz nach dem letzten
+Tastendruck und noch einmal beim Schliessen. Einen Speichern-Knopf gibt es nicht; er war
+die einzige Möglichkeit, Geschriebenes zu verlieren. Eine neue Notiz entsteht erst beim
+ersten Speichern, wer das Fenster leer wieder schliesst, hinterlässt keine.
+
+Beide Arten liegen im selben Feld `body`: Eine Checkliste schreibt je Zeile einen Eintrag
+mit vorangestelltem `[ ]` oder `[x]`. Eine eigene Tabelle für Listeneinträge wäre die
+lehrbuchmässige Lösung und hier reiner Ballast – es gibt kein Sortieren über Notizen
+hinweg und keine Rechte je Eintrag, und eine Notiz wird immer als Ganzes gespeichert.
+Dafür bleibt sie in der Datenbank lesbar und die Volltextsuche findet sie ohne
+Zusatzarbeit (ohne die Kästchen, gesucht wird nach „Milch", nicht nach „[x] Milch").
 
 ### 6.4 Finanzen: Zehnten und Fastopfer
 
@@ -545,7 +560,7 @@ eine funktionierende App auf dem Handy.
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Dokumentenmodus mit Randerkennung, mehrseitige Scans, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
-| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen mit Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
+| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
 

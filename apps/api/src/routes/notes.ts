@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 
 import {
   normalizeForSearch,
+  parseChecklist,
   upsertNoteSchema,
   type Note,
   type NoteColor,
+  type NoteKind,
 } from '@manager/shared'
 import { and, desc, eq, like, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
@@ -19,6 +21,7 @@ function toApi(row: NoteRow): Note {
     id: row.id,
     title: row.title,
     body: row.body,
+    kind: row.kind as NoteKind,
     pinned: row.pinned,
     color: row.color as NoteColor,
     createdBy: row.createdBy,
@@ -31,6 +34,23 @@ function toApi(row: NoteRow): Note {
 const querySchema = z.object({
   q: z.string().trim().max(200).optional(),
 })
+
+/**
+ * Der durchsuchbare Text einer Notiz.
+ *
+ * Bei einer Checkliste ohne die Kästchen: Gesucht wird nach „Milch", nicht
+ * nach „[x] Milch", und ein Suchfeld voller eckiger Klammern fände sonst
+ * jede Liste.
+ */
+function searchTextFor(kind: NoteKind, title: string, body: string): string {
+  const text =
+    kind === 'liste'
+      ? parseChecklist(body)
+          .map((item) => item.text)
+          .join(' ')
+      : body
+  return normalizeForSearch(`${title} ${text}`)
+}
 
 const noteRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
@@ -63,16 +83,17 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, pinned, color } = parsed.data
+    const { title, body, kind, pinned, color } = parsed.data
     const inserted = await db
       .insert(notes)
       .values({
         id: randomUUID(),
         title,
         body,
+        kind,
         pinned,
         color,
-        searchText: normalizeForSearch(`${title} ${body}`),
+        searchText: searchTextFor(kind, title, body),
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -91,15 +112,16 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, pinned, color } = parsed.data
+    const { title, body, kind, pinned, color } = parsed.data
     const updated = await db
       .update(notes)
       .set({
         title,
         body,
+        kind,
         pinned,
         color,
-        searchText: normalizeForSearch(`${title} ${body}`),
+        searchText: searchTextFor(kind, title, body),
         updatedBy: user.id,
         updatedAt: new Date().toISOString(),
       })

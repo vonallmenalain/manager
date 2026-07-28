@@ -155,10 +155,79 @@ export type NoteColor = (typeof NOTE_COLORS)[number]
 
 export const noteColorSchema = z.enum(NOTE_COLORS)
 
+/**
+ * Zwei Arten von Notiz: Fliesstext oder eine Liste zum Abhaken.
+ *
+ * Beide liegen im selben Feld `body`. Eine Checkliste schreibt je Zeile einen
+ * Eintrag, dem ein `[ ]` oder `[x]` vorangeht – dieselbe Schreibweise, die
+ * Menschen ohnehin verwenden. Eine eigene Tabelle für Listeneinträge wäre die
+ * lehrbuchmässige Lösung und hier reiner Ballast: Es gibt kein Sortieren über
+ * Notizen hinweg, keine Rechte je Eintrag, und eine Notiz wird immer als
+ * Ganzes gespeichert. Dafür bleibt die Notiz in der Datenbank lesbar, und die
+ * Volltextsuche findet sie ohne Zusatzarbeit.
+ */
+export const NOTE_KINDS = ['text', 'liste'] as const
+export type NoteKind = (typeof NOTE_KINDS)[number]
+
+export const noteKindSchema = z.enum(NOTE_KINDS)
+
+export const NOTE_KIND_LABELS: Record<NoteKind, string> = {
+  text: 'Text',
+  liste: 'Checkliste',
+}
+
+export interface ChecklistItem {
+  text: string
+  done: boolean
+}
+
+/** `[x] Milch`, `[ ] Brot` – auch mit vorangestelltem Listenstrich. */
+const CHECKLIST_LINE = /^\s*(?:[-*]\s*)?\[([ xX])\]\s?(.*)$/
+
+/**
+ * Liest die Einträge einer Checkliste.
+ *
+ * Zeilen ohne Kästchen werden zu offenen Einträgen. Das ist der Fall, wenn
+ * aus einer Textnotiz eine Liste wird oder jemand etwas hineinkopiert – beides
+ * soll Einträge ergeben und keine Fehlermeldung.
+ */
+export function parseChecklist(body: string): ChecklistItem[] {
+  const items: ChecklistItem[] = []
+
+  for (const line of body.split('\n')) {
+    const match = CHECKLIST_LINE.exec(line)
+    const text = (match ? (match[2] ?? '') : line).trim()
+    if (!text) continue
+    items.push({ text, done: match ? (match[1] ?? ' ').toLowerCase() === 'x' : false })
+  }
+
+  return items
+}
+
+/** Schreibt die Einträge zurück. Leere fallen weg – sie sind eine Zeile im Entstehen. */
+export function serializeChecklist(items: readonly ChecklistItem[]): string {
+  return items
+    .filter((item) => item.text.trim() !== '')
+    .map((item) => `[${item.done ? 'x' : ' '}] ${item.text.trim()}`)
+    .join('\n')
+}
+
+/**
+ * Der Text einer Notiz ohne Kästchen – für die Suche und für den Wechsel
+ * zurück zur Textnotiz. Die Häkchen gehen dabei verloren; sie in den
+ * Fliesstext zu übernehmen hiesse, sie beim nächsten Wechsel doppelt zu haben.
+ */
+export function checklistToText(body: string): string {
+  return parseChecklist(body)
+    .map((item) => item.text)
+    .join('\n')
+}
+
 export const noteSchema = z.object({
   id: z.string(),
   title: z.string(),
   body: z.string(),
+  kind: noteKindSchema,
   pinned: z.boolean(),
   color: noteColorSchema,
   createdBy: z.string(),
@@ -173,6 +242,7 @@ export const upsertNoteSchema = z
   .object({
     title: z.string().trim().max(120).default(''),
     body: z.string().max(20_000).default(''),
+    kind: noteKindSchema.default('text'),
     pinned: z.boolean().default(false),
     color: noteColorSchema.default('default'),
   })

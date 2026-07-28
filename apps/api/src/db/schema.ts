@@ -217,6 +217,12 @@ export const notes = sqliteTable(
     id: text('id').primaryKey(),
     title: text('title').notNull().default(''),
     body: text('body').notNull().default(''),
+    /**
+     * 'text' oder 'liste'. Bei einer Liste steht in `body` je Zeile ein
+     * Eintrag mit vorangestelltem `[ ]` oder `[x]` – siehe parseChecklist im
+     * geteilten Paket.
+     */
+    kind: text('kind').notNull().default('text'),
     /** Angeheftete stehen immer oben. */
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     color: text('color').notNull().default('default'),
