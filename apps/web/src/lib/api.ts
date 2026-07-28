@@ -1,13 +1,18 @@
 import type {
   Category,
+  CreateShoppingItemInput,
   CreateUserInput,
   DocumentDetail,
   Health,
   LoginInput,
   ManagedDocument,
+  Note,
   PublicUser,
   SetupInput,
+  ShoppingItem,
   UpdateDocumentInput,
+  UpdateShoppingItemInput,
+  UpsertNoteInput,
 } from '@manager/shared'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
@@ -138,4 +143,35 @@ export const api = {
 
   retryOcr: (id: string) =>
     request<{ ocrStatus: string }>(`/api/documents/${id}/ocr`, { method: 'POST' }),
+
+  listShopping: () => request<{ items: ShoppingItem[] }>('/api/shopping'),
+
+  addShoppingItem: (input: CreateShoppingItemInput) =>
+    request<{ item: ShoppingItem }>('/api/shopping', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  updateShoppingItem: (id: string, changes: UpdateShoppingItemInput) =>
+    request<{ item: ShoppingItem }>(`/api/shopping/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
+
+  deleteShoppingItem: (id: string) =>
+    request<void>(`/api/shopping/${id}`, { method: 'DELETE' }),
+
+  clearDoneShoppingItems: () =>
+    request<{ removed: number }>('/api/shopping/erledigte-loeschen', { method: 'POST' }),
+
+  listNotes: (search = '') =>
+    request<{ notes: Note[] }>(`/api/notes${search ? `?q=${encodeURIComponent(search)}` : ''}`),
+
+  createNote: (note: UpsertNoteInput) =>
+    request<{ note: Note }>('/api/notes', { method: 'POST', body: JSON.stringify(note) }),
+
+  updateNote: (id: string, note: UpsertNoteInput) =>
+    request<{ note: Note }>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(note) }),
+
+  deleteNote: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
 }
