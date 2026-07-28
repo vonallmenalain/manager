@@ -1,0 +1,1 @@
+ALTER TABLE `notes` ADD `kind` text DEFAULT 'text' NOT NULL;
