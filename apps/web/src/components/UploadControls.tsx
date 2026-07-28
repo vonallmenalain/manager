@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
+import { DocumentScanner } from './DocumentScanner'
+import { PageTray } from './PageTray'
 import { ApiRequestError } from '../lib/api'
 import { useUploadDocument } from '../lib/documents'
+import {
+  buildUpload,
+  cameraAvailable,
+  createPage,
+  pageFromFile,
+  releasePage,
+  type ScanPage,
+} from '../lib/scan/pages'
 import { collectSharedFiles } from '../lib/sharedFiles'
 
 interface UploadState {
@@ -10,14 +20,22 @@ interface UploadState {
   message: string | null
 }
 
+/** Woher die nächste Seite kommt, wenn im Stapel „Weitere Seite" gewählt wird. */
+type PageSource = 'scanner' | 'kamera'
+
 /**
  * Alle Wege, auf denen ein Dokument in die App kommt:
  *
  *  - Teilen aus einer anderen App (Android) – der Service Worker legt die
  *    Datei ab und leitet mit `?geteilt=n` hierher weiter
- *  - Kamera – direkt aufnehmen, ohne Umweg über die Galerie
+ *  - Dokument scannen – der eingebaute Scanner mit Randerkennung
+ *  - Foto aufnehmen – die Kamera-App des Systems, mit allen Modi, die sie hat
  *  - Datei wählen – PDFs und Screenshots
  *  - App-Verknüpfung `?aufnehmen=1` – langer Druck auf das App-Symbol
+ *
+ * Aufnahmen aus den beiden Kamera-Wegen gehen nicht direkt in die Ablage,
+ * sondern zuerst in einen Stapel. Erst wenn alle Seiten beisammen sind, wird
+ * daraus ein Dokument – ein zweiseitiger Brief bleibt so ein Brief.
  */
 export function UploadControls() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -28,9 +46,14 @@ export function UploadControls() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [state, setState] = useState<UploadState>({ running: 0, message: null })
 
+  const [pages, setPages] = useState<ScanPage[]>([])
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [preparing, setPreparing] = useState(false)
+  const [source, setSource] = useState<PageSource>('scanner')
+
   const uploadFiles = useCallback(
-    async (files: File[]) => {
-      if (files.length === 0) return
+    async (files: File[]): Promise<boolean> => {
+      if (files.length === 0) return false
       setState({ running: files.length, message: null })
 
       let done = 0
@@ -57,6 +80,8 @@ export function UploadControls() {
             ? `${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hinzugefügt.`
             : problems.join(' · '),
       })
+
+      return problems.length === 0
     },
     [upload],
   )
@@ -92,7 +117,7 @@ export function UploadControls() {
     })
   }, [shared, setSearchParams, uploadFiles])
 
-  // Verknüpfung vom Startbildschirm: Kamera direkt öffnen.
+  // Verknüpfung vom Startbildschirm: direkt in den Scanner.
   const capture = searchParams.get('aufnehmen')
   useEffect(() => {
     if (capture !== '1') return
@@ -103,17 +128,125 @@ export function UploadControls() {
       },
       { replace: true },
     )
-    cameraRef.current?.click()
+
+    if (cameraAvailable()) {
+      setSource('scanner')
+      setScannerOpen(true)
+    } else {
+      setSource('kamera')
+      cameraRef.current?.click()
+    }
   }, [capture, setSearchParams])
 
-  function handleInput(event: React.ChangeEvent<HTMLInputElement>) {
+  // Beim Verlassen der Seite bleiben sonst so viele blob:-Adressen im
+  // Speicher, wie Seiten im Stapel lagen.
+  const pagesRef = useRef<readonly ScanPage[]>(pages)
+  pagesRef.current = pages
+  useEffect(
+    () => () => {
+      for (const page of pagesRef.current) releasePage(page)
+    },
+    [],
+  )
+
+  function discardPages() {
+    for (const page of pages) releasePage(page)
+    setPages([])
+  }
+
+  function removePage(id: string) {
+    const page = pages.find((entry) => entry.id === id)
+    if (page) releasePage(page)
+    setPages((current) => current.filter((entry) => entry.id !== id))
+  }
+
+  function movePage(id: string, direction: -1 | 1) {
+    setPages((current) => {
+      const index = current.findIndex((entry) => entry.id === id)
+      const target = index + direction
+      if (index === -1 || target < 0 || target >= current.length) return current
+
+      const next = [...current]
+      const moved = next[index] as ScanPage
+      next[index] = next[target] as ScanPage
+      next[target] = moved
+      return next
+    })
+  }
+
+  function openScanner() {
+    setMenuOpen(false)
+    setSource('scanner')
+    setScannerOpen(true)
+  }
+
+  function openSystemCamera() {
+    setMenuOpen(false)
+    setSource('kamera')
+    setScannerOpen(false)
+    cameraRef.current?.click()
+  }
+
+  /**
+   * Fotos aus der Kamera-App in den Stapel übernehmen.
+   *
+   * Was sich im Browser nicht öffnen lässt – auf manchen Geräten HEIC – wird
+   * unverändert hochgeladen. Ins PDF könnte es nicht eingebettet werden, aber
+   * als eigenes Dokument ist es allemal besser aufgehoben als in einer
+   * Fehlermeldung.
+   */
+  async function collectPhotos(files: File[]) {
+    setPreparing(true)
+    const prepared: ScanPage[] = []
+    const undecodable: File[] = []
+
+    for (const file of files) {
+      try {
+        prepared.push(await pageFromFile(file))
+      } catch {
+        undecodable.push(file)
+      }
+    }
+
+    if (prepared.length > 0) setPages((current) => [...current, ...prepared])
+    setPreparing(false)
+
+    if (undecodable.length > 0) await uploadFiles(undecodable)
+  }
+
+  async function uploadPages() {
+    let file: File
+    try {
+      file = await buildUpload(pages)
+    } catch (error) {
+      setState({
+        running: 0,
+        message:
+          error instanceof Error ? error.message : 'Die Seiten liessen sich nicht zusammenfügen.',
+      })
+      return
+    }
+
+    // Nur bei Erfolg verwerfen: Reisst die Verbindung ab, bleibt der Stapel
+    // erhalten und ein zweiter Versuch kostet keine neue Aufnahme.
+    if (await uploadFiles([file])) discardPages()
+  }
+
+  function handleCameraInput(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    setMenuOpen(false)
+    void collectPhotos(files)
+  }
+
+  function handleFileInput(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? [])
     event.target.value = ''
     setMenuOpen(false)
     void uploadFiles(files)
   }
 
-  const busy = state.running > 0
+  const busy = state.running > 0 || preparing
 
   return (
     <>
@@ -127,15 +260,16 @@ export function UploadControls() {
         </button>
       ) : null}
 
-      {/* capture='environment' öffnet auf Android direkt die Rückkamera,
-          statt den Umweg über die Galerie zu nehmen. */}
+      {/* Bewusst ohne capture-Attribut: Mit capture öffnet Android sofort die
+          nackte Aufnahme-Ansicht. Ohne es erscheint die Auswahl, über die sich
+          die Kamera-App mit all ihren Modi öffnen lässt – auch dem
+          Dokumentenmodus, den die meisten Kameras mitbringen. */}
       <input
         ref={cameraRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
-        onChange={handleInput}
+        onChange={handleCameraInput}
       />
       <input
         ref={fileRef}
@@ -143,8 +277,37 @@ export function UploadControls() {
         multiple
         accept="application/pdf,image/*"
         className="hidden"
-        onChange={handleInput}
+        onChange={handleFileInput}
       />
+
+      {scannerOpen ? (
+        <DocumentScanner
+          pageCount={pages.length}
+          onCapture={(blob) => {
+            // Die blob:-Adresse entsteht bewusst ausserhalb von setPages –
+            // React ruft die Funktion darin unter Umständen zweimal auf, und
+            // die zweite Adresse würde niemand mehr freigeben.
+            const page = createPage(blob)
+            setPages((current) => [...current, page])
+          }}
+          onClose={() => setScannerOpen(false)}
+          onFallback={openSystemCamera}
+        />
+      ) : pages.length > 0 ? (
+        <PageTray
+          pages={pages}
+          busy={busy}
+          onAddPage={() => (source === 'scanner' ? setScannerOpen(true) : cameraRef.current?.click())}
+          onRemove={removePage}
+          onMove={movePage}
+          onDiscard={() => {
+            if (window.confirm(`${pages.length === 1 ? 'Die Seite' : 'Alle Seiten'} verwerfen?`)) {
+              discardPages()
+            }
+          }}
+          onUpload={() => void uploadPages()}
+        />
+      ) : null}
 
       {menuOpen ? (
         <>
@@ -154,7 +317,15 @@ export function UploadControls() {
             aria-label="Menü schliessen"
           />
           <div className="fixed bottom-40 right-4 z-30 flex flex-col items-end gap-2">
-            <MenuAction label="Foto aufnehmen" onClick={() => cameraRef.current?.click()}>
+            <MenuAction label="Dokument scannen" onClick={openScanner}>
+              <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+                  <path d="M4 12h16" />
+                </g>
+              </svg>
+            </MenuAction>
+            <MenuAction label="Foto aufnehmen" onClick={openSystemCamera}>
               <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
                   d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z"

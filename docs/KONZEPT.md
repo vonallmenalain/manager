@@ -187,17 +187,40 @@ erscheint auf dem Dashboard unter "Pendent".
 
 ### 6.1 Dokumente
 
-**Erfassen – vier Wege, alle schnell:**
+**Erfassen – fünf Wege, alle schnell:**
 
 | Weg | Plattform | Beschreibung |
 |---|---|---|
 | Teilen-Menü | Android | PDF aus Gmail/Outlook → Teilen → "Manager". Web Share Target. |
 | Kurzbefehl | iOS | Teilen → Kurzbefehl "An Manager", lädt direkt via API hoch (siehe 8.2) |
-| Kamera-Scan | beide | In-App: Foto → automatischer Randbeschnitt, Entzerrung, Kontrast → PDF |
+| Dokument scannen | beide | In-App: Foto → automatischer Randbeschnitt, Entzerrung, Kontrast → PDF |
+| Foto aufnehmen | beide | Kamera-App des Systems, mit allen Modi die sie mitbringt |
 | Datei/Screenshot | beide | Normaler Datei-Picker, Mehrfachauswahl möglich |
 
 Nach dem Upload landet das Dokument sofort in der Liste – der Nutzer wartet **nie** auf OCR.
 Die Verarbeitung läuft im Hintergrund, der Status wird live nachgeführt.
+
+**Der Dokumentenmodus** (`apps/web/src/lib/scan/`) ist der Unterschied zwischen Foto und
+Scan. Aus dem Live-Bild der Kamera wird die Seite gesucht (Otsu-Schwelle, zusammenhängende
+Fläche um die Bildmitte, konvexe Hülle auf vier Ecken zurückgeführt), zur Kontrolle
+angezeigt und von Hand nachziehbar. Danach wird perspektivisch entzerrt und – der Schritt,
+der am meisten ausmacht – der Helligkeitsverlauf herausgerechnet: Jeder Bildpunkt wird
+durch die geschätzte Papierhelligkeit an seiner Stelle geteilt, womit der Schatten des
+eigenen Kopfes verschwindet. Zur Wahl stehen Farbe, Graustufen und Schwarz-Weiss.
+Gerechnet wird ohne Bildverarbeitungs-Bibliothek; OpenCV.js wöge ein Vielfaches der
+ganzen App.
+
+**Mehrere Seiten** landen zuerst in einem Stapel statt sofort in der Ablage. Nach jeder
+Aufnahme steht die Kamera wieder bereit; im Stapel lassen sich Seiten umsortieren und
+entfernen. Erst "Ablegen" schreibt sie in ein Dokument – ab zwei Seiten als PDF (die
+JPEGs wandern unverändert hinein, `DCTDecode`), bei einer einzelnen bleibt es beim Bild.
+Für die Texterkennung ändert sich dadurch nichts: Ein PDF ohne Textebene rastert der
+Server ohnehin und schickt es durch Tesseract.
+
+Die Kamera-App des Systems ist der zweite Weg, absichtlich ohne `capture`-Attribut: Mit
+ihm öffnet Android sofort die nackte Aufnahme-Ansicht, ohne es die Auswahl, über die sich
+die Kamera-App samt ihrem eigenen Dokumentenmodus öffnen lässt. Auch diese Fotos gehen in
+den Stapel, werden dort aber nicht nachbearbeitet – nur gedreht (EXIF) und verkleinert.
 
 **Erfassungs-Dialog** (erscheint direkt nach dem Upload, alles vorausgefüllt und optional):
 Titel · Kategorie · Datum · Zuständig (ich / Ehefrau / beide) · Status · Fällig am · Betrag.
@@ -512,7 +535,7 @@ eine funktionierende App auf dem Handy.
 |---|---|---|---|
 | **0** ✅ | **Fundament** | Monorepo, CI/CD, Container, Tunnel, Domain, Login | `manager.alae.app` ist erreichbar, ihr könnt euch anmelden |
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
-| **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Kamera-Aufnahme, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
+| **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Dokumentenmodus mit Randerkennung, mehrseitige Scans, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
 | **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen mit Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
