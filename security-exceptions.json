@@ -1,0 +1,17 @@
+{
+  "$comment": [
+    "Bewusst akzeptierte Sicherheitshinweise für Laufzeit-Abhängigkeiten.",
+    "Jeder Eintrag braucht eine Begründung, warum er auf diese App nicht zutrifft,",
+    "und ein Datum für die nächste Überprüfung. Alles andere lässt die CI scheitern."
+  ],
+  "exceptions": [
+    {
+      "id": "GHSA-qwww-vcr4-c8h2",
+      "package": "react-router",
+      "title": "RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
+      "severity": "high",
+      "reason": "Betrifft ausschliesslich den React-Server-Components-Modus mit Server Actions. Manager ist eine rein statische SPA auf Netlify: BrowserRouter im Client, kein RSC, keine Server Actions, keine Loader/Actions auf dem Server. Der verwundbare Codepfad wird nie ausgeführt. Ein Downgrade wäre kontraproduktiv - jede react-router-Version unterhalb 7.18.0 ist von deutlich mehr Advisories betroffen, inklusive einer RCE (GHSA-49rj-9fvp-4h2h) und mehrerer XSS-Luecken in <Link> und useNavigate, die wir tatsaechlich benutzen.",
+      "reviewAfter": "2026-10-01"
+    }
+  ]
+}

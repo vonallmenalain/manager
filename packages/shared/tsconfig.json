@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "composite": true,
+    // Muss innerhalb von dist liegen: Sonst überlebt der Inkrement-Stand ein
+    // 'rm -rf dist', tsc hält den Build für aktuell und emittiert nichts –
+    // was danach als rätselhaftes "Cannot find module '@manager/shared'" auftaucht.
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"]
+}

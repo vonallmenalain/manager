@@ -1,0 +1,56 @@
+@import 'tailwindcss';
+
+/*
+ * Farbwelt: gedecktes Marineblau als Anker, warmes Grau als Fläche.
+ * Bewusst ruhig – die App wird zwischen Tür und Angel benutzt, da soll
+ * nichts um Aufmerksamkeit konkurrieren ausser dem Inhalt.
+ */
+@theme {
+  --color-brand-50: #f0f5fa;
+  --color-brand-100: #dae7f3;
+  --color-brand-200: #b8d0e8;
+  --color-brand-300: #8ab0d6;
+  --color-brand-400: #568cc0;
+  --color-brand-500: #3670a8;
+  --color-brand-600: #2a598b;
+  --color-brand-700: #234870;
+  --color-brand-800: #1e3a5f;
+  --color-brand-900: #16293f;
+
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    /* Verhindert, dass iOS/Android beim Fokus auf ein Eingabefeld hineinzoomt. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+    /* Kein Gummiband-Effekt beim Überscrollen – wirkt sonst schnell wie eine Website. */
+    overscroll-behavior-y: none;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      @apply bg-slate-950 text-slate-100;
+    }
+  }
+
+  /* Tippen soll nie ein graues Rechteck aufblitzen lassen. */
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}

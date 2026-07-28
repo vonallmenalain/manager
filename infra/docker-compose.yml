@@ -1,0 +1,91 @@
+# ---------------------------------------------------------------------------
+# Manager – Backend auf dem QNAP (Container Station)
+#
+# Einmalig einrichten, danach unverändert lassen: Neue Versionen holt
+# Watchtower automatisch. Die zugehörigen Werte stehen in der .env-Datei
+# daneben (Vorlage: .env.example).
+# ---------------------------------------------------------------------------
+
+services:
+  manager-api:
+    image: ghcr.io/vonallmenalain/manager-api:latest
+    container_name: manager-api
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+
+      # Pfade IM Container – die Zuordnung zum NAS passiert unter 'volumes'.
+      DB_DIR: /data
+      STORAGE_DIR: /storage
+
+      APP_ORIGIN: https://manager.alae.app
+      COOKIE_DOMAIN: .alae.app
+
+      # Hinter cloudflared kommt jeder Request von der Container-IP.
+      # Ohne diese Zeile würde das Rate-Limit alle Nutzer zusammenzählen.
+      TRUST_PROXY: "true"
+
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET fehlt in der .env}
+      SESSION_DAYS: 90
+
+      # Nur für die Ersteinrichtung nötig. Danach ist der Endpunkt dauerhaft
+      # gesperrt; die Zeile kann anschliessend entfernt werden.
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+
+      # An den Besitzer der NAS-Ordner angleichen – siehe entrypoint.sh.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+
+      LOG_LEVEL: info
+
+    volumes:
+      # Datenbank: klein, schreibintensiv. Muss auf einem lokalen Volume des
+      # NAS liegen – niemals auf einer eingebundenen NFS-/SMB-Freigabe.
+      - ${DATA_PATH:-/share/Container/manager/data}:/data
+      # Dokumentenablage: darf auf einer beliebigen Freigabe liegen, am besten
+      # auf einer, die euer bestehendes Backup ohnehin schon sichert.
+      - ${STORAGE_PATH:-/share/Dokumente/Manager}:/storage
+
+    labels:
+      # Nur Container mit diesem Label werden von Watchtower angefasst –
+      # eure übrigen Dienste bleiben unberührt.
+      - com.centurylinklabs.watchtower.enable=true
+
+    networks:
+      - manager
+
+  # -------------------------------------------------------------------------
+  # Tunnel zu Cloudflare: baut die Verbindung von innen nach aussen auf.
+  # Kein Port-Forwarding, keine Firewall-Regel, kein Zertifikats-Handling.
+  # -------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: manager-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN fehlt in der .env}
+    depends_on:
+      - manager-api
+    networks:
+      - manager
+
+  # -------------------------------------------------------------------------
+  # Holt neue Images und startet den Container neu. Damit wird aus einem
+  # 'git push' ohne weiteres Zutun ein Deploy auf dem NAS.
+  # -------------------------------------------------------------------------
+  watchtower:
+    image: containrrr/watchtower
+    container_name: manager-watchtower
+    restart: unless-stopped
+    command: --interval 300 --label-enable --cleanup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - manager
+
+networks:
+  manager:
+    driver: bridge

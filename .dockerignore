@@ -1,0 +1,33 @@
+# Abhängigkeiten werden im Image frisch installiert – die lokalen sind für
+# die falsche Plattform gebaut und würden den Build-Kontext aufblähen.
+node_modules
+**/node_modules
+
+# Build-Artefakte entstehen im Image neu
+dist
+**/dist
+*.tsbuildinfo
+
+# Laufzeitdaten
+data
+storage
+*.sqlite*
+
+# Gehört nicht ins Image
+.git
+.github
+.env
+.env.*
+docs
+*.md
+.vscode
+.idea
+
+# Das Frontend läuft auf Netlify, nicht im Container. Nur die package.json
+# bleibt drin – npm braucht sie, um die Sperrdatei abzugleichen (siehe Dockerfile).
+apps/web/src
+apps/web/public
+apps/web/scripts
+apps/web/index.html
+apps/web/vite.config.ts
+apps/web/tsconfig*.json

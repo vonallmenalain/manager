@@ -1,0 +1,83 @@
+name: Container veröffentlichen
+
+# Läuft nur auf main. Ergebnis landet als ':latest' in der GitHub Container
+# Registry – von dort holt Watchtower auf dem QNAP die neue Version innerhalb
+# von fünf Minuten selbstständig ab.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'packages/shared/**'
+      - 'infra/Dockerfile'
+      - 'infra/entrypoint.sh'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docker-publish.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/manager-api
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile
+          # Das Ziel-NAS ist x86_64. Ein zusätzlicher arm64-Build müsste unter
+          # QEMU emuliert werden und würde jedes Deploy um ein Vielfaches
+          # verlängern, ohne dass die Variante je gezogen wird. Bei einem
+          # Gerätewechsel hier 'linux/arm64' ergänzen und setup-qemu-action
+          # wieder aufnehmen.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Zusammenfassung
+        run: |
+          {
+            echo "### Image veröffentlicht"
+            echo ""
+            echo '```'
+            echo "${{ env.IMAGE }}:latest"
+            echo "${{ env.IMAGE }}:sha-${{ github.sha }}"
+            echo '```'
+            echo ""
+            echo "Watchtower zieht die neue Version innerhalb von 5 Minuten."
+            echo "Kontrolle: <https://api.alae.app/api/health> zeigt danach"
+            echo "\`version: ${{ github.sha }}\` und eine kleine \`uptime\`."
+          } >> "$GITHUB_STEP_SUMMARY"

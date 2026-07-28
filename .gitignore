@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Lokale Umgebung
+.env
+.env.local
+.env.*.local
+
+# Laufzeitdaten (gehören auf das NAS, nie ins Repo)
+data/
+storage/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Build-Artefakte Frontend
+apps/web/dev-dist/
+.netlify/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Von tsc -b erzeugte Zwischenstände
+*.tsbuildinfo
+**/*.tsbuildinfo

@@ -1,0 +1,25 @@
+{
+  "name": "manager",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev -w @manager/api",
+    "dev:web": "npm run dev -w @manager/web",
+    "build": "npm run build -w @manager/shared && npm run build -w @manager/api && npm run build -w @manager/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run typecheck",
+    "audit": "node scripts/audit-check.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
