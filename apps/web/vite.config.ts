@@ -8,10 +8,14 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      // Neue Version wird im Hintergrund geladen und beim nächsten Start aktiv.
-      // Für eine Haushalts-App ist das angenehmer als ein Update-Banner.
+      // Eigener Service Worker statt eines erzeugten: Nur so lässt sich der
+      // POST des Android-Teilen-Menüs abfangen (siehe src/sw.ts).
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+
       manifest: {
         name: 'Manager',
         short_name: 'Manager',
@@ -33,19 +37,51 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
-        // Etappe 2 ergänzt hier 'share_target' und 'shortcuts'. Beides jetzt schon
-        // einzutragen hiesse, im Android-Teilen-Menü einen Eintrag anzubieten,
-        // der noch ins Leere läuft.
+
+        /**
+         * Damit erscheint Manager im Teilen-Menü von Android. Wer ein PDF in
+         * Gmail öffnet und auf Teilen tippt, findet die App direkt neben den
+         * nativen Anwendungen.
+         *
+         * Der POST geht nicht an den Server, sondern wird vom Service Worker
+         * abgefangen – die Adresse muss trotzdem im Geltungsbereich liegen.
+         */
+        share_target: {
+          action: '/share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [
+              {
+                name: 'files',
+                accept: ['application/pdf', 'image/*'],
+              },
+            ],
+          },
+        },
+
+        // Langer Druck auf das App-Symbol führt direkt zur Aufnahme.
+        shortcuts: [
+          {
+            name: 'Dokument aufnehmen',
+            short_name: 'Aufnehmen',
+            description: 'Kamera öffnen und ein Dokument ablegen',
+            url: '/dokumente?aufnehmen=1',
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }],
+          },
+        ],
       },
-      workbox: {
+
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        // API-Antworten gehören nicht in den Precache: Der Service Worker soll
-        // die App-Hülle ausliefern, die Daten kommen immer frisch vom Server.
-        navigateFallbackDenylist: [/^\/api\//],
-        cleanupOutdatedCaches: true,
       },
+
       devOptions: {
         enabled: false,
+        type: 'module',
       },
     }),
   ],

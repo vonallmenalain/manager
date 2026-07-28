@@ -2,6 +2,7 @@ import type { PublicUser } from '@manager/shared'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { useLogout } from '../lib/session'
+import { ConnectionBanner } from './ConnectionBanner'
 import { CartIcon, CoinIcon, DocumentIcon, HomeIcon, LogoutIcon, NoteIcon } from './icons'
 
 const TABS = [
@@ -38,6 +39,7 @@ export function AppShell({ user }: { user: PublicUser }) {
             <LogoutIcon className="size-5" />
           </button>
         </div>
+        <ConnectionBanner />
       </header>
 
       {/* pb-24 hält den Inhalt über der Navigationsleiste frei. */}
