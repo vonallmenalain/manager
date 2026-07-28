@@ -45,7 +45,7 @@ flowchart TB
 
     subgraph CF["☁️ Cloudflare"]
         DNS["DNS alae.app"]
-        TUN["Tunnel → api.alae.app"]
+        TUN["Tunnel → manager-api.alae.app"]
     end
 
     subgraph QNAP["🏠 QNAP (Container Station)"]
@@ -320,7 +320,7 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
   Eine installierte PWA erscheint dort nicht im Teilen-Menü. Das lässt sich nicht
   umgehen, aber gleichwertig lösen:
   **Apple-Kurzbefehl "An Manager"**. Ein Kurzbefehl, der Dateien entgegennimmt und per
-  `POST` an `api.alae.app/api/share` sendet (mit einem langlebigen Gerätetoken aus der App).
+  `POST` an `manager-api.alae.app/api/share` sendet (mit einem langlebigen Gerätetoken aus der App).
   Er erscheint direkt im iOS-Teilen-Menü, exakt neben den nativen Apps. Ich liefere den
   Kurzbefehl fertig konfiguriert mit – Einrichtung einmalig, etwa zwei Minuten.
 
@@ -333,7 +333,7 @@ sie bestimmt, welcher der beiden Wege in Etappe 2 gebaut wird (oder beide).
 
 * **Konten:** Zwei, manuell angelegt, keine offene Registrierung.
 * **Passwörter:** argon2id. Session als HttpOnly-, Secure-, SameSite=Lax-Cookie auf
-  `.alae.app`. Da `manager.alae.app` und `api.alae.app` dieselbe Registrable Domain
+  `.alae.app`. Da `manager.alae.app` und `manager-api.alae.app` dieselbe Registrable Domain
   teilen, gilt das als same-site – kein `SameSite=None` nötig, keine Third-Party-Cookie-Probleme.
 * **Sitzungsdauer:** 90 Tage mit rollierender Erneuerung. Auf dem Handy soll man sich
   nicht ständig neu anmelden. Optional später: Face-ID/Touch-ID via Passkey (WebAuthn).
@@ -464,7 +464,7 @@ ziehen wir Etappe 5 vor – sie hängt von nichts ab ausser Etappe 0.
 | Frage | Entscheid | Folge |
 |---|---|---|
 | Handy-Plattform | **Beide Android** | Web Share Target wird nativ gebaut, kein iOS-Kurzbefehl nötig |
-| DNS `alae.app` | **Cloudflare** | Cloudflare Tunnel für `api.alae.app`, keine offenen Ports |
+| DNS `alae.app` | **Cloudflare** | Cloudflare Tunnel für `manager-api.alae.app`, keine offenen Ports |
 | Container-Updates | **Watchtower** | Wie im Konzept beschrieben, identisch zur Share-App |
 | Reihenfolge | **Etappe 0 → 1 → 2** | Fundament, Dokumente, dann der schnelle Handy-Upload |
 

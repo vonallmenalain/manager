@@ -78,6 +78,6 @@ jobs:
             echo '```'
             echo ""
             echo "Watchtower zieht die neue Version innerhalb von 5 Minuten."
-            echo "Kontrolle: <https://api.alae.app/api/health> zeigt danach"
+            echo "Kontrolle: <https://manager-api.alae.app/api/health> zeigt danach"
             echo "\`version: ${{ github.sha }}\` und eine kleine \`uptime\`."
           } >> "$GITHUB_STEP_SUMMARY"

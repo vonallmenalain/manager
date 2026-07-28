@@ -32,7 +32,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     response = await fetch(`${API_URL}${path}`, {
       ...init,
       // Ohne 'include' schickt der Browser das Sitzungs-Cookie nicht an
-      // api.alae.app – die häufigste Ursache für 'plötzlich abgemeldet'.
+      // manager-api.alae.app – die häufigste Ursache für 'plötzlich abgemeldet'.
       credentials: 'include',
       headers: {
         ...(init.body ? { 'content-type': 'application/json' } : {}),

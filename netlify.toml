@@ -34,7 +34,7 @@
       style-src 'self' 'unsafe-inline'; \
       img-src 'self' data: blob:; \
       font-src 'self'; \
-      connect-src 'self' https://api.alae.app; \
+      connect-src 'self' https://manager-api.alae.app; \
       frame-ancestors 'none'; \
       base-uri 'self'; \
       form-action 'self'"""

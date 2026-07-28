@@ -16,7 +16,7 @@ System zu stehen.
 | 2 | Cloudflare: Tunnel anlegen | 10 Min |
 | 3 | QNAP: Ordner anlegen | 5 Min |
 | 4 | QNAP: Container starten | 10 Min |
-| 5 | Cloudflare: `api.alae.app` verbinden | 5 Min |
+| 5 | Cloudflare: `manager-api.alae.app` verbinden | 5 Min |
 | 6 | Netlify: Frontend veröffentlichen | 10 Min |
 | 7 | Erste Anmeldung und Installation aufs Handy | 5 Min |
 
@@ -74,7 +74,7 @@ aktualisieren.
 
 Der Tunnel baut die Verbindung **von deinem NAS nach aussen** auf. Dadurch
 braucht die QNAP-Firewall keine eingehende Regel, dein Router kein
-Port-Forwarding, und das Zertifikat für `api.alae.app` verwaltet Cloudflare.
+Port-Forwarding, und das Zertifikat für `manager-api.alae.app` verwaltet Cloudflare.
 
 1. [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) öffnen
 2. **Networks → Tunnels → Create a tunnel**
@@ -83,7 +83,7 @@ Port-Forwarding, und das Zertifikat für `api.alae.app` verwaltet Cloudflare.
    (die lange Zeichenkette nach `--token` im angezeigten Befehl)
 5. Den Token bereithalten – er kommt in Schritt 4 in die `.env`
 
-> Die Zuordnung zu `api.alae.app` machen wir erst in Schritt 5, wenn der
+> Die Zuordnung zu `manager-api.alae.app` machen wir erst in Schritt 5, wenn der
 > Container schon läuft. Andersherum zeigt Cloudflare eine Weile Fehler an.
 
 ---
@@ -180,17 +180,25 @@ docker exec manager-api node -e \
 
 ---
 
-## Schritt 5 – `api.alae.app` mit dem Tunnel verbinden
+## Schritt 5 – `manager-api.alae.app` mit dem Tunnel verbinden
 
 Der Tunnel steht jetzt zwar (*Status: Healthy*), weiss aber noch nicht, wohin
 er Anfragen schicken soll – die Übersicht zeigt **Routes: 0**. Das ändern wir:
 
 1. Im Tunnel `qnap-manager` auf **+ Add route** (oder Reiter **Routes → Add route**)
-2. Subdomain: `api` · Domain: `alae.app` · Path: leer lassen
+2. Subdomain: `manager-api` · Domain: `alae.app` · Path: leer lassen
 3. **Service URL:** `http://manager-api:8080`
 4. **Add route**
 
-Zwei Fallstricke in diesem einen Feld:
+> **Vorher prüfen, ob der Hostname frei ist.** Ein Hostname darf nur zu *einem*
+> Tunnel gehören – der DNS-Eintrag ist ein CNAME auf genau eine Tunnel-ID.
+> Trägt man einen bereits vergebenen Namen ein, biegt Cloudflare den Eintrag
+> stillschweigend um, und der bisherige Dienst ist ohne Vorwarnung tot.
+> Unter *Networks → Tunnels* zeigt jeder Tunnel seine Routen; auf `alae.app`
+> liegen bereits `api` (foto-app) und `share-api` (share-app). Daher hier
+> `manager-api` – dem Muster von `share-api` folgend.
+
+Zwei Fallstricke im Service-URL-Feld:
 
 * **Das Protokoll muss mit.** Ohne `http://` weist die Oberfläche die Eingabe
   ab („Invalid service URL format").
@@ -200,13 +208,13 @@ Zwei Fallstricke in diesem einen Feld:
   selben Docker-Netzwerk und finden sich über den Container-Namen. Und intern
   wird unverschlüsselt gesprochen; das TLS nach aussen übernimmt Cloudflare.
 
-Den DNS-Eintrag für `api.alae.app` legt Cloudflare dabei selbst an, ebenso das
+Den DNS-Eintrag für `manager-api.alae.app` legt Cloudflare dabei selbst an, ebenso das
 Zertifikat. Ein Blick in die DNS-Einstellungen ist nicht nötig.
 
 Prüfen – jetzt von aussen, z.B. vom Handy im Mobilfunknetz:
 
 ```
-https://api.alae.app/api/health
+https://manager-api.alae.app/api/health
 ```
 
 Es muss `{"status":"ok","version":"…","uptime":…}` erscheinen.
@@ -229,7 +237,7 @@ Es muss `{"status":"ok","version":"…","uptime":…}` erscheinen.
 
    | Variable | Wert |
    |---|---|
-   | `VITE_API_URL` | `https://api.alae.app` |
+   | `VITE_API_URL` | `https://manager-api.alae.app` |
 
    > Wichtig: Vite backt diesen Wert beim Bauen fest ein. Wird er nachträglich
    > geändert, muss ein neuer Deploy angestossen werden.
@@ -275,7 +283,7 @@ Für das Frontend baut Netlify parallel und veröffentlicht direkt.
 > sich jeder Build von Hand anstossen (Actions → *Container veröffentlichen*
 > → **Run workflow**).
 
-**Kontrolle, ob eine Änderung angekommen ist:** `https://api.alae.app/api/health`
+**Kontrolle, ob eine Änderung angekommen ist:** `https://manager-api.alae.app/api/health`
 zeigt `version` (der Git-SHA des laufenden Standes) und `uptime` (Sekunden
 seit dem letzten Neustart). Nach einem Deploy steht die `uptime` wieder bei
 fast null.
@@ -318,7 +326,7 @@ Dokumenten-Backup mitgenommen.
 | Symptom | Wahrscheinliche Ursache |
 |---|---|
 | `docker pull` meldet `denied` | Das Image existiert noch nicht (Workflow aus Schritt 1a nie gelaufen) **oder** das Paket ist noch privat (Schritt 1b). GHCR unterscheidet die beiden Fälle für anonyme Abrufe nicht – die Meldung ist immer `denied` |
-| `api.alae.app` nicht erreichbar | `cloudflared`-Container läuft nicht, oder Public Hostname zeigt auf `localhost` statt `manager-api:8080` |
+| `manager-api.alae.app` nicht erreichbar | `cloudflared`-Container läuft nicht, oder Public Hostname zeigt auf `localhost` statt `manager-api:8080` |
 | Anmeldung klappt, nach dem Neuladen wieder abgemeldet | `COOKIE_DOMAIN` ist nicht `.alae.app`, oder `VITE_API_URL` zeigt auf eine andere Domain als das Cookie |
 | `permission denied` im Log | `PUID`/`PGID` passen nicht zum Besitzer der Ordner (Schritt 3) |
 | Frontend zeigt „Keine Verbindung zum Server" | `VITE_API_URL` in Netlify fehlt oder ist falsch – nach Änderung neu deployen |

@@ -16,7 +16,7 @@ und jederzeit sehen was noch offen ist – ohne dass Daten das eigene NAS verlas
 | Teil | Wo |
 |---|---|
 | Frontend (PWA) | Netlify → `manager.alae.app` |
-| Backend (API + OCR) | Container auf dem QNAP → `api.alae.app` via Cloudflare Tunnel |
+| Backend (API + OCR) | Container auf dem QNAP → `manager-api.alae.app` via Cloudflare Tunnel |
 | Datenbank | SQLite auf einem QNAP-Volume, ausserhalb des Containers |
 | Dateien | QNAP-Freigabe, menschenlesbare Ordnerstruktur |
 | Deployment | `git push` → GitHub Actions → GHCR → Watchtower zieht automatisch |
