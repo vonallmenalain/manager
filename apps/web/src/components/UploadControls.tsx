@@ -9,6 +9,7 @@ import {
   buildUpload,
   cameraAvailable,
   createPage,
+  defaultScanTitle,
   pageFromFile,
   releasePage,
   type ScanPage,
@@ -47,12 +48,13 @@ export function UploadControls() {
   const [state, setState] = useState<UploadState>({ running: 0, message: null })
 
   const [pages, setPages] = useState<ScanPage[]>([])
+  const [title, setTitle] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
   const [preparing, setPreparing] = useState(false)
   const [source, setSource] = useState<PageSource>('scanner')
 
   const uploadFiles = useCallback(
-    async (files: File[]): Promise<boolean> => {
+    async (files: File[], documentTitle?: string): Promise<boolean> => {
       if (files.length === 0) return false
       setState({ running: files.length, message: null })
 
@@ -61,7 +63,7 @@ export function UploadControls() {
 
       for (const file of files) {
         try {
-          await upload.mutateAsync({ file })
+          await upload.mutateAsync({ file, title: documentTitle })
           done += 1
         } catch (error) {
           if (error instanceof ApiRequestError && error.code === 'duplicate') {
@@ -152,6 +154,7 @@ export function UploadControls() {
   function discardPages() {
     for (const page of pages) releasePage(page)
     setPages([])
+    setTitle('')
   }
 
   function removePage(id: string) {
@@ -215,9 +218,11 @@ export function UploadControls() {
   }
 
   async function uploadPages() {
+    const chosen = title.trim() || defaultScanTitle()
+
     let file: File
     try {
-      file = await buildUpload(pages)
+      file = await buildUpload(pages, chosen)
     } catch (error) {
       setState({
         running: 0,
@@ -229,7 +234,7 @@ export function UploadControls() {
 
     // Nur bei Erfolg verwerfen: Reisst die Verbindung ab, bleibt der Stapel
     // erhalten und ein zweiter Versuch kostet keine neue Aufnahme.
-    if (await uploadFiles([file])) discardPages()
+    if (await uploadFiles([file], chosen)) discardPages()
   }
 
   function handleCameraInput(event: React.ChangeEvent<HTMLInputElement>) {
@@ -296,6 +301,9 @@ export function UploadControls() {
       ) : pages.length > 0 ? (
         <PageTray
           pages={pages}
+          title={title}
+          onTitleChange={setTitle}
+          defaultTitle={defaultScanTitle()}
           busy={busy}
           onAddPage={() => (source === 'scanner' ? setScannerOpen(true) : cameraRef.current?.click())}
           onRemove={removePage}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
+import { useFullScreenOverlay } from '../lib/overlay'
 import {
   cameraAvailable,
   canvasToJpeg,
@@ -29,6 +31,10 @@ import {
  *
  * Der Scanner bleibt danach offen und zeigt wieder das Live-Bild: Die zweite
  * Seite eines Briefes folgt fast immer, und sie soll keinen Umweg kosten.
+ *
+ * Die Fläche hängt über ein Portal direkt am <body> und nicht in der
+ * Dokumentenliste, aus der sie geöffnet wurde: Sonst teilt sie sich den
+ * Stapel mit der Navigationsleiste am unteren Rand, die dann durchscheint.
  */
 
 /**
@@ -74,7 +80,9 @@ export function DocumentScanner({
   onFallback,
 }: DocumentScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const trackRef = useRef<MediaStreamTrack | null>(null)
+  const [streamReady, setStreamReady] = useState(false)
   // Sobald ein Gerät beim Standbild einmal nicht mitspielt, wird es nicht bei
   // jeder weiteren Seite erneut gefragt – die Wartezeit hätte man sonst immer.
   const stillPhotoRef = useRef(true)
@@ -91,6 +99,8 @@ export function DocumentScanner({
   // Hochzählen startet die Kamera neu – der Weg zurück nach einer abgelehnten
   // oder von einer anderen App belegten Kamera.
   const [attempt, setAttempt] = useState(0)
+
+  useFullScreenOverlay()
 
   // Die Kamera läuft, solange der Scanner offen ist – auch während des
   // Zuschneidens. Sie bei jeder Seite neu zu starten kostete jedes Mal eine
@@ -134,28 +144,41 @@ export function DocumentScanner({
         return
       }
 
+      streamRef.current = stream
       trackRef.current = stream.getVideoTracks()[0] ?? null
-
-      const video = videoRef.current
-      if (video) {
-        video.srcObject = stream
-        try {
-          await video.play()
-        } catch {
-          // Autostart abgelehnt – das Bild erscheint, sobald der Nutzer die
-          // Seite berührt. Kein Grund für eine Fehlermeldung.
-        }
-      }
+      setStreamReady(true)
     }
 
     void start()
 
     return () => {
       stopped = true
+      streamRef.current = null
       trackRef.current = null
+      setStreamReady(false)
       if (stream) for (const track of stream.getTracks()) track.stop()
     }
   }, [attempt])
+
+  /**
+   * Hängt den Kamerastrom an das Videoelement.
+   *
+   * Bewusst getrennt vom Anfordern der Kamera und abhängig von `captured`:
+   * Während des Zuschneidens ist das Videoelement nicht im Dokument, und
+   * danach kommt ein neues, leeres zurück. Genau das war der Grund, weshalb
+   * ab der zweiten Seite nur noch ein schwarzes Bild zu sehen war – der Strom
+   * lief weiter, hing aber am alten, längst weggeräumten Element.
+   */
+  useEffect(() => {
+    const video = videoRef.current
+    const stream = streamRef.current
+    if (!video || !stream) return
+
+    if (video.srcObject !== stream) video.srcObject = stream
+    // Autostart abgelehnt: Das Bild erscheint, sobald jemand die Seite
+    // berührt – kein Grund für eine Fehlermeldung.
+    void video.play().catch(() => undefined)
+  }, [streamReady, captured])
 
   // Die Vorschau des aufgenommenen Bildes wieder freigeben, sobald sie durch
   // eine neue ersetzt wird oder der Scanner schliesst.
@@ -225,7 +248,7 @@ export function DocumentScanner({
     }
   }, [captured, quad, filter, onCapture])
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-white">
       <header className="flex items-center justify-between gap-2 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
         <IconButton label="Scanner schliessen" onClick={onClose}>
@@ -291,7 +314,8 @@ export function DocumentScanner({
           onShoot={() => void shoot()}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -315,6 +339,7 @@ function CameraStage({
           // bildschirmfüllend im eigenen Player ab statt in der Seite.
           playsInline
           muted
+          autoPlay
           className="absolute inset-0 h-full w-full object-contain"
         />
         <p className="absolute inset-x-0 bottom-2 text-center text-xs text-slate-300">

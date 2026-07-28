@@ -273,13 +273,16 @@ export async function pageFromFile(file: File): Promise<ScanPage> {
   return createPage(blob)
 }
 
-/** „Scan 28.07.2026 14.32.pdf" – im Titel des Dokuments lesbar wiederzufinden. */
-function scanFileName(extension: string): string {
-  const now = new Date()
+/**
+ * „Scan 28.07.2026 14.32" – der Titel, wenn keiner eingegeben wird.
+ *
+ * Mit Uhrzeit, weil an einem Tag mehr als ein Brief ankommt und die Liste
+ * sonst mehrfach denselben Eintrag zeigte.
+ */
+export function defaultScanTitle(now = new Date()): string {
   const pad = (value: number): string => String(value).padStart(2, '0')
   const date = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`
-  const time = `${pad(now.getHours())}.${pad(now.getMinutes())}`
-  return `Scan ${date} ${time}.${extension}`
+  return `Scan ${date} ${pad(now.getHours())}.${pad(now.getMinutes())}`
 }
 
 /**
@@ -289,18 +292,22 @@ function scanFileName(extension: string): string {
  * und der Server muss für die Vorschau nichts rastern. Ab zwei Seiten führt
  * kein Weg an einem PDF vorbei – und genau darum geht es beim Sammeln.
  */
-export async function buildUpload(pages: readonly ScanPage[]): Promise<File> {
+export async function buildUpload(pages: readonly ScanPage[], title: string): Promise<File> {
   const first = pages[0]
   if (!first) throw new Error('Es sind keine Seiten vorhanden.')
 
+  // Der Dateiname ist nur noch der Name beim Herunterladen; den Titel im
+  // Archiv bestimmt das Feld, das daneben mitgeschickt wird.
+  const name = title.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Scan'
+
   if (pages.length === 1) {
-    return new File([first.blob], scanFileName('jpg'), { type: 'image/jpeg' })
+    return new File([first.blob], `${name}.jpg`, { type: 'image/jpeg' })
   }
 
   const jpegs = await Promise.all(
     pages.map(async (page) => new Uint8Array(await page.blob.arrayBuffer())),
   )
-  return new File([buildPdfFromJpegs(jpegs)], scanFileName('pdf'), { type: 'application/pdf' })
+  return new File([buildPdfFromJpegs(jpegs)], `${name}.pdf`, { type: 'application/pdf' })
 }
 
 export type { Quad } from './geometry.ts'

@@ -44,6 +44,24 @@
   a {
     -webkit-tap-highlight-color: transparent;
   }
+
+  /*
+   * Solange eine bildschirmfüllende Fläche offen ist – der Scanner oder der
+   * Seitenstapel –, verschwindet die Navigationsleiste, und der Inhalt
+   * dahinter scrollt nicht mit.
+   *
+   * Nur die Fläche darüberzulegen genügte nicht: Auf einem Android-Handy blieb
+   * die Leiste am unteren Rand sichtbar, obwohl sie in einer tieferen Ebene
+   * liegt. Was nicht gezeichnet wird, kann sich auch nicht davorschieben – und
+   * einen Reiter zu treffen, der hinter dem Sucher liegt, will ohnehin niemand.
+   */
+  html[data-flaeche] body {
+    overflow: hidden;
+  }
+
+  html[data-flaeche] [data-navigationsleiste] {
+    display: none;
+  }
 }
 
 @layer utilities {

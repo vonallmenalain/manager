@@ -174,6 +174,22 @@ const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Datum muss im Format JJJJ-MM-TT vorliegen')
 
+/**
+ * Titel, der beim Hochladen mitgeschickt werden darf.
+ *
+ * Gedacht für den Scanner: Wer gerade drei Seiten fotografiert hat, weiss in
+ * dem Moment am besten, was er da vor sich hat – später in der Liste steht
+ * sonst „Scan 28.07.2026" neben fünf anderen. Ohne Angabe entsteht der Titel
+ * wie bisher aus dem Dateinamen.
+ *
+ * Zeilenumbrüche werden zu Leerzeichen: Ein Titel steht in der App immer in
+ * einer Zeile, und über die Zwischenablage gerät schnell einer hinein.
+ */
+export const uploadTitleSchema = z
+  .string()
+  .transform((value) => value.replace(/\s+/g, ' ').trim())
+  .pipe(z.string().min(1, 'Titel fehlt').max(200, 'Titel ist zu lang'))
+
 export const updateDocumentSchema = z.object({
   title: z.string().trim().min(1, 'Titel fehlt').max(200, 'Titel ist zu lang').optional(),
   status: documentStatusSchema.optional(),
