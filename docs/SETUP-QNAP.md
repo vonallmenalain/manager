@@ -39,34 +39,7 @@ Entwicklungs-Branch auswählen.
 
 Erst wenn dieser Lauf grün ist, existiert das Image.
 
-### 1b) Paket lesbar machen
-
-GitHub legt neue Pakete **immer privat** an – auch bei einem öffentlichen
-Repository. Ohne Freigabe antwortet GHCR jedem anonymen Abruf mit `denied`,
-egal ob das Image existiert oder nicht.
-
-**Empfohlen – Paket öffentlich schalten:**
-
-1. <https://github.com/vonallmenalain?tab=packages> → `manager-api`
-2. **Package settings** → ganz unten **Danger Zone**
-3. **Change visibility → Public**
-
-Damit braucht das NAS keine Zugangsdaten, und Watchtower kann ohne Anmeldung
-aktualisieren. Das Image enthält nur Anwendungscode, der ohnehin im
-öffentlichen Repository liegt – alle Geheimnisse kommen erst zur Laufzeit aus
-der `.env`.
-
-**Alternative – Paket privat lassen:** Dann muss sich das NAS anmelden. Auf
-GitHub unter *Settings → Developer settings → Personal access tokens* ein
-Token mit der Berechtigung `read:packages` erzeugen und auf dem QNAP einmalig:
-
-```sh
-echo '<TOKEN>' | docker login ghcr.io -u vonallmenalain --password-stdin
-```
-
-Die Zugangsdaten landen in `~/.docker/config.json` und gelten auch für Watchtower.
-
-### 1c) Prüfen
+### 1b) Prüfen
 
 Auf dem QNAP:
 
@@ -74,8 +47,26 @@ Auf dem QNAP:
 docker pull ghcr.io/vonallmenalain/manager-api:latest
 ```
 
-Das muss durchlaufen, bevor du weitermachst. Bei `denied` ist entweder der
-Workflow aus 1a noch nicht fertig oder die Freigabe aus 1b fehlt.
+Das muss durchlaufen, bevor du weitermachst. Da `manager` ein öffentliches
+Repository ist, wird auch das daraus veröffentlichte Paket öffentlich lesbar –
+das NAS braucht keine Zugangsdaten, und Watchtower kann ohne Anmeldung
+aktualisieren.
+
+> **Falls `denied` kommt:** GHCR unterscheidet für anonyme Abrufe nicht
+> zwischen „gibt es nicht" und „darfst du nicht". Erst prüfen, ob der Lauf aus
+> 1a wirklich grün war. Ist er es, dann steht das Paket auf privat:
+> <https://github.com/vonallmenalain?tab=packages> → `manager-api` →
+> **Package settings** → **Danger Zone** → **Change visibility → Public**.
+>
+> Wer das Paket bewusst privat halten will, meldet stattdessen das NAS an –
+> mit einem Token (*Settings → Developer settings → Personal access tokens*,
+> Berechtigung `read:packages`):
+>
+> ```sh
+> echo '<TOKEN>' | docker login ghcr.io -u vonallmenalain --password-stdin
+> ```
+>
+> Die Zugangsdaten landen in `~/.docker/config.json` und gelten auch für Watchtower.
 
 ---
 
@@ -191,14 +182,21 @@ docker exec manager-api node -e \
 
 ## Schritt 5 – `api.alae.app` mit dem Tunnel verbinden
 
-Zurück in Cloudflare Zero Trust, im angelegten Tunnel:
+Der Tunnel steht jetzt zwar (*Status: Healthy*), weiss aber noch nicht, wohin
+er Anfragen schicken soll – die Übersicht zeigt **Routes: 0**. Das ändern wir:
 
-1. **Public Hostnames → Add a public hostname**
-2. Subdomain: `api` · Domain: `alae.app`
-3. Service: **HTTP** · URL: `manager-api:8080`
-   (der Container-Name, nicht `localhost` – beide Container hängen im selben
-   Docker-Netzwerk und finden sich über den Namen)
-4. Speichern
+1. Im Tunnel `qnap-manager` auf **+ Add route** (oder Reiter **Routes → Add route**)
+2. Als Typ **Public hostname** wählen
+3. Subdomain: `api` · Domain: `alae.app` · Path: leer lassen
+4. Service – Type: **HTTP** · URL: `manager-api:8080`
+5. Speichern
+
+> **`manager-api:8080`, nicht `localhost:8080`.** Der `cloudflared`-Container
+> hat sein eigenes `localhost` – dort läuft nichts. Beide Container hängen im
+> selben Docker-Netzwerk und finden sich über den Container-Namen.
+
+Den DNS-Eintrag für `api.alae.app` legt Cloudflare dabei selbst an, ebenso das
+Zertifikat. Ein Blick in die DNS-Einstellungen ist nicht nötig.
 
 Prüfen – jetzt von aussen, z.B. vom Handy im Mobilfunknetz:
 
@@ -206,8 +204,14 @@ Prüfen – jetzt von aussen, z.B. vom Handy im Mobilfunknetz:
 https://api.alae.app/api/health
 ```
 
-Es muss `{"status":"ok",...}` erscheinen. Falls nicht, zuerst in den
-`cloudflared`-Logs nachsehen: `docker compose logs cloudflared`.
+Es muss `{"status":"ok","version":"…","uptime":…}` erscheinen.
+
+| Antwort | Bedeutung |
+|---|---|
+| `{"status":"ok",…}` | Alles richtig, weiter zu Schritt 6 |
+| Fehler **1033** | Route zeigt ins Leere – meist `localhost` statt `manager-api` |
+| Fehler **502** | Route stimmt, aber `manager-api` läuft nicht: `docker compose logs manager-api` |
+| `{"error":{"code":"not_found"…}}` | Die API antwortet, nur der Pfad ist falsch – es muss `/api/health` sein |
 
 ---
 
