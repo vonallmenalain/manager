@@ -237,7 +237,7 @@ function TithingCard() {
   }
   if (!finance.data) return null
 
-  const { figures, settings } = finance.data
+  const { figures } = finance.data
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -262,9 +262,9 @@ function TithingCard() {
               ? 'Alles Erfasste ist abgerechnet.'
               : `offen für ${figures.openMonths.map(monthName).join(', ')}`}
           </p>
-          {settings.settledThroughMonth > 0 ? (
+          {figures.settledThroughMonth > 0 ? (
             <p className="mt-1 text-xs text-slate-400">
-              Abgerechnet bis und mit {monthName(settings.settledThroughMonth)}.
+              Abgerechnet bis und mit {monthName(figures.settledThroughMonth)}.
             </p>
           ) : null}
         </>

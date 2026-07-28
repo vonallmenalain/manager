@@ -57,6 +57,20 @@
       "when": 1785271533917,
       "tag": "0007_fair_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785275147945,
+      "tag": "0008_wooden_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785276182762,
+      "tag": "0009_wealthy_mole_man",
+      "breakpoints": true
     }
   ]
 }

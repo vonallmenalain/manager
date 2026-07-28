@@ -213,14 +213,19 @@ export function serializeChecklist(items: readonly ChecklistItem[]): string {
 }
 
 /**
- * Der Text einer Notiz ohne Kästchen – für die Suche und für den Wechsel
- * zurück zur Textnotiz. Die Häkchen gehen dabei verloren; sie in den
- * Fliesstext zu übernehmen hiesse, sie beim nächsten Wechsel doppelt zu haben.
+ * Erledigtes nach unten.
+ *
+ * Eine Liste beantwortet die Frage „was ist noch zu tun" – und die steht dann
+ * oben, ohne dass man zwischen Durchgestrichenem suchen muss. Die Reihenfolge
+ * innerhalb der beiden Gruppen bleibt erhalten: Wer sich beim Schreiben etwas
+ * dabei gedacht hat, findet es wieder.
+ *
+ * Sortiert wird der gespeicherte Inhalt selbst, nicht nur die Anzeige. So
+ * sieht die Liste auf jedem Gerät gleich aus, und die Vorschau in der
+ * Übersicht zeigt dieselben offenen Punkte wie die geöffnete Notiz.
  */
-export function checklistToText(body: string): string {
-  return parseChecklist(body)
-    .map((item) => item.text)
-    .join('\n')
+export function sortChecklist(items: readonly ChecklistItem[]): ChecklistItem[] {
+  return [...items.filter((item) => !item.done), ...items.filter((item) => item.done)]
 }
 
 export const noteSchema = z.object({
@@ -229,6 +234,12 @@ export const noteSchema = z.object({
   body: z.string(),
   kind: noteKindSchema,
   pinned: z.boolean(),
+  /**
+   * false heisst „nur für mich". Eine Notiz ist zunächst privat und wird
+   * bewusst freigegeben – umgekehrt hätte man Geteiltes, das nie jemand
+   * teilen wollte.
+   */
+  shared: z.boolean(),
   color: noteColorSchema,
   createdBy: z.string(),
   updatedBy: z.string().nullable(),
@@ -244,6 +255,7 @@ export const upsertNoteSchema = z
     body: z.string().max(20_000).default(''),
     kind: noteKindSchema.default('text'),
     pinned: z.boolean().default(false),
+    shared: z.boolean().default(false),
     color: noteColorSchema.default('default'),
   })
   .refine((note) => note.title.trim() !== '' || note.body.trim() !== '', {
