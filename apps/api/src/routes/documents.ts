@@ -10,6 +10,7 @@ import {
   normalizeForSearch,
   OPEN_STATUSES,
   updateDocumentSchema,
+  type PreviewInfo,
 } from '@manager/shared'
 import { and, desc, eq, inArray, isNull, like, sql, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
@@ -18,6 +19,12 @@ import { db } from '../db/index.js'
 import { ocrWorker } from '../ocr/index.js'
 import { categories, documents, type DocumentRow } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
+import {
+  countPdfPages,
+  PREVIEW_MAX_PAGES,
+  removePreviews,
+  renderPdfPage,
+} from '../lib/preview.js'
 import {
   describeChanges,
   findDocument,
@@ -268,6 +275,68 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   // -------------------------------------------------------------------------
+  // Vorschau
+  //
+  // Zwei Endpunkte statt einem: Der erste sagt, ob und wie viel es zu sehen
+  // gibt, der zweite liefert die einzelne Seite. So weiss das Frontend vor dem
+  // ersten Bild, ob es überhaupt blättern lassen muss.
+  // -------------------------------------------------------------------------
+  fastify.get('/api/documents/:id/preview', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const row = await findDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    if (row.mimeType.startsWith('image/')) {
+      return reply.send({ kind: 'image', pages: 1 } satisfies PreviewInfo)
+    }
+
+    if (row.mimeType === 'application/pdf') {
+      const pages = await countPdfPages(resolveInStorage(row.storagePath))
+      if (pages === 0) return reply.send({ kind: 'none', pages: 0 } satisfies PreviewInfo)
+      return reply.send({
+        kind: 'pdf',
+        pages: Math.min(pages, PREVIEW_MAX_PAGES),
+      } satisfies PreviewInfo)
+    }
+
+    return reply.send({ kind: 'none', pages: 0 } satisfies PreviewInfo)
+  })
+
+  fastify.get('/api/documents/:id/preview/:page', async (request, reply) => {
+    const { id, page } = request.params as { id: string; page: string }
+
+    // Die Seitennummer landet im Dateinamen des Zwischenspeichers – sie muss
+    // eine Zahl sein, bevor sie irgendwo hinkommt.
+    const pageNumber = Number(page)
+    if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > PREVIEW_MAX_PAGES) {
+      return reply
+        .status(400)
+        .send(apiError(API_ERROR_CODES.validationFailed, 'Ungültige Seitennummer.'))
+    }
+
+    const row = await findDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+    if (row.mimeType !== 'application/pdf') {
+      return reply.status(404).send(notFound('Für diese Datei gibt es keine Seitenvorschau.'))
+    }
+
+    let imagePath: string
+    try {
+      imagePath = await renderPdfPage(id, resolveInStorage(row.storagePath), pageNumber)
+    } catch (error) {
+      request.log.warn({ err: error, documentId: id, page: pageNumber }, 'Vorschau fehlgeschlagen')
+      return reply
+        .status(422)
+        .send(apiError('preview_failed', 'Diese Seite liess sich nicht darstellen.'))
+    }
+
+    // Ein gerastertes Bild ändert sich nie – der Browser darf es behalten.
+    reply.header('cache-control', 'private, max-age=86400')
+    reply.header('cross-origin-resource-policy', 'cross-origin')
+    return reply.type('image/jpeg').send(createReadStream(imagePath))
+  })
+
+  // -------------------------------------------------------------------------
   // Ändern
   // -------------------------------------------------------------------------
   fastify.patch('/api/documents/:id', async (request, reply) => {
@@ -386,6 +455,12 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       request.log.error({ err: error, documentId: id }, 'Verschieben in den Papierkorb fehlgeschlagen')
     }
+
+    // Die gerasterten Seiten wandern nicht mit: Sie sind jederzeit neu
+    // erzeugbar und hätten im Papierkorb nur Platz belegt.
+    await removePreviews(id).catch((error: unknown) => {
+      request.log.warn({ err: error, documentId: id }, 'Vorschau-Bilder nicht entfernt')
+    })
 
     await db
       .update(documents)

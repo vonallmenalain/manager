@@ -122,6 +122,7 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
 │   ├── Steuern/
 │   └── Wohnen/
 ├── 2025/
+├── .previews/                           ← gerasterte PDF-Seiten, jederzeit neu erzeugbar
 └── .trash/                              ← 30 Tage Papierkorb, dann echt gelöscht
 ```
 
