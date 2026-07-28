@@ -168,8 +168,12 @@ export const api = {
 
   getDocument: (id: string) => request<{ document: DocumentDetail }>(`/api/documents/${id}`),
 
-  uploadDocument: (file: File, allowDuplicate = false) => {
+  uploadDocument: (file: File, allowDuplicate = false, title?: string) => {
     const body = new FormData()
+    // Der Titel muss vor der Datei stehen: Der Server liest den Datenstrom
+    // der Reihe nach und hat beim Empfang der Datei nur die Felder zur Hand,
+    // die vorher kamen.
+    if (title) body.append('title', title)
     body.append('file', file)
     // Kein content-type setzen: Der Browser muss die multipart-Grenze selbst
     // bestimmen, sonst kann der Server den Datenstrom nicht zerlegen.

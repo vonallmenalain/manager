@@ -1,9 +1,15 @@
 import { formatFileSize } from '@manager/shared'
+import { createPortal } from 'react-dom'
 
+import { useFullScreenOverlay } from '../lib/overlay'
 import type { ScanPage } from '../lib/scan/pages'
 
 /**
  * Die gesammelten Seiten, bevor sie ein Dokument werden.
+ *
+ * Hängt über ein Portal direkt am <body>: Als Kind der Dokumentenliste wäre
+ * die Fläche zwar auch bildschirmfüllend, läge aber im selben Stapel wie die
+ * Navigationsleiste am unteren Rand – und die blieb sichtbar.
  *
  * Der Schritt, der vorher fehlte: Eine Aufnahme ging bisher direkt in die
  * Ablage, und ein zweiseitiger Brief wurde zwangsläufig zu zwei Dokumenten.
@@ -15,6 +21,9 @@ import type { ScanPage } from '../lib/scan/pages'
  */
 export function PageTray({
   pages,
+  title,
+  onTitleChange,
+  defaultTitle,
   busy,
   onAddPage,
   onRemove,
@@ -23,6 +32,10 @@ export function PageTray({
   onUpload,
 }: {
   pages: readonly ScanPage[]
+  title: string
+  onTitleChange: (title: string) => void
+  /** Was ohne Eingabe im Archiv stehen würde. */
+  defaultTitle: string
   busy: boolean
   onAddPage: () => void
   onRemove: (id: string) => void
@@ -30,9 +43,10 @@ export function PageTray({
   onDiscard: () => void
   onUpload: () => void
 }) {
+  useFullScreenOverlay()
   const bytes = pages.reduce((sum, page) => sum + page.blob.size, 0)
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-40 flex flex-col bg-white dark:bg-slate-950">
       <header className="flex items-center justify-between gap-2 border-b border-slate-200 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] dark:border-slate-800">
         <button
@@ -91,23 +105,44 @@ export function PageTray({
         ))}
       </ul>
 
-      <div className="flex gap-2 border-t border-slate-200 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 dark:border-slate-800">
-        <button
-          onClick={onAddPage}
-          disabled={busy}
-          className="min-h-12 flex-1 rounded-xl border border-slate-300 text-base font-semibold disabled:opacity-50 dark:border-slate-700"
-        >
-          Weitere Seite
-        </button>
-        <button
-          onClick={onUpload}
-          disabled={busy || pages.length === 0}
-          className="min-h-12 flex-1 rounded-xl bg-brand-800 text-base font-semibold text-white disabled:opacity-50"
-        >
-          {busy ? 'Wird abgelegt …' : 'Ablegen'}
-        </button>
+      <div className="space-y-3 border-t border-slate-200 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 dark:border-slate-800">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+            Titel
+          </span>
+          <input
+            value={title}
+            onChange={(event) => onTitleChange(event.target.value)}
+            disabled={busy}
+            maxLength={200}
+            // Beim Tippen von Titeln wie „Rechnung Krankenkasse" hilft die
+            // Autokorrektur mehr, als sie stört – anders als bei Passwörtern.
+            autoCapitalize="sentences"
+            enterKeyHint="done"
+            placeholder={defaultTitle}
+            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base dark:border-slate-700 dark:bg-slate-900"
+          />
+        </label>
+
+        <div className="flex gap-2">
+          <button
+            onClick={onAddPage}
+            disabled={busy}
+            className="min-h-12 flex-1 rounded-xl border border-slate-300 text-base font-semibold disabled:opacity-50 dark:border-slate-700"
+          >
+            Weitere Seite
+          </button>
+          <button
+            onClick={onUpload}
+            disabled={busy || pages.length === 0}
+            className="min-h-12 flex-1 rounded-xl bg-brand-800 text-base font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? 'Wird abgelegt …' : 'Ablegen'}
+          </button>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

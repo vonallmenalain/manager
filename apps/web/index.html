@@ -3,10 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover, damit die App unter der Gestensteuerung durchzeichnet;
-         die Abstände holen wir uns per env(safe-area-inset-*) zurück. -->
+         die Abstände holen wir uns per env(safe-area-inset-*) zurück.
+
+         interactive-widget=resizes-content: Wenn die Bildschirmtastatur
+         aufgeht, soll die Seite kleiner werden statt darunter zu verschwinden.
+         Ohne das läge das Titelfeld über dem Seitenstapel hinter der Tastatur –
+         man tippt dann blind. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#1e3a5f" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />

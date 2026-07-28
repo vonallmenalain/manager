@@ -87,11 +87,12 @@ describe('enhance', () => {
     )
   })
 
-  it('macht aus Schwarz-Weiss wirklich Schwarz und Weiss', () => {
-    const result = enhance(litSheet(), 'sw')
+  it('macht aus Graustufen wirklich Graustufen', () => {
+    const result = enhance(litSheet(), 'grau')
+    const offset = (25 * WIDTH + 170) * 4
 
-    assert.equal(Math.min(...samples(result, 'papier')), 255)
-    assert.equal(Math.max(...samples(result, 'text')), 0)
+    assert.equal(result.data[offset], result.data[offset + 1])
+    assert.equal(result.data[offset + 1], result.data[offset + 2])
   })
 
   it('behält Farben, statt sie auszubleichen', () => {

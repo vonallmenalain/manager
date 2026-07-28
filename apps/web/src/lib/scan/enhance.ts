@@ -14,13 +14,22 @@
  */
 import type { Raster } from './geometry.ts'
 
-export const SCAN_FILTERS = ['farbe', 'grau', 'sw'] as const
+/**
+ * Zwei Filter, bewusst nicht drei.
+ *
+ * Eine reine Schwarz-Weiss-Umsetzung stand hier auch einmal. Sie braucht für
+ * jeden Bildpunkt die Entscheidung „Schrift oder Papier", und die fällt bei
+ * dünner Schrift, Rasterflächen und Stempeln reihenweise falsch aus – auf dem
+ * Handybildschirm sofort sichtbar. Ordentlich wäre eine Schwelle, die sich in
+ * jedem kleinen Bildausschnitt neu bestimmt; bis die gebaut ist, liefern
+ * Graustufen für Ausdruck wie Texterkennung das bessere Ergebnis.
+ */
+export const SCAN_FILTERS = ['farbe', 'grau'] as const
 export type ScanFilter = (typeof SCAN_FILTERS)[number]
 
 export const SCAN_FILTER_LABELS: Record<ScanFilter, string> = {
   farbe: 'Farbe',
   grau: 'Graustufen',
-  sw: 'Schwarz-Weiss',
 }
 
 /** Kachelgrösse für die Helligkeitsschätzung, in Bildpunkten. */
@@ -226,29 +235,6 @@ export function enhance(image: Raster, filter: ScanFilter): Raster {
   const { low, high } = contrastRange(corrected)
 
   const output = new Uint8ClampedArray(pixels * 4)
-
-  if (filter === 'sw') {
-    // Schwellwert in der Mitte der gespreizten Spanne, mit einem schmalen
-    // Übergang: Ein harter Schnitt lässt dünne Linien und kleine Schrift
-    // ausfransen, und genau die soll die Texterkennung noch lesen können.
-    const middle = 128
-    const ramp = 16
-    for (let i = 0; i < pixels; i += 1) {
-      const value = stretch(corrected[i] as number, low, high)
-      const blended =
-        value <= middle - ramp
-          ? 0
-          : value >= middle + ramp
-            ? 255
-            : ((value - (middle - ramp)) / (2 * ramp)) * 255
-      const offset = i * 4
-      output[offset] = blended
-      output[offset + 1] = blended
-      output[offset + 2] = blended
-      output[offset + 3] = 255
-    }
-    return { data: output, width, height }
-  }
 
   for (let i = 0; i < pixels; i += 1) {
     const offset = i * 4

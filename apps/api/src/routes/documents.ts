@@ -43,15 +43,9 @@ import {
   resolveInStorage,
   storeTemporarily,
 } from '../lib/storage.js'
+import { titleFromFields, titleFromFilename } from '../lib/upload-title.js'
 
 const allowedMimeTypes = new Set<string>(ALLOWED_MIME_TYPES)
-
-/** "Rechnung Krankenkasse_Maerz.pdf" → "Rechnung Krankenkasse Maerz" */
-function titleFromFilename(filename: string): string {
-  const withoutExtension = filename.replace(/\.[^./\\]+$/, '')
-  const cleaned = withoutExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
-  return cleaned.slice(0, 200) || 'Ohne Titel'
-}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -136,7 +130,9 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    const title = titleFromFilename(upload.filename)
+    // Das Feld steht im Formular vor der Datei und ist deshalb hier bereits
+    // gelesen – kommt keines, bleibt es beim Dateinamen.
+    const title = titleFromFields(upload.fields) ?? titleFromFilename(upload.filename)
     const docDate = today()
     const storagePath = buildStoragePath({
       docDate,

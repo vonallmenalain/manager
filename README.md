@@ -67,6 +67,12 @@ steht als `SETUP_TOKEN` in `apps/api/.env`.
 Nach jeder Änderung an `apps/api/src/db/schema.ts` muss `db:generate` laufen –
 die CI prüft das und schlägt sonst fehl.
 
+Den Dokumentenscanner gibt es unter `npm run dev:web` auch einzeln unter
+[/scan-harness.html](http://localhost:5173/scan-harness.html) – ohne Anmeldung
+und ohne Backend, dafür mit der Navigationsleiste drumherum. Praktisch, um
+Kamerabild, Zuschnitt und Seitenstapel anzuschauen, ohne jedes Mal zum Handy zu
+greifen. Die Seite wird nicht mitgebaut.
+
 ## Dokumentation
 
 * [Konzept](docs/KONZEPT.md) – Architektur, Datenmodell, Funktionen, Roadmap

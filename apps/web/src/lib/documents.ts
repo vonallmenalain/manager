@@ -77,8 +77,16 @@ export interface UploadResult {
 export function useUploadDocument() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ file, allowDuplicate }: { file: File; allowDuplicate?: boolean }) =>
-      api.uploadDocument(file, allowDuplicate),
+    mutationFn: ({
+      file,
+      allowDuplicate,
+      title,
+    }: {
+      file: File
+      allowDuplicate?: boolean
+      /** Ohne Angabe entsteht der Titel serverseitig aus dem Dateinamen. */
+      title?: string
+    }) => api.uploadDocument(file, allowDuplicate, title),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
     },

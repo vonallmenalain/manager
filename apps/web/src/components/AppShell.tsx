@@ -47,7 +47,12 @@ export function AppShell({ user }: { user: PublicUser }) {
         <Outlet />
       </main>
 
-      <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+      {/* data-navigationsleiste: Blendet die Leiste aus, solange eine
+          bildschirmfüllende Fläche offen ist (siehe index.css). */}
+      <nav
+        data-navigationsleiste
+        className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"
+      >
         <ul className="mx-auto flex w-full max-w-2xl">
           {TABS.map(({ to, label, Icon, end }) => (
             <li key={to} className="flex-1">
