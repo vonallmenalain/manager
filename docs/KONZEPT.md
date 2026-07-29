@@ -288,11 +288,43 @@ Dokumenten. Die Prüfung steht serverseitig in jeder Abfrage, auch beim Ändern 
 Löschen; sonst wäre eine fremde Notiz über ihre Kennung erreichbar, ohne je in einer
 Liste aufgetaucht zu sein.
 
+**Die Übersicht lässt sich einstellen.** Wo früher die Anzahl stand – eine Zahl, die man
+abzählen kann und die nichts entscheidet –, stehen zwei kleine Auswahlfelder:
+
+* **Ansicht:** Liste (eine Notiz je Zeile) oder Kacheln (zwei Spalten, jede so hoch wie
+  ihr Inhalt). Zwei Spalten auch am grossen Bildschirm: Die Seite ist überall gleich
+  breit, und drei liessen von jeder Zeile nur noch ein paar Wörter übrig.
+* **Anzeigegrösse:** `Klein` gibt jeder Notiz dieselbe feste Höhe – Titel und zwei Zeilen,
+  die Übersicht bleibt ein Verzeichnis. `Alles` schneidet nichts ab, für den, der seine
+  Notizen lesen und nicht suchen will. `Komprimiert` richtet sich nach dem Inhalt: Wer
+  mehr geschrieben hat, bekommt mehr Platz, aber höchstens sechs Zeilen. Ohne diese Grenze
+  verdrängt eine einzige lange Notiz alle anderen vom Bildschirm – und genau das soll eine
+  Übersicht nicht.
+
+Beides hängt im `localStorage` am Gerät und nicht am Konto: Wie eine Liste angezeigt wird,
+ist eine Angabe über den Bildschirm, auf den man gerade schaut – am Handy will man anderes
+sehen als am Monitor.
+
+Rechts oben in jeder Notiz steht, **wann zuletzt geschrieben wurde**, mit Datum und
+Uhrzeit. Damit die Angabe stimmt, speichert das Autospeichern nur, was vom Stand beim
+Öffnen abweicht: Wer eine Notiz nur anschaut – oder eine Änderung wieder zurücknimmt –,
+hat nichts geändert, und es soll auch nichts dastehen.
+
 Eine Notiz öffnet als **Fenster über der Liste**, nicht als eigener Bildschirm: Sie ist
-eine Randnotiz, kein Formular. Gespeichert wird **von selbst** – kurz nach dem letzten
-Tastendruck und noch einmal beim Schliessen. Einen Speichern-Knopf gibt es nicht; er war
-die einzige Möglichkeit, Geschriebenes zu verlieren. Eine neue Notiz entsteht erst beim
-ersten Speichern, wer das Fenster leer wieder schliesst, hinterlässt keine.
+eine Randnotiz, kein Formular. Das Fenster ist so hoch wie sein Inhalt und wächst mit ihm
+bis kurz vor den Bildschirmrand – auch das Textfeld wächst beim Tippen mit, statt in sich
+selbst zu scrollen, während das Fenster darüber noch Platz hätte. Man soll nicht durch ein
+Guckloch schreiben. Der schmale Rand bleibt: Er zeigt, dass darunter die Seite liegt.
+
+Gespeichert wird **von selbst** – kurz nach dem letzten Tastendruck und noch einmal beim
+Schliessen. Einen Speichern-Knopf gibt es nicht; er war die einzige Möglichkeit,
+Geschriebenes zu verlieren. Eine neue Notiz entsteht erst beim ersten Speichern, wer das
+Fenster leer wieder schliesst, hinterlässt keine.
+
+Die **Farbe** steckt in einem kleinen Aufklappfeld neben „Nur für mich" – vorher standen
+alle fünf ständig im Fuss des Fensters. Das ist viel Aufmerksamkeit für eine Entscheidung,
+die man einmal trifft und dann jahrelang nicht mehr anfasst; den Platz hat die Notiz
+selbst nötiger.
 
 Beide Arten liegen im selben Feld `body`: Eine Checkliste schreibt je Zeile einen Eintrag
 mit vorangestelltem `[ ]` oder `[x]`. Eine eigene Tabelle für Listeneinträge wäre die

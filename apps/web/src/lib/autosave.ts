@@ -23,8 +23,10 @@ export interface Autosave {
  *  - Läuft schon ein Speichern, wird nicht parallel ein zweites gestartet,
  *    sondern gleich danach nachgezogen. Sonst könnte der ältere Stand als
  *    letzter ankommen – oder beim ersten Mal ein zweiter Datensatz entstehen.
- *  - Beim ersten Durchlauf passiert nichts. Ohne diese Bremse schriebe schon
- *    das Öffnen jeden Datensatz unverändert zurück.
+ *  - Gespeichert wird nur, was vom Stand beim Öffnen abweicht. Ohne diese
+ *    Bremse schriebe schon das Öffnen jeden Datensatz unverändert zurück –
+ *    und das Bearbeitungsdatum wäre eine Angabe darüber, was man angeschaut
+ *    hat, nicht darüber, was man geändert hat.
  */
 export function useAutosave<T>(
   value: T,
@@ -75,13 +77,14 @@ export function useAutosave<T>(
   // Der Vergleich läuft über den Inhalt, nicht über die Identität: Ein Objekt
   // ist bei jedem Rendern ein neues, der Text darin aber meist derselbe.
   const signature = JSON.stringify(value)
-  const first = useRef(true)
+  const geoeffnet = useRef(signature)
 
   useEffect(() => {
-    if (first.current) {
-      first.current = false
-      return
-    }
+    // Verglichen wird gegen den Stand beim Öffnen, nicht gegen „schon einmal
+    // hier gewesen": Wer eine Änderung wieder rückgängig macht, hat nichts
+    // geändert und soll auch nichts speichern – sonst stünde an der Notiz ein
+    // Bearbeitungsdatum für etwas, das gar nicht geschehen ist.
+    if (signature === geoeffnet.current) return
 
     dirty.current = true
     const timer = setTimeout(() => void run(), delayMs)

@@ -6,9 +6,11 @@ import { useFullScreenOverlay } from '../lib/overlay'
 /**
  * Ein Fenster über dem Bildschirm, kein eigener Bildschirm.
  *
- * Es ist so hoch, wie sein Inhalt es braucht, und hört bei 85 % der
- * Bildschirmhöhe auf – erst dann bekommt der Inhalt eine Bildlaufleiste. Eine
- * kurze Eingabe ergibt also ein kleines Fenster, eine lange füllt fast alles.
+ * Es ist so hoch, wie sein Inhalt es braucht, und wächst mit ihm bis kurz vor
+ * den Bildschirmrand – erst dann bekommt der Inhalt eine Bildlaufleiste. Eine
+ * kurze Eingabe ergibt also ein kleines Fenster, eine lange nutzt oben wie
+ * unten fast alles, was da ist. Der schmale Rand bleibt mit Absicht: Er zeigt,
+ * dass darunter noch die Seite liegt, und gibt eine Fläche zum Schliessen.
  *
  * Hängt über ein Portal am <body>: Als Kind der Seite, aus der es geöffnet
  * wurde, teilte es sich den Stapel mit der Navigationsleiste am unteren Rand –
@@ -42,7 +44,7 @@ export function Modal({
   }, [onClose])
 
   return createPortal(
-    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/50 p-3" onClick={onClose}>
       <div
         // Der Klick im Fenster darf nicht bis zum Hintergrund durchfallen,
         // sonst schlösse jeder Griff nach einem Feld das Fenster.
@@ -50,7 +52,10 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className={`flex max-h-[85dvh] w-full max-w-lg flex-col rounded-2xl border shadow-xl ${className}`}
+        // dvh statt vh: Auf dem Handy zählt die sichtbare Höhe, nicht die mit
+        // eingeblendeter Adressleiste gerechnete – sonst stünde der Fuss des
+        // Fensters unter dem Bildschirmrand.
+        className={`flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col rounded-2xl border shadow-xl ${className}`}
       >
         {header ? (
           <div className="flex items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">

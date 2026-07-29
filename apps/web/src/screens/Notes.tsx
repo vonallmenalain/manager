@@ -1,4 +1,5 @@
 import {
+  NOTE_COLOR_LABELS,
   NOTE_COLORS,
   NOTE_KIND_LABELS,
   NOTE_KINDS,
@@ -10,10 +11,11 @@ import {
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 import { Modal, ModalCloseButton } from '../components/Modal'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
+import { useLocalSetting } from '../lib/einstellungen'
 import { useDeleteNote, useNotes, useSaveNote } from '../lib/household'
 
 /** Gedeckte Töne – die Liste soll ruhig bleiben, nicht bunt blinken. */
@@ -33,24 +35,104 @@ const COLOR_SWATCHES: Record<NoteColor, string> = {
   rosa: 'bg-rose-300',
 }
 
-/** Wie viele Einträge einer Checkliste in der Übersicht stehen. */
-const PREVIEW_ITEMS = 4
+const ANSICHTEN = ['liste', 'kacheln'] as const
+type Ansicht = (typeof ANSICHTEN)[number]
+
+const ANSICHT_LABELS: Record<Ansicht, string> = {
+  liste: 'Liste',
+  kacheln: 'Kacheln',
+}
+
+const GROESSEN = ['klein', 'komprimiert', 'alles'] as const
+type Groesse = (typeof GROESSEN)[number]
+
+const GROESSE_LABELS: Record<Groesse, string> = {
+  klein: 'Klein',
+  komprimiert: 'Komprimiert',
+  alles: 'Alles',
+}
+
+/**
+ * Wie viel eine Notiz in der Übersicht von sich zeigt.
+ *
+ * `klein` gibt jeder Notiz dieselbe feste Höhe – die Übersicht bleibt ein
+ * Verzeichnis, durch das man scrollt, nicht der Text selbst. `alles` schneidet
+ * nichts ab; wer seine Notizen lesen und nicht suchen will, sieht sie ganz.
+ *
+ * `komprimiert` liegt dazwischen und richtet sich nach dem Inhalt: Wer mehr
+ * geschrieben hat, bekommt mehr Platz – aber nur bis zu einer Grenze. Ohne die
+ * verdrängt eine einzige lange Notiz alle anderen vom Bildschirm, und genau
+ * das soll eine Übersicht ja nicht.
+ */
+const GROESSE_REGELN: Record<
+  Groesse,
+  {
+    /** Feste Höhe (klein) oder Obergrenze (komprimiert) je Ansicht. */
+    hoehe: Record<Ansicht, string>
+    /**
+     * Wie viele Zeilen Fliesstext stehen bleiben. `line-clamp` bringt seine
+     * eigene Anzeigeart mit – daneben darf kein `block` stehen, sonst gewinnt
+     * je nach Reihenfolge das eine oder das andere und der Text wird mitten in
+     * der Zeile abgeschnitten statt sauber mit „…".
+     */
+    textZeilen: string
+    /** Einträge einer Checkliste. */
+    eintraege: number
+  }
+> = {
+  klein: {
+    hoehe: { liste: 'h-24', kacheln: 'h-28' },
+    textZeilen: 'line-clamp-2',
+    eintraege: 2,
+  },
+  komprimiert: {
+    hoehe: { liste: 'max-h-60', kacheln: 'max-h-72' },
+    textZeilen: 'line-clamp-6',
+    eintraege: 6,
+  },
+  alles: {
+    hoehe: { liste: '', kacheln: '' },
+    textZeilen: 'block',
+    eintraege: Number.POSITIVE_INFINITY,
+  },
+}
 
 export function Notes() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<Note | NoteKind | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [ansicht, setAnsicht] = useLocalSetting<Ansicht>('notizen.ansicht', ANSICHTEN, 'liste')
+  const [groesse, setGroesse] = useLocalSetting<Groesse>(
+    'notizen.groesse',
+    GROESSEN,
+    'komprimiert',
+  )
   const query = useNotes(search)
 
   const notes = query.data?.notes ?? []
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Notizen</h1>
-        {notes.length > 0 ? (
-          <span className="text-sm text-slate-500 dark:text-slate-400">{notes.length}</span>
-        ) : null}
+        {/* Wo bisher die Anzahl stand: Die kann man abzählen, die Anzeige
+            nicht erraten. */}
+        <div className="flex items-center gap-1.5">
+          <Auswahl
+            label="Ansicht"
+            value={ansicht}
+            options={ANSICHTEN}
+            labels={ANSICHT_LABELS}
+            onChange={setAnsicht}
+          />
+          <Auswahl
+            label="Anzeigegrösse"
+            value={groesse}
+            options={GROESSEN}
+            labels={GROESSE_LABELS}
+            onChange={setGroesse}
+          />
+        </div>
       </div>
 
       <input
@@ -69,30 +151,27 @@ export function Notes() {
           {search ? 'Nichts gefunden.' : 'Noch keine Notizen. Unten rechts anlegen.'}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul
+          className={
+            ansicht === 'kacheln'
+              ? // Zwei Spalten, auch am grossen Bildschirm: Die Seite ist
+                // überall gleich breit, und drei Spalten liessen von jeder
+                // Zeile nur noch ein paar Wörter übrig.
+                //
+                // items-start: Jede Kachel ist so hoch wie ihr Inhalt. Ohne das
+                // zöge die längste Notiz ihre ganze Zeile mit in die Höhe.
+                'grid grid-cols-2 items-start gap-2'
+              : 'space-y-2'
+          }
+        >
           {notes.map((note) => (
             <li key={note.id}>
-              <button
-                onClick={() => setEditing(note)}
-                className={`w-full rounded-2xl border p-3 text-left transition active:scale-[0.99] ${COLOR_STYLES[note.color]}`}
-              >
-                <span className="flex items-start gap-2">
-                  <span className="min-w-0 flex-1">
-                    {note.title ? <span className="block font-medium">{note.title}</span> : null}
-                    {note.kind === 'liste' ? (
-                      <ChecklistPreview body={note.body} />
-                    ) : note.body ? (
-                      <span className="mt-0.5 line-clamp-3 block whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
-                        {note.body}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1 text-slate-400">
-                    {note.shared ? <span title="Geteilt">👥</span> : null}
-                    {note.pinned ? <span title="Angeheftet">📌</span> : null}
-                  </span>
-                </span>
-              </button>
+              <NoteCard
+                note={note}
+                ansicht={ansicht}
+                groesse={groesse}
+                onOpen={() => setEditing(note)}
+              />
             </li>
           ))}
         </ul>
@@ -149,8 +228,110 @@ export function Notes() {
   )
 }
 
+/** Ein kleines Auswahlfeld im Kopf der Seite. */
+function Auswahl<T extends string>({
+  label,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: readonly T[]
+  labels: Record<T, string>
+  onChange: (value: T) => void
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value as T)}
+      aria-label={label}
+      title={label}
+      className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-600 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+    >
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {labels[option]}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/**
+ * Eine Notiz in der Übersicht.
+ *
+ * Titel links, rechts daneben der Stand: wann zuletzt geschrieben wurde und
+ * ob die Notiz geteilt oder angeheftet ist. Wie viel darunter zu sehen ist,
+ * entscheidet die gewählte Grösse – der Aufbau bleibt in Liste und Kacheln
+ * derselbe, damit man nicht zweimal lesen lernen muss.
+ */
+function NoteCard({
+  note,
+  ansicht,
+  groesse,
+  onOpen,
+}: {
+  note: Note
+  ansicht: Ansicht
+  groesse: Groesse
+  onOpen: () => void
+}) {
+  const regel = GROESSE_REGELN[groesse]
+
+  return (
+    <button
+      onClick={onOpen}
+      className={`flex w-full flex-col overflow-hidden rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
+        COLOR_STYLES[note.color]
+      } ${regel.hoehe[ansicht]}`}
+    >
+      <span className="flex w-full items-start gap-2">
+        <span className="min-w-0 flex-1 font-medium">
+          {note.title || <span className="text-slate-400">Ohne Titel</span>}
+        </span>
+        <span className="flex shrink-0 items-start gap-1.5 text-slate-400">
+          <span
+            className={`text-right text-[10px] leading-tight tabular-nums ${
+              // In der Liste ist Platz für eine Zeile; in einer Kachel bricht
+              // die Angabe um, statt den Titel wegzudrücken.
+              ansicht === 'liste' ? 'whitespace-nowrap' : 'max-w-24'
+            }`}
+          >
+            Bearbeitet am: {formatEdited(note.updatedAt)}
+          </span>
+          {note.shared ? <span title="Geteilt">👥</span> : null}
+          {note.pinned ? <span title="Angeheftet">📌</span> : null}
+        </span>
+      </span>
+
+      {note.kind === 'liste' ? (
+        <ChecklistPreview body={note.body} max={regel.eintraege} />
+      ) : note.body ? (
+        <span
+          className={`mt-0.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300 ${regel.textZeilen}`}
+        >
+          {note.body}
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+/** Wann zuletzt geschrieben wurde – Datum und Uhrzeit, in Ortszeit. */
+function formatEdited(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '–'
+
+  const zwei = (value: number) => String(value).padStart(2, '0')
+  return `${zwei(date.getDate())}.${zwei(date.getMonth() + 1)}.${date.getFullYear()}, ${zwei(
+    date.getHours(),
+  )}:${zwei(date.getMinutes())}`
+}
+
 /** Die ersten Einträge einer Checkliste, wie sie in der Übersicht erscheinen. */
-function ChecklistPreview({ body }: { body: string }) {
+function ChecklistPreview({ body, max }: { body: string; max: number }) {
   // Auch hier Erledigtes nach unten – für Notizen, die noch aus der Zeit
   // davor stammen und seither nicht angefasst wurden.
   const items = sortChecklist(parseChecklist(body))
@@ -160,14 +341,17 @@ function ChecklistPreview({ body }: { body: string }) {
 
   return (
     <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">
-      {items.slice(0, PREVIEW_ITEMS).map((item, index) => (
-        <span key={index} className={`block truncate ${item.done ? 'text-slate-400 line-through dark:text-slate-500' : ''}`}>
+      {items.slice(0, max).map((item, index) => (
+        <span
+          key={index}
+          className={`block truncate ${item.done ? 'text-slate-400 line-through dark:text-slate-500' : ''}`}
+        >
           {item.done ? '☑' : '☐'} {item.text}
         </span>
       ))}
-      {items.length > PREVIEW_ITEMS ? (
+      {items.length > max ? (
         <span className="block text-xs text-slate-400 dark:text-slate-500">
-          … {items.length - PREVIEW_ITEMS} weitere · {offen} offen
+          … {items.length - max} weitere · {offen} offen
         </span>
       ) : null}
     </span>
@@ -258,6 +442,7 @@ function NoteEditor({
             >
               {shared ? '👥 Geteilt' : '🔒 Nur für mich'}
             </button>
+            <ColorPicker color={color} onChange={setColor} />
             <button
               onClick={() => setPinned((value) => !value)}
               className={`grid size-11 min-h-11 place-items-center rounded-full text-sm ${pinned ? '' : 'opacity-30'}`}
@@ -270,21 +455,11 @@ function NoteEditor({
           </div>
         </>
       }
+      // Ohne Notiz zum Löschen gibt es nichts zu zeigen – und der Fuss würde
+      // dem Text nur Höhe wegnehmen.
       footer={
-        <div className="flex items-center gap-2">
-          {NOTE_COLORS.map((option) => (
-            <button
-              key={option}
-              onClick={() => setColor(option)}
-              aria-label={`Farbe ${option}`}
-              aria-pressed={color === option}
-              className={`size-8 rounded-full ${COLOR_SWATCHES[option]} ${
-                color === option ? 'ring-2 ring-brand-600 ring-offset-2 dark:ring-offset-slate-950' : ''
-              }`}
-            />
-          ))}
-
-          {savedId ? (
+        savedId ? (
+          <div className="flex items-center">
             <button
               onClick={() => {
                 if (!window.confirm('Notiz löschen?')) return
@@ -297,8 +472,8 @@ function NoteEditor({
             >
               Löschen
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : undefined
       }
     >
       <>
@@ -315,17 +490,130 @@ function NoteEditor({
         {kind === 'liste' ? (
           <Checklist items={items} onChange={setItems} />
         ) : (
-          <textarea
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            placeholder="Text …"
-            aria-label="Text"
-            rows={8}
-            className="mt-3 w-full resize-none bg-transparent text-base outline-none"
-          />
+          <GrowingTextarea value={text} onChange={setText} />
         )}
       </>
     </Modal>
+  )
+}
+
+/**
+ * Das Textfeld wächst mit dem Text.
+ *
+ * Ein Feld mit fester Zeilenzahl scrollt in sich selbst, während das Fenster
+ * darüber noch Platz hätte – man schreibt dann durch ein Guckloch. So wächst
+ * stattdessen das Feld, mit ihm das Fenster, und erst wenn das an den
+ * Bildschirmrand stösst, bekommt der Inhalt eine Bildlaufleiste.
+ */
+function GrowingTextarea({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const field = useRef<HTMLTextAreaElement>(null)
+
+  useLayoutEffect(() => {
+    const element = field.current
+    if (!element) return
+    // Erst zurücksetzen: Sonst misst scrollHeight die bisherige Höhe mit, und
+    // das Feld wächst zwar, schrumpft aber beim Löschen nie wieder.
+    element.style.height = 'auto'
+    element.style.height = `${element.scrollHeight}px`
+  }, [value])
+
+  return (
+    <textarea
+      ref={field}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="Text …"
+      aria-label="Text"
+      // Eine Mindesthöhe, damit auch die leere Notiz eine Fläche hat, die man
+      // mit dem Daumen trifft.
+      className="mt-3 min-h-40 w-full resize-none overflow-hidden bg-transparent text-base outline-none"
+    />
+  )
+}
+
+/**
+ * Die Farbe der Notiz – ein Knopf mit der aktuellen Farbe, der die fünf
+ * Möglichkeiten aufklappt.
+ *
+ * Vorher standen alle Farben ständig im Fuss des Fensters. Das ist viel
+ * Aufmerksamkeit für eine Entscheidung, die man einmal trifft und dann
+ * jahrelang nicht mehr anfasst – die Notiz selbst hat den Platz nötiger.
+ */
+function ColorPicker({
+  color,
+  onChange,
+}: {
+  color: NoteColor
+  onChange: (color: NoteColor) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div
+      className="relative"
+      onKeyDown={(event) => {
+        // Escape schliesst zuerst die Auswahl – nicht gleich das ganze Fenster.
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation()
+          setOpen(false)
+        }
+      }}
+    >
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Farbe: ${NOTE_COLOR_LABELS[color]}`}
+        className="flex min-h-11 items-center gap-0.5 rounded-full px-1.5 text-slate-500 dark:text-slate-400"
+      >
+        <span className={`size-5 rounded-full border border-black/10 ${COLOR_SWATCHES[color]}`} />
+        <svg className="size-3" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      {open ? (
+        <>
+          {/* Fängt den Griff daneben ab – sonst bliebe die Auswahl offen. */}
+          <button
+            className="fixed inset-0 z-10 cursor-default"
+            onClick={() => setOpen(false)}
+            aria-label="Farbauswahl schliessen"
+          />
+          <ul
+            role="listbox"
+            aria-label="Farbe"
+            className="absolute right-0 top-12 z-20 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            {NOTE_COLORS.map((option) => (
+              <li key={option}>
+                <button
+                  role="option"
+                  aria-selected={color === option}
+                  onClick={() => {
+                    onChange(option)
+                    setOpen(false)
+                  }}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10"
+                >
+                  <span
+                    className={`size-4 shrink-0 rounded-full border border-black/10 ${COLOR_SWATCHES[option]}`}
+                  />
+                  {NOTE_COLOR_LABELS[option]}
+                  {color === option ? <span className="ml-auto text-brand-700">✓</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
   )
 }
 
