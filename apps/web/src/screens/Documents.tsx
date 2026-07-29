@@ -18,15 +18,25 @@ import { StatusBadge } from '../components/StatusBadge'
 import { UploadControls } from '../components/UploadControls'
 import {
   countFilters,
+  sanitizeFilters,
   useCategories,
   useDocuments,
   useHouseholdUsers,
   type DocumentFilters,
 } from '../lib/documents'
+import { useLocalJson } from '../lib/einstellungen'
 
 export function Documents() {
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<DocumentFilters>({})
+  // Die Filter bleiben am Gerät stehen: Wer die Liste auf „Steuererklärung"
+  // eingestellt hat, kommt am nächsten Tag dorthin zurück, wo er aufgehört
+  // hat. Die Suche nicht – ein Suchbegriff von gestern beantwortet die Frage
+  // von heute nicht, und eine leere Liste beim Öffnen wäre ein Rätsel.
+  const [filters, setFilters] = useLocalJson<DocumentFilters>(
+    'dokumente.filter',
+    {},
+    sanitizeFilters,
+  )
 
   const query = useDocuments({ ...filters, q: search || undefined })
   const categories = useCategories()

@@ -5,6 +5,7 @@ import {
   ALLOWED_MIME_TYPES,
   API_ERROR_CODES,
   buildSearchText,
+  DEFAULT_DOCUMENT_STATUS,
   DOCUMENT_STATUSES,
   documentQuerySchema,
   MAX_UPLOAD_BYTES,
@@ -194,7 +195,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         sha256: stored.sha256,
         uploadedBy: user.id,
         docDate,
-        status: 'offen',
+        status: DEFAULT_DOCUMENT_STATUS,
         searchText: buildSearchText({ title }),
       })
       .returning()

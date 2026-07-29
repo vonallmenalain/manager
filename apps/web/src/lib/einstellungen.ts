@@ -13,6 +13,44 @@ import { useCallback, useState } from 'react'
  * mehr gibt.
  */
 /**
+ * Ein beliebiger Zustand, der das Schliessen der App überlebt – etwa die
+ * zuletzt gesetzten Filter.
+ *
+ * `bereinigen` bekommt, was im Speicher lag, und macht daraus einen gültigen
+ * Wert. Das ist keine Förmlichkeit: Im `localStorage` steht, was eine ältere
+ * Fassung der App dort hinterlassen hat, und ein Filter auf einen Zustand, den
+ * es nicht mehr gibt, zeigt eine leere Liste ohne erkennbaren Grund.
+ */
+export function useLocalJson<T>(
+  key: string,
+  fallback: T,
+  bereinigen: (raw: unknown) => T,
+): [T, (value: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = window.localStorage.getItem(key)
+      return raw ? bereinigen(JSON.parse(raw)) : fallback
+    } catch {
+      return fallback
+    }
+  })
+
+  const store = useCallback(
+    (next: T) => {
+      setValue(next)
+      try {
+        window.localStorage.setItem(key, JSON.stringify(next))
+      } catch {
+        // Dann gilt die Wahl eben nur für diese Sitzung.
+      }
+    },
+    [key],
+  )
+
+  return [value, store]
+}
+
+/**
  * Eine geordnete Liste mit Häkchen – gedacht für „was wird angezeigt und in
  * welcher Reihenfolge".
  *

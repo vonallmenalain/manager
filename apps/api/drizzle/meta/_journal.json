@@ -85,6 +85,13 @@
       "when": 1785309177165,
       "tag": "0011_zahlung_ohne_notiz",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785318326973,
+      "tag": "0012_pendent_statt_offen",
+      "breakpoints": true
     }
   ]
 }
