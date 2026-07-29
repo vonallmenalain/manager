@@ -38,6 +38,24 @@ export const setupSchema = createUserSchema.extend({
 
 export type SetupInput = z.infer<typeof setupSchema>
 
+/**
+ * Der Haushalt hat einen Verwalter, und das ist dieses Konto.
+ *
+ * Bewusst eine Adresse und keine Rollentabelle: Es gibt genau einen, der die
+ * App betreibt, und er ändert sich nicht. Eine Tabelle mit Rollen, Rechten und
+ * einer Oberfläche zum Vergeben wäre Verwaltung für eine Entscheidung, die
+ * längst getroffen ist.
+ *
+ * Verwalter heisst nicht „darf mehr sehen" – Dokumente, Notizen und Finanzen
+ * gehören dem Haushalt gemeinsam. Es heisst: darf den Haushalt selbst ändern
+ * (Mitglieder anlegen) und sieht, ob der Server erreichbar ist.
+ */
+export const ADMIN_EMAIL = 'alain.sc2@gmail.com'
+
+export function isAdminEmail(email: string): boolean {
+  return email.trim().toLowerCase() === ADMIN_EMAIL
+}
+
 /** Öffentliches Nutzerprofil – enthält bewusst keinen Passwort-Hash. */
 export const publicUserSchema = z.object({
   id: z.string(),
@@ -45,6 +63,12 @@ export const publicUserSchema = z.object({
   email: z.string(),
   color: z.string(),
   createdAt: z.string(),
+  /**
+   * Wird vom Server aus der Adresse abgeleitet und mitgeliefert. So steht die
+   * Regel an einer Stelle: Das Frontend blendet ein, was der Server ohnehin
+   * durchlässt, statt dieselbe Bedingung ein zweites Mal zu kennen.
+   */
+  isAdmin: z.boolean(),
 })
 
 export type PublicUser = z.infer<typeof publicUserSchema>

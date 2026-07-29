@@ -11,7 +11,8 @@ import {
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { Modal, ModalCloseButton } from '../components/Modal'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
@@ -110,6 +111,21 @@ export function Notes() {
   const query = useNotes(search)
 
   const notes = query.data?.notes ?? []
+
+  // Vom Startbildschirm kommt man mit `?notiz=<id>` direkt in eine angeheftete
+  // Notiz. Der Wunsch wird danach aus der Adresse genommen – sonst öffnete
+  // sich dieselbe Notiz nach dem Schliessen sofort wieder.
+  const [params, setParams] = useSearchParams()
+  const gewuenscht = params.get('notiz')
+
+  useEffect(() => {
+    // Erst suchen, wenn es etwas zu durchsuchen gibt: Wer den Wunsch vor dem
+    // Eintreffen der Liste verwirft, öffnet nie etwas.
+    if (!gewuenscht || query.isLoading) return
+    const treffer = notes.find((note) => note.id === gewuenscht)
+    if (treffer) setEditing(treffer)
+    setParams({}, { replace: true })
+  }, [gewuenscht, notes, query.isLoading, setParams])
 
   return (
     <div className="space-y-4">

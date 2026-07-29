@@ -192,6 +192,41 @@ erscheint auf dem Dashboard unter "Pendent".
 
 ## 6. Funktionen im Detail
 
+### 6.0 Startbildschirm und Konto
+
+**Der Startbildschirm ist eine Übersicht, kein Arbeitsplatz.** Jede Kachel beantwortet eine
+Frage in zwei, drei Zeilen und führt beim Antippen dorthin, wo man damit weiterarbeitet –
+die ganze Kachel, nicht ein „Alle ansehen" in der Ecke. Technisch ist der Titel der
+Verweis und legt sich mit `::after` über die Kachel: ein echter Link mit Ziel in der
+Statusleiste, kein `onClick` auf einem Kasten. Zeilen mit eigenem Ziel – eine angeheftete
+Notiz – heben sich mit `z-10` darüber und behalten ihres.
+
+Vier Kacheln stehen zur Wahl: **Pendente Dokumente** (die nächsten vier, Fristen zuerst),
+**Zehnter** (offener Betrag und die Monate dazu), **Einkaufsliste** (was noch fehlt) und
+**Angeheftete Notizen** (nur die Titel, jeder öffnet seine Notiz über `?notiz=<id>`).
+Welche erscheinen und in welcher Reihenfolge, stellt der Stift beim Gruss ein – Häkchen
+und zwei Pfeile, gespeichert im `localStorage` am Gerät. Was den einen morgens
+interessiert, ist für den anderen Rauschen; und keine Kachel zeigt mehr als vier Zeilen,
+sonst wäre es keine Übersicht.
+
+**Das Konto steckt hinter dem Kreis** mit dem Anfangsbuchstaben, oben links: die eigene
+Adresse und das Abmelden. Vorher stand daneben „Angemeldet" – eine Zeile, die nichts sagt,
+was man nicht schon sieht – und ein Knopf zum Abmelden, den man täglich sah und selten
+brauchte.
+
+**Verwalter des Haushalts** ist genau ein Konto (`ADMIN_EMAIL` im geteilten Paket). Es
+gibt keine Rollentabelle: Es gibt einen, der die App betreibt, und er ändert sich nicht.
+Verwalter heisst nicht „sieht mehr" – Dokumente, Notizen und Finanzen gehören dem Haushalt
+gemeinsam. Es heisst: darf **Mitglieder anlegen** und sieht im Kontomenü, **ob der Server
+erreichbar ist** (ohne Versionsnummer – die beantwortet keine Frage, die man sich am Handy
+stellt). Beides steckt im Kontomenü und nicht mehr als Kachel auf dem Startbildschirm:
+Das ist Betrieb, nicht Haushalt.
+
+Die Prüfung steht im Server (`requireAdmin`), nicht nur in der Oberfläche. Ein
+ausgeblendeter Knopf ist keine Sperre – die Adresse der Route steht in jedem
+Netzwerk-Reiter. Das Frontend liest `isAdmin` aus dem Nutzerprofil, das der Server aus der
+Adresse ableitet; so kennt die Regel nur eine Stelle.
+
 ### 6.1 Dokumente
 
 **Erfassen – fünf Wege, alle schnell:**
@@ -241,7 +276,7 @@ Ein Tap auf "Fertig" genügt, alles andere lässt sich später ergänzen.
 OCR-Volltext, mit Treffer-Hervorhebung im Textausschnitt. Dazu Filterchips für Kategorie,
 Person, Status, Jahr und Betragsbereich.
 
-**Ansichten:** Dashboard (Pendenzen, Fälligkeiten, letzte Uploads) · Liste/Suche ·
+**Ansichten:** Startbildschirm (Kachel „Pendent" mit den nächsten Fristen) · Liste/Suche ·
 Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).
 
 ### 6.2 Einkaufsliste
@@ -524,7 +559,9 @@ sie bestimmt, welcher der beiden Wege in Etappe 2 gebaut wird (oder beide).
 
 ## 9. Sicherheit und Zugang
 
-* **Konten:** Zwei, manuell angelegt, keine offene Registrierung.
+* **Konten:** Zwei, manuell angelegt, keine offene Registrierung. Anlegen darf nur der
+  Verwalter des Haushalts (`ADMIN_EMAIL`), geprüft im Server über `requireAdmin` – ein neues
+  Konto ist der eine Vorgang, der Zugang schafft.
 * **Passwörter:** argon2id. Session als HttpOnly-, Secure-, SameSite=Lax-Cookie auf
   `.alae.app`. Da `manager.alae.app` und `manager-api.alae.app` dieselbe Registrable Domain
   teilen, gilt das als same-site – kein `SameSite=None` nötig, keine Third-Party-Cookie-Probleme.

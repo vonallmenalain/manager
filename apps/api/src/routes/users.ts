@@ -15,10 +15,13 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   /**
-   * Jedes angemeldete Mitglied darf ein weiteres anlegen. Bei einem Haushalt
-   * mit zwei Personen wäre eine Rollenhierarchie reine Bürokratie.
+   * Ein Mitglied anlegen darf nur der Verwalter des Haushalts.
+   *
+   * Vorher durfte es jeder – bei zwei Personen schien eine Unterscheidung
+   * Bürokratie. Ein neues Konto ist aber der eine Vorgang, der Zugang schafft,
+   * und wer ihn auslöst, sollte derselbe sein, der die App auch betreibt.
    */
-  fastify.post('/api/users', { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.post('/api/users', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
     const parsed = createUserSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.status(400).send(validationError(parsed.error))
