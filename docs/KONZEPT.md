@@ -184,9 +184,14 @@ erDiagram
   Steuerguthaben
 * `sessions` – angemeldete Geräte
 
-**Dokument-Status:** `offen` → `in_arbeit` → `erledigt` → `archiviert`.
-Bewusst nur vier, mit `offen` als Default. Alles was nicht `erledigt`/`archiviert` ist,
-erscheint auf dem Dashboard unter "Pendent".
+**Dokument-Status:** `pendent` → `erledigt` → `archiviert`. Bewusst nur drei, mit
+`pendent` als Standard – was ankommt, liegt an.
+
+Ursprünglich waren es vier: `offen` und `in_arbeit` standen am Anfang. Das waren zwei
+Namen für dasselbe. Beim Ablegen ist es dieselbe Handbewegung, in der Liste dieselbe
+Zeile, und die Frage „ist das schon in Arbeit?" beantwortet für ein Stück Post niemand
+zuverlässig. Seit beides `pendent` heisst, heisst der Zustand auch gleich wie der Filter
+und die Kachel auf dem Startbildschirm – die Übersetzung dazwischen fällt weg.
 
 ---
 
@@ -293,6 +298,13 @@ aus gutem Grund nicht zeigt.
 
 Vorher stand dort eine Reihe von Chips (Pendent, jede Person, jede Kategorie). Sie lief
 waagrecht aus dem Bild und liess immer nur eines davon gelten.
+
+**Die Filter bleiben am Gerät stehen** (`localStorage`): Wer die Liste auf
+„Steuererklärung" eingestellt hat, kommt am nächsten Tag dorthin zurück, wo er aufgehört
+hat. Beim Lesen wird geprüft, was noch gilt – ein gespeicherter Status, den es nicht mehr
+gibt, fliegt weg, statt eine leere Liste ohne erkennbaren Grund zu erzeugen. Die Suche
+bleibt bewusst nicht stehen: Ein Suchbegriff von gestern beantwortet die Frage von heute
+nicht.
 
 **Ansichten:** Startbildschirm (Kachel „Pendent" mit den nächsten Fristen) · Liste/Suche ·
 Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).

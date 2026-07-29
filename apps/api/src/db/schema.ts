@@ -84,7 +84,7 @@ export const documents = sqliteTable(
     categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
     /** null heisst "beide zuständig", nicht "niemand". */
     assignedTo: text('assigned_to').references(() => users.id, { onDelete: 'set null' }),
-    status: text('status').notNull().default('offen'),
+    status: text('status').notNull().default('pendent'),
     dueDate: text('due_date'),
 
     amountCents: integer('amount_cents'),

@@ -1,8 +1,10 @@
-import type {
-  Category,
-  DocumentDetail,
-  ManagedDocument,
-  UpdateDocumentInput,
+import {
+  DOCUMENT_STATUSES,
+  type Category,
+  type DocumentDetail,
+  type DocumentStatus,
+  type ManagedDocument,
+  type UpdateDocumentInput,
 } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
@@ -36,6 +38,44 @@ function toQueryString(filters: DocumentFilters): string {
   }
   const query = params.toString()
   return query ? `?${query}` : ''
+}
+
+/**
+ * Liest gespeicherte Filter und wirft weg, was nicht (mehr) gilt.
+ *
+ * Im Speicher steht, was eine ältere Fassung hinterlassen hat – etwa der
+ * Status `offen`, den es nicht mehr gibt. Bliebe er stehen, zeigte die Liste
+ * nichts an, ohne dass man den Grund sähe. Kennungen von Kategorien und
+ * Personen lassen sich hier nicht prüfen; dafür steht die Zahl am Filterknopf,
+ * und ein Griff setzt alles zurück.
+ */
+export function sanitizeFilters(raw: unknown): DocumentFilters {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const gelesen = raw as Record<string, unknown>
+  const filters: DocumentFilters = {}
+
+  const texte = (wert: unknown): string[] =>
+    Array.isArray(wert) ? wert.filter((eintrag): eintrag is string => typeof eintrag === 'string') : []
+
+  const status = texte(gelesen.status).filter((wert): wert is DocumentStatus =>
+    (DOCUMENT_STATUSES as readonly string[]).includes(wert),
+  )
+  if (status.length > 0) filters.status = status
+
+  const kategorien = texte(gelesen.categoryId)
+  if (kategorien.length > 0) filters.categoryId = kategorien
+
+  const zustaendig = texte(gelesen.assignedTo)
+  if (zustaendig.length > 0) filters.assignedTo = zustaendig
+
+  const istDatum = (wert: unknown): wert is string =>
+    typeof wert === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(wert)
+  if (istDatum(gelesen.uploadedFrom)) filters.uploadedFrom = gelesen.uploadedFrom
+  if (istDatum(gelesen.uploadedTo)) filters.uploadedTo = gelesen.uploadedTo
+
+  if (gelesen.deleted === 'mit' || gelesen.deleted === 'nur') filters.deleted = gelesen.deleted
+
+  return filters
 }
 
 /** Wie viele Filter gesetzt sind – für die Zahl am Filterknopf. */

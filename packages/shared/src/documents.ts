@@ -1,21 +1,30 @@
 import { z } from 'zod'
 
 /**
- * Bewusst nur vier Zustände. Jeder weitere klingt beim Entwerfen sinnvoll und
+ * Bewusst nur drei Zustände. Jeder weitere klingt beim Entwerfen sinnvoll und
  * führt im Alltag dazu, dass man vor dem Ablegen erst nachdenken muss.
+ *
+ * „Offen" und „In Arbeit" waren zwei Namen für dasselbe: etwas liegt an.
+ * Beim Ablegen ist es dieselbe Handbewegung, in der Liste dieselbe Zeile, und
+ * die Frage „ist das schon in Arbeit?" beantwortet niemand zuverlässig für
+ * ein Stück Post. Beides heisst jetzt `pendent` – und weil der Filter und die
+ * Kachel auf dem Startbildschirm ohnehin so hiessen, fällt auch die
+ * Übersetzung dazwischen weg.
  */
-export const DOCUMENT_STATUSES = ['offen', 'in_arbeit', 'erledigt', 'archiviert'] as const
+export const DOCUMENT_STATUSES = ['pendent', 'erledigt', 'archiviert'] as const
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number]
 
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
-  offen: 'Offen',
-  in_arbeit: 'In Arbeit',
+  pendent: 'Pendent',
   erledigt: 'Erledigt',
   archiviert: 'Archiviert',
 }
 
-/** Was auf dem Dashboard unter "Pendent" erscheint. */
-export const OPEN_STATUSES: readonly DocumentStatus[] = ['offen', 'in_arbeit']
+/** Der Zustand, in dem ein Dokument ankommt. */
+export const DEFAULT_DOCUMENT_STATUS: DocumentStatus = 'pendent'
+
+/** Was auf dem Startbildschirm unter „Pendent" erscheint. */
+export const OPEN_STATUSES: readonly DocumentStatus[] = ['pendent']
 
 export const documentStatusSchema = z.enum(DOCUMENT_STATUSES)
 
@@ -230,7 +239,7 @@ export const updateDocumentSchema = z.object({
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>
 
 /**
- * Mehrfachauswahl als ein Parameter: `?status=offen,in_arbeit`.
+ * Mehrfachauswahl als ein Parameter: `?status=pendent,erledigt`.
  *
  * Ein Filter mit Häkchen liefert keine oder mehrere Werte. Wiederholte
  * Parameter (`?status=a&status=b`) wären die andere Schreibweise – sie kommen
@@ -259,7 +268,7 @@ export const documentQuerySchema = z.object({
   /** Hochgeladen ab / bis, jeweils einschliesslich. */
   uploadedFrom: isoDate.optional(),
   uploadedTo: isoDate.optional(),
-  /** 'pendent' fasst offen und in_arbeit zusammen – der häufigste Filter. */
+  /** Kurzform für `status=pendent` – gebraucht von der Kachel „Pendent". */
   pending: z.coerce.boolean().optional(),
   /**
    * Was mit dem Papierkorb geschehen soll. Standard ist `ohne`: Gelöschtes ist
