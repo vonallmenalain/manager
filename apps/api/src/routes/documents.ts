@@ -5,15 +5,17 @@ import {
   ALLOWED_MIME_TYPES,
   API_ERROR_CODES,
   buildSearchText,
+  DOCUMENT_STATUSES,
   documentQuerySchema,
   MAX_UPLOAD_BYTES,
   normalizeForSearch,
   OPEN_STATUSES,
+  UNASSIGNED,
   UNCATEGORIZED,
   updateDocumentSchema,
   type PreviewInfo,
 } from '@manager/shared'
-import { and, desc, eq, inArray, isNull, like, sql, type SQL } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -47,6 +49,28 @@ import {
 import { titleFromFields, titleFromFilename } from '../lib/upload-title.js'
 
 const allowedMimeTypes = new Set<string>(ALLOWED_MIME_TYPES)
+
+/**
+ * Trennt eine Mehrfachauswahl in echte Kennungen und das „ohne" darin – etwa
+ * `unsortiert` bei den Kategorien. Leere Auswahl heisst „kein Filter" und gibt
+ * null zurück, nicht eine Bedingung, die nichts durchlässt.
+ */
+function auswahl(werte: string[] | undefined, ohneWert: string) {
+  if (!werte || werte.length === 0) return null
+  return {
+    ohne: werte.includes(ohneWert),
+    ids: werte.filter((wert) => wert !== ohneWert),
+  }
+}
+
+/** Verknüpft die Teile eines Filters mit „oder" – fehlende Teile fallen weg. */
+function oderNichts(...teile: (SQL | undefined)[]): SQL {
+  const vorhanden = teile.filter((teil): teil is SQL => teil !== undefined)
+  // Mit einem Teil ist `or` überflüssig, mit keinem gäbe es nichts zu prüfen –
+  // dann steht hier eine Bedingung, die nie zutrifft (die Auswahl war leer).
+  if (vorhanden.length === 1) return vorhanden[0] as SQL
+  return or(...vorhanden) ?? sql`1 = 0`
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -182,6 +206,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const { q, status, categoryId, assignedTo, year, pending, limit, offset } = parsed.data
+    const { uploadedFrom, uploadedTo } = parsed.data
 
     const conditions: SQL[] = [isNull(documents.deletedAt)]
 
@@ -192,17 +217,44 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       conditions.push(like(documents.searchText, `%${normalizeForSearch(q)}%`))
     }
 
-    if (status) conditions.push(eq(documents.status, status))
+    // Innerhalb eines Filters gilt „oder", zwischen den Filtern „und": Wer
+    // zwei Personen anhakt, will beide sehen – wer zusätzlich eine Kategorie
+    // wählt, will davon nur diese.
+    if (status && status.length > 0) {
+      const erlaubt = status.filter((wert): wert is (typeof DOCUMENT_STATUSES)[number] =>
+        (DOCUMENT_STATUSES as readonly string[]).includes(wert),
+      )
+      if (erlaubt.length > 0) conditions.push(inArray(documents.status, erlaubt))
+    }
     if (pending) conditions.push(inArray(documents.status, [...OPEN_STATUSES]))
-    if (categoryId) {
+
+    const kategorien = auswahl(categoryId, UNCATEGORIZED)
+    if (kategorien) {
       conditions.push(
-        categoryId === UNCATEGORIZED
-          ? isNull(documents.categoryId)
-          : eq(documents.categoryId, categoryId),
+        oderNichts(
+          kategorien.ohne ? isNull(documents.categoryId) : undefined,
+          kategorien.ids.length > 0 ? inArray(documents.categoryId, kategorien.ids) : undefined,
+        ),
       )
     }
-    if (assignedTo) conditions.push(eq(documents.assignedTo, assignedTo))
+
+    const zustaendig = auswahl(assignedTo, UNASSIGNED)
+    if (zustaendig) {
+      conditions.push(
+        oderNichts(
+          zustaendig.ohne ? isNull(documents.assignedTo) : undefined,
+          zustaendig.ids.length > 0 ? inArray(documents.assignedTo, zustaendig.ids) : undefined,
+        ),
+      )
+    }
+
     if (year) conditions.push(like(documents.docDate, `${year}-%`))
+
+    // `uploaded_at` ist ein ISO-Zeitstempel; verglichen wird als Text, was bei
+    // ISO dasselbe ist wie zeitlich. Der Endtag zählt ganz dazu – wer „bis
+    // heute" wählt, meint nicht „bis heute um Mitternacht".
+    if (uploadedFrom) conditions.push(gte(documents.uploadedAt, uploadedFrom))
+    if (uploadedTo) conditions.push(lte(documents.uploadedAt, `${uploadedTo}T23:59:59.999Z`))
 
     const where = and(...conditions)
 

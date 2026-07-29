@@ -1,17 +1,23 @@
 import {
+  DOCUMENT_STATUS_LABELS,
+  DOCUMENT_STATUSES,
   formatAmount,
+  UNASSIGNED,
+  UNASSIGNED_LABEL,
   UNCATEGORIZED,
   UNCATEGORIZED_LABEL,
   type ManagedDocument,
 } from '@manager/shared'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { DocumentIcon } from '../components/icons'
+import { useEscape } from '../lib/overlay'
 import { SearchSnippet } from '../components/SearchSnippet'
 import { StatusBadge } from '../components/StatusBadge'
 import { UploadControls } from '../components/UploadControls'
 import {
+  countFilters,
   useCategories,
   useDocuments,
   useHouseholdUsers,
@@ -30,23 +36,17 @@ export function Documents() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Dokumente</h1>
-        {query.data ? (
-          <span className="text-sm text-slate-500 dark:text-slate-400">
-            {query.data.total} {query.data.total === 1 ? 'Eintrag' : 'Einträge'}
-          </span>
-        ) : null}
+        <FilterMenu
+          filters={filters}
+          onChange={setFilters}
+          categories={categories.data?.categories ?? []}
+          users={users.data?.users ?? []}
+        />
       </div>
 
       <SearchField value={search} onChange={setSearch} />
-
-      <FilterChips
-        filters={filters}
-        onChange={setFilters}
-        categories={categories.data?.categories ?? []}
-        users={users.data?.users ?? []}
-      />
 
       {query.isLoading ? (
         <ListSkeleton />
@@ -97,80 +97,212 @@ function SearchField({ value, onChange }: { value: string; onChange: (value: str
   )
 }
 
-interface FilterChipsProps {
+interface FilterMenuProps {
   filters: DocumentFilters
   onChange: (filters: DocumentFilters) => void
   categories: { id: string; name: string }[]
   users: { id: string; name: string }[]
 }
 
-function FilterChips({ filters, onChange, categories, users }: FilterChipsProps) {
-  function toggle<K extends keyof DocumentFilters>(key: K, value: DocumentFilters[K]) {
-    const next = { ...filters }
-    if (next[key] === value) delete next[key]
-    else next[key] = value
-    onChange(next)
+/**
+ * Alle Filter hinter einem Knopf.
+ *
+ * Vorher stand hier eine Reihe von Chips – Pendent, jede Person, jede
+ * Kategorie –, die waagrecht aus dem Bild lief und immer nur eines davon
+ * gelten liess. Mit Häkchen lassen sich mehrere anhaken („Alain oder Annina"),
+ * und die Reihe nimmt keinen Platz mehr weg, solange man sie nicht braucht.
+ *
+ * Die Zahl am Knopf sagt, wie viele Häkchen gerade gesetzt sind: Ein Filter,
+ * den man nicht sieht, muss sich bemerkbar machen – sonst sucht man nach einem
+ * Dokument, das die Liste aus gutem Grund nicht zeigt.
+ */
+function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
+  const [open, setOpen] = useState(false)
+  const anzahl = countFilters(filters)
+
+  useEscape(open, useCallback(() => setOpen(false), []))
+
+  function toggle(key: 'status' | 'categoryId' | 'assignedTo', value: string) {
+    const current = filters[key] ?? []
+    const next = current.includes(value)
+      ? current.filter((entry) => entry !== value)
+      : [...current, value]
+
+    const geaendert = { ...filters }
+    if (next.length === 0) delete geaendert[key]
+    else geaendert[key] = next
+    onChange(geaendert)
+  }
+
+  function setDatum(key: 'uploadedFrom' | 'uploadedTo', value: string) {
+    const geaendert = { ...filters }
+    if (value) geaendert[key] = value
+    else delete geaendert[key]
+    onChange(geaendert)
   }
 
   return (
-    // Waagrecht scrollbar statt umbrechend: Auf einem Handy sollen die Filter
-    // nicht die halbe Höhe fressen.
-    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <Chip active={filters.pending === true} onClick={() => toggle('pending', true)}>
-        Pendent
-      </Chip>
-      {users.map((user) => (
-        <Chip
-          key={user.id}
-          active={filters.assignedTo === user.id}
-          onClick={() => toggle('assignedTo', user.id)}
-        >
-          {user.name}
-        </Chip>
-      ))}
-      {/* Unsortiert steht zuerst und ist keine Zeile in der Kategorientabelle,
-          sondern das Fehlen einer Zuordnung – die Liste dessen, was nach dem
-          Hochladen noch einsortiert werden will. */}
-      <Chip
-        active={filters.categoryId === UNCATEGORIZED}
-        onClick={() => toggle('categoryId', UNCATEGORIZED)}
+    <div className="relative">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300"
       >
-        {UNCATEGORIZED_LABEL}
-      </Chip>
-      {categories.map((category) => (
-        <Chip
-          key={category.id}
-          active={filters.categoryId === category.id}
-          onClick={() => toggle('categoryId', category.id)}
-        >
-          {category.name}
-        </Chip>
-      ))}
+        <svg className="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M4 6h16M7 12h10M10 18h4"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+        </svg>
+        Filter
+        {anzahl > 0 ? (
+          <span className="grid size-5 place-items-center rounded-full bg-brand-800 text-xs font-bold text-white">
+            {anzahl}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <>
+          <button
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setOpen(false)}
+            aria-label="Filter schliessen"
+          />
+          <div
+            role="dialog"
+            aria-label="Dokumente filtern"
+            className="absolute right-0 top-12 z-30 max-h-[70dvh] w-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            {/* Status und Zuständigkeit tragen kurze Namen und stehen deshalb
+                zweispaltig – sonst wäre das Menü länger als der Bildschirm,
+                bevor man bei den Kategorien ist. */}
+            <Gruppe titel="Status" spalten>
+              {DOCUMENT_STATUSES.map((status) => (
+                <Haken
+                  key={status}
+                  checked={(filters.status ?? []).includes(status)}
+                  onChange={() => toggle('status', status)}
+                >
+                  {DOCUMENT_STATUS_LABELS[status]}
+                </Haken>
+              ))}
+            </Gruppe>
+
+            <Gruppe titel="Zuständig" spalten>
+              {users.map((user) => (
+                <Haken
+                  key={user.id}
+                  checked={(filters.assignedTo ?? []).includes(user.id)}
+                  onChange={() => toggle('assignedTo', user.id)}
+                >
+                  {user.name}
+                </Haken>
+              ))}
+              <Haken
+                checked={(filters.assignedTo ?? []).includes(UNASSIGNED)}
+                onChange={() => toggle('assignedTo', UNASSIGNED)}
+              >
+                {UNASSIGNED_LABEL}
+              </Haken>
+            </Gruppe>
+
+            <Gruppe titel="Kategorie">
+              {/* Unsortiert steht zuerst und ist keine Zeile in der
+                  Kategorientabelle, sondern das Fehlen einer Zuordnung – die
+                  Liste dessen, was nach dem Hochladen noch einsortiert werden
+                  will. */}
+              <Haken
+                checked={(filters.categoryId ?? []).includes(UNCATEGORIZED)}
+                onChange={() => toggle('categoryId', UNCATEGORIZED)}
+              >
+                {UNCATEGORIZED_LABEL}
+              </Haken>
+              {categories.map((category) => (
+                <Haken
+                  key={category.id}
+                  checked={(filters.categoryId ?? []).includes(category.id)}
+                  onChange={() => toggle('categoryId', category.id)}
+                >
+                  {category.name}
+                </Haken>
+              ))}
+            </Gruppe>
+
+            <Gruppe titel="Hochgeladen">
+              <label className="flex items-center justify-between gap-2 py-1 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">von</span>
+                <input
+                  type="date"
+                  value={filters.uploadedFrom ?? ''}
+                  onChange={(event) => setDatum('uploadedFrom', event.target.value)}
+                  className="min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-2 py-1 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">bis</span>
+                <input
+                  type="date"
+                  value={filters.uploadedTo ?? ''}
+                  onChange={(event) => setDatum('uploadedTo', event.target.value)}
+                  className="min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                />
+              </label>
+            </Gruppe>
+
+            <button
+              onClick={() => onChange({})}
+              disabled={anzahl === 0}
+              className="mt-2 min-h-10 w-full rounded-xl text-sm font-medium text-slate-600 disabled:opacity-40 dark:text-slate-300"
+            >
+              Alle Filter zurücksetzen
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
 
-function Chip({
-  active,
-  onClick,
+function Gruppe({
+  titel,
+  spalten,
   children,
 }: {
-  active: boolean
-  onClick: () => void
+  titel: string
+  spalten?: boolean
   children: React.ReactNode
 }) {
   return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition ${
-        active
-          ? 'bg-brand-800 text-white'
-          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-      }`}
-    >
-      {children}
-    </button>
+    <div className="border-b border-slate-200 py-2 last:border-b-0 dark:border-slate-800">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{titel}</p>
+      <div className={spalten ? 'grid grid-cols-2 gap-x-2' : ''}>{children}</div>
+    </div>
+  )
+}
+
+function Haken({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean
+  onChange: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <label className="flex min-h-10 items-center gap-3 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="size-4 shrink-0 accent-brand-700"
+      />
+      <span className="min-w-0 truncate">{children}</span>
+    </label>
   )
 }
 

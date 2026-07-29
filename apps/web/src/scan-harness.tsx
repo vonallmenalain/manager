@@ -11,7 +11,13 @@ import { createRoot } from 'react-dom/client'
 
 import { DocumentScanner } from './components/DocumentScanner'
 import { PageTray } from './components/PageTray'
-import { createPage, defaultScanTitle, releasePage, type ScanPage } from './lib/scan/pages'
+import {
+  createPage,
+  defaultScanTitle,
+  releasePage,
+  rotatePage,
+  type ScanPage,
+} from './lib/scan/pages'
 import './index.css'
 
 const usePortal = new URLSearchParams(location.search).get('portal') !== '0'
@@ -68,6 +74,16 @@ function Harness() {
               setPages((current) => current.filter((entry) => entry.id !== id))
             }}
             onMove={() => undefined}
+            onRotate={(id) => {
+              const page = pages.find((entry) => entry.id === id)
+              if (!page) return
+              void rotatePage(page).then((gedreht) => {
+                setPages((current) =>
+                  current.map((entry) => (entry.id === id ? gedreht : entry)),
+                )
+                releasePage(page)
+              })
+            }}
             onDiscard={() => setPages([])}
             onUpload={() => undefined}
           />

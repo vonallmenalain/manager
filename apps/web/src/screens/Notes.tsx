@@ -11,13 +11,14 @@ import {
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { Modal, ModalCloseButton } from '../components/Modal'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useLocalSetting } from '../lib/einstellungen'
 import { useDeleteNote, useNotes, useSaveNote } from '../lib/household'
+import { useEscape } from '../lib/overlay'
 
 /** Gedeckte Töne – die Liste soll ruhig bleiben, nicht bunt blinken. */
 const COLOR_STYLES: Record<NoteColor, string> = {
@@ -51,6 +52,28 @@ const GROESSE_LABELS: Record<Groesse, string> = {
   klein: 'Klein',
   komprimiert: 'Komprimiert',
   alles: 'Alles',
+}
+
+/**
+ * Wie breit eine geöffnete Notiz werden darf.
+ *
+ * Nur am grossen Bildschirm eine Frage: Auf dem Handy ist die volle Breite die
+ * einzig sinnvolle Antwort, und die gibt es ohnehin. Am Monitor ist die
+ * schmale Spalte gut für einen Merkzettel und zu eng für eine lange Liste.
+ */
+const BREITEN = ['standard', 'mittel', 'breit'] as const
+type Breite = (typeof BREITEN)[number]
+
+const BREITE_LABELS: Record<Breite, string> = {
+  standard: 'Standard',
+  mittel: 'Mittel',
+  breit: 'Breit',
+}
+
+const BREITE_KLASSEN: Record<Breite, string> = {
+  standard: 'max-w-lg',
+  mittel: 'max-w-3xl',
+  breit: 'max-w-6xl',
 }
 
 /**
@@ -133,22 +156,12 @@ export function Notes() {
         <h1 className="text-2xl font-bold">Notizen</h1>
         {/* Wo bisher die Anzahl stand: Die kann man abzählen, die Anzeige
             nicht erraten. */}
-        <div className="flex items-center gap-1.5">
-          <Auswahl
-            label="Ansicht"
-            value={ansicht}
-            options={ANSICHTEN}
-            labels={ANSICHT_LABELS}
-            onChange={setAnsicht}
-          />
-          <Auswahl
-            label="Anzeigegrösse"
-            value={groesse}
-            options={GROESSEN}
-            labels={GROESSE_LABELS}
-            onChange={setGroesse}
-          />
-        </div>
+        <AnsichtsMenu
+          ansicht={ansicht}
+          onAnsicht={setAnsicht}
+          groesse={groesse}
+          onGroesse={setGroesse}
+        />
       </div>
 
       <input
@@ -244,34 +257,106 @@ export function Notes() {
   )
 }
 
-/** Ein kleines Auswahlfeld im Kopf der Seite. */
-function Auswahl<T extends string>({
-  label,
-  value,
+/**
+ * Ein Knopf „Ansicht", hinter dem beides steckt: Form und Grösse.
+ *
+ * Vorher standen zwei Auswahlfelder nebeneinander im Kopf der Seite. Sie
+ * beantworten dieselbe Frage – wie soll das hier aussehen –, und zwei Felder
+ * dafür sind ein Feld zu viel; auf einem schmalen Handy drängten sie zudem den
+ * Titel an den Rand.
+ */
+function AnsichtsMenu({
+  ansicht,
+  onAnsicht,
+  groesse,
+  onGroesse,
+}: {
+  ansicht: Ansicht
+  onAnsicht: (value: Ansicht) => void
+  groesse: Groesse
+  onGroesse: (value: Groesse) => void
+}) {
+  const [open, setOpen] = useState(false)
+  useEscape(open, useCallback(() => setOpen(false), []))
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300"
+      >
+        Ansicht
+        <svg className="size-3" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      {open ? (
+        <>
+          <button
+            className="fixed inset-0 z-20 cursor-default"
+            onClick={() => setOpen(false)}
+            aria-label="Ansicht schliessen"
+          />
+          <div
+            role="dialog"
+            aria-label="Ansicht"
+            className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            <Wahl
+              titel="Darstellung"
+              options={ANSICHTEN}
+              labels={ANSICHT_LABELS}
+              value={ansicht}
+              onChange={onAnsicht}
+            />
+            <Wahl
+              titel="Anzeigegrösse"
+              options={GROESSEN}
+              labels={GROESSE_LABELS}
+              value={groesse}
+              onChange={onGroesse}
+            />
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+/** Eine Gruppe sich ausschliessender Möglichkeiten, zum Antippen. */
+function Wahl<T extends string>({
+  titel,
   options,
   labels,
+  value,
   onChange,
 }: {
-  label: string
-  value: T
+  titel: string
   options: readonly T[]
   labels: Record<T, string>
+  value: T
   onChange: (value: T) => void
 }) {
   return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value as T)}
-      aria-label={label}
-      title={label}
-      className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-600 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-    >
+    <div className="border-b border-slate-200 py-1 last:border-b-0 dark:border-slate-800">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{titel}</p>
       {options.map((option) => (
-        <option key={option} value={option}>
+        <button
+          key={option}
+          onClick={() => onChange(option)}
+          aria-pressed={value === option}
+          className={`flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10 ${
+            value === option ? 'font-semibold text-brand-700 dark:text-brand-300' : ''
+          }`}
+        >
+          <span className="w-4 shrink-0">{value === option ? '✓' : ''}</span>
           {labels[option]}
-        </option>
+        </button>
       ))}
-    </select>
+    </div>
   )
 }
 
@@ -414,6 +499,9 @@ function NoteEditor({
   const [pinned, setPinned] = useState(note?.pinned ?? false)
   const [shared, setShared] = useState(note?.shared ?? false)
   const [color, setColor] = useState<NoteColor>(note?.color ?? 'default')
+  // Die Breite gehört zum Gerät, nicht zur Notiz: dieselbe Notiz will am
+  // Monitor breit und am Handy schmal gelesen werden.
+  const [breite, setBreite] = useLocalSetting<Breite>('notizen.breite', BREITEN, 'standard')
 
   const body = kind === 'liste' ? serializeChecklist(items) : text
   const leer = title.trim() === '' && body.trim() === ''
@@ -439,6 +527,7 @@ function NoteEditor({
       onClose={onClose}
       label={note ? 'Notiz bearbeiten' : 'Neue Notiz'}
       className={COLOR_STYLES[color]}
+      width={BREITE_KLASSEN[breite]}
       header={
         <>
           <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400">
@@ -459,6 +548,7 @@ function NoteEditor({
               {shared ? '👥 Geteilt' : '🔒 Nur für mich'}
             </button>
             <ColorPicker color={color} onChange={setColor} />
+            <WidthPicker breite={breite} onChange={setBreite} />
             <button
               onClick={() => setPinned((value) => !value)}
               className={`grid size-11 min-h-11 place-items-center rounded-full text-sm ${pinned ? '' : 'opacity-30'}`}
@@ -629,6 +719,53 @@ function ColorPicker({
           </ul>
         </>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Wie breit das Fenster sein darf – drei Stufen, weiter nichts.
+ *
+ * Steht nur am grossen Bildschirm (`hidden sm:flex`): Auf dem Handy füllt das
+ * Fenster ohnehin die Breite, und ein Knopf, der dort nichts bewirkt, ist ein
+ * Knopf zu viel.
+ */
+function WidthPicker({
+  breite,
+  onChange,
+}: {
+  breite: Breite
+  onChange: (value: Breite) => void
+}) {
+  return (
+    <div className="hidden items-center gap-0.5 rounded-full bg-black/5 p-0.5 sm:flex dark:bg-white/10">
+      {BREITEN.map((option) => (
+        <button
+          key={option}
+          onClick={() => onChange(option)}
+          aria-pressed={breite === option}
+          aria-label={`Breite ${BREITE_LABELS[option]}`}
+          title={`Breite ${BREITE_LABELS[option]}`}
+          className={`grid size-7 place-items-center rounded-full transition ${
+            breite === option
+              ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+              : 'text-slate-500 dark:text-slate-400'
+          }`}
+        >
+          {/* Drei verschieden breite Balken – das Sinnbild braucht keine Worte. */}
+          <svg className="size-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect
+              x={option === 'standard' ? 5.5 : option === 'mittel' ? 3.5 : 1.5}
+              y="3.5"
+              width={option === 'standard' ? 5 : option === 'mittel' ? 9 : 13}
+              height="9"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+          </svg>
+        </button>
+      ))}
     </div>
   )
 }

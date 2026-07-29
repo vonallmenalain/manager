@@ -258,7 +258,14 @@ ganzen App.
 
 **Mehrere Seiten** landen zuerst in einem Stapel statt sofort in der Ablage. Jede
 übernommene Seite führt dorthin zurück; von dort geht es über „Weitere Seite" mit einer
-frisch geöffneten Kamera weiter, und Seiten lassen sich umsortieren und entfernen. Erst "Ablegen" schreibt sie in ein Dokument – ab zwei Seiten als PDF (die
+frisch geöffneten Kamera weiter, und Seiten lassen sich umsortieren, **um eine
+Vierteldrehung drehen** und entfernen. Das Drehen gibt es, weil in einem mehrseitigen
+Brief gern eine einzelne Seite quer liegt – eine Tabelle, ein Plan –, und ein Stapel, in
+dem eine Seite auf der Seite steht, später niemand mehr gerade rückt. Gedreht wird das
+Bild selbst und nicht bloss seine Anzeige: Was in die PDF wandert, ist genau diese Datei,
+und ein Vermerk „bitte gedreht lesen" überlebt den Weg dorthin nicht. Die Vorschau im
+Stapel zeigt die Seite deshalb in ihren echten Verhältnissen (`object-contain`) – sonst
+sähe man gar nicht, welche gedreht gehört. Erst "Ablegen" schreibt sie in ein Dokument – ab zwei Seiten als PDF (die
 JPEGs wandern unverändert hinein, `DCTDecode`), bei einer einzelnen bleibt es beim Bild.
 Für die Texterkennung ändert sich dadurch nichts: Ein PDF ohne Textebene rastert der
 Server ohnehin und schickt es durch Tesseract.
@@ -273,11 +280,31 @@ Titel · Kategorie · Datum · Zuständig (ich / Ehefrau / beide) · Status · F
 Ein Tap auf "Fertig" genügt, alles andere lässt sich später ergänzen.
 
 **Suchen:** Ein Suchfeld über allem. Sucht gleichzeitig in Titel, Absender, Notizen und
-OCR-Volltext, mit Treffer-Hervorhebung im Textausschnitt. Dazu Filterchips für Kategorie,
-Person, Status, Jahr und Betragsbereich.
+OCR-Volltext, mit Treffer-Hervorhebung im Textausschnitt.
+
+**Filtern** steckt hinter einem Knopf oben rechts, wo vorher die Anzahl der Einträge
+stand – eine Zahl, die man abzählen kann und die nichts entscheidet. Dahinter Häkchen für
+Status, Zuständigkeit (samt „Beide" für das Fehlen einer Zuordnung) und Kategorie, dazu
+ein Zeitraum fürs Hochladedatum. Innerhalb einer Gruppe gilt „oder", zwischen den Gruppen
+„und": Wer zwei Personen anhakt, will beide sehen – wer zusätzlich eine Kategorie wählt,
+davon nur diese. Die Zahl am Knopf sagt, wie viele Häkchen gesetzt sind; ein Filter, den
+man nicht sieht, muss sich bemerkbar machen, sonst sucht man ein Dokument, das die Liste
+aus gutem Grund nicht zeigt.
+
+Vorher stand dort eine Reihe von Chips (Pendent, jede Person, jede Kategorie). Sie lief
+waagrecht aus dem Bild und liess immer nur eines davon gelten.
 
 **Ansichten:** Startbildschirm (Kachel „Pendent" mit den nächsten Fristen) · Liste/Suche ·
 Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).
+
+**Im Dokument** stehen Kategorie, Zuständigkeit und Status als drei Auswahlfelder direkt
+unter der Vorschau und speichern beim Loslassen. Das sind die drei Angaben, die sich im
+Alltag ändern – sie hinter „Bearbeiten" zu legen, hiess dreimal tippen für einen Griff.
+Alles Übrige (Titel, Daten, Betrag, Absender, Notiz) öffnet der Stift oben rechts, und
+auch dort gibt es keinen Speichern-Knopf mehr: geschrieben wird kurz nach dem letzten
+Tastendruck und beim Schliessen, wie bei den Notizen. Herunterladen und Bearbeiten sind
+zwei Zeichen neben dem Status statt zweier breiter Knöpfe unter der Vorschau – zwei
+Handgriffe, die man selten braucht, an der Stelle, an der das Dokument stehen sollte.
 
 ### 6.2 Einkaufsliste
 
@@ -324,7 +351,8 @@ Löschen; sonst wäre eine fremde Notiz über ihre Kennung erreichbar, ohne je i
 Liste aufgetaucht zu sein.
 
 **Die Übersicht lässt sich einstellen.** Wo früher die Anzahl stand – eine Zahl, die man
-abzählen kann und die nichts entscheidet –, stehen zwei kleine Auswahlfelder:
+abzählen kann und die nichts entscheidet –, steht ein Knopf „Ansicht". Dahinter beides,
+denn beides beantwortet dieselbe Frage:
 
 * **Ansicht:** Liste (eine Notiz je Zeile) oder Kacheln (zwei Spalten, jede so hoch wie
   ihr Inhalt). Zwei Spalten auch am grossen Bildschirm: Die Seite ist überall gleich
@@ -339,6 +367,12 @@ abzählen kann und die nichts entscheidet –, stehen zwei kleine Auswahlfelder:
 Beides hängt im `localStorage` am Gerät und nicht am Konto: Wie eine Liste angezeigt wird,
 ist eine Angabe über den Bildschirm, auf den man gerade schaut – am Handy will man anderes
 sehen als am Monitor.
+
+Aus demselben Grund lässt sich am grossen Bildschirm die **Breite des Fensters** in drei
+Stufen stellen (neben der Farbe: Standard, Mittel, Breit). Die schmale Spalte ist gut für
+einen Merkzettel und zu eng für eine lange Liste. Am Handy erscheinen die Knöpfe nicht –
+dort füllt das Fenster ohnehin die Breite, und ein Knopf, der nichts bewirkt, ist einer zu
+viel.
 
 Rechts oben in jeder Notiz steht, **wann zuletzt geschrieben wurde**, mit Datum und
 Uhrzeit. Damit die Angabe stimmt, speichert das Autospeichern nur, was vom Stand beim

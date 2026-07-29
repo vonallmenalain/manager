@@ -11,9 +11,13 @@ import { api, API_BASE, ApiRequestError } from './api'
 
 export interface DocumentFilters {
   q?: string
-  status?: string
-  categoryId?: string
-  assignedTo?: string
+  /** Mehrfachauswahl: leer oder fehlend heisst „alle". */
+  status?: string[]
+  categoryId?: string[]
+  assignedTo?: string[]
+  /** Hochladedatum von/bis, als JJJJ-MM-TT. */
+  uploadedFrom?: string
+  uploadedTo?: string
   year?: number
   pending?: boolean
 }
@@ -22,10 +26,25 @@ function toQueryString(filters: DocumentFilters): string {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(filters)) {
     if (value === undefined || value === '' || value === false) continue
+    if (Array.isArray(value)) {
+      if (value.length > 0) params.set(key, value.join(','))
+      continue
+    }
     params.set(key, value === true ? '1' : String(value))
   }
   const query = params.toString()
   return query ? `?${query}` : ''
+}
+
+/** Wie viele Filter gesetzt sind – für die Zahl am Filterknopf. */
+export function countFilters(filters: DocumentFilters): number {
+  let count = 0
+  for (const [key, value] of Object.entries(filters)) {
+    if (key === 'q' || value === undefined || value === '' || value === false) continue
+    if (Array.isArray(value)) count += value.length
+    else count += 1
+  }
+  return count
 }
 
 export function useDocuments(filters: DocumentFilters) {

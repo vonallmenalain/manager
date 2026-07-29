@@ -28,6 +28,7 @@ export function PageTray({
   onAddPage,
   onRemove,
   onMove,
+  onRotate,
   onDiscard,
   onUpload,
 }: {
@@ -40,6 +41,8 @@ export function PageTray({
   onAddPage: () => void
   onRemove: (id: string) => void
   onMove: (id: string, direction: -1 | 1) => void
+  /** Dreht eine einzelne Seite um eine Vierteldrehung. */
+  onRotate: (id: string) => void
   onDiscard: () => void
   onUpload: () => void
 }) {
@@ -68,39 +71,57 @@ export function PageTray({
       <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-900">
         {pages.map((page, index) => (
           <li key={page.id} className="flex items-center gap-3 px-4 py-3">
+            {/* object-contain statt -cover: Eine quer liegende Seite soll auf
+                der Vorschau quer aussehen – sonst sieht man nicht, welche
+                gedreht gehört. */}
             <img
               src={page.url}
               alt={`Seite ${index + 1}`}
-              className="h-20 w-15 rounded-lg border border-slate-200 bg-slate-50 object-cover dark:border-slate-800 dark:bg-slate-900"
+              className="h-20 w-15 shrink-0 rounded-lg border border-slate-200 bg-slate-50 object-contain dark:border-slate-800 dark:bg-slate-900"
             />
+            {/* Die Knöpfe stehen unter der Beschriftung und nicht daneben: Zu
+                viert nähmen sie sonst die halbe Zeilenbreite. */}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Seite {index + 1}</p>
               <p className="text-xs text-slate-500 tabular-nums dark:text-slate-400">
                 {formatFileSize(page.blob.size)}
               </p>
-            </div>
 
-            <TrayButton
-              label={`Seite ${index + 1} nach oben`}
-              disabled={index === 0 || busy}
-              onClick={() => onMove(page.id, -1)}
-            >
-              <path d="m6 14 6-6 6 6" />
-            </TrayButton>
-            <TrayButton
-              label={`Seite ${index + 1} nach unten`}
-              disabled={index === pages.length - 1 || busy}
-              onClick={() => onMove(page.id, 1)}
-            >
-              <path d="m6 10 6 6 6-6" />
-            </TrayButton>
-            <TrayButton
-              label={`Seite ${index + 1} entfernen`}
-              disabled={busy}
-              onClick={() => onRemove(page.id)}
-            >
-              <path d="M5 7h14M10 7V5h4v2m-7 0 .8 12h8.4L17 7" />
-            </TrayButton>
+              <div className="mt-2 flex gap-1.5">
+                {/* Drehen steht zuerst: Eine quer liegende Seite sieht man auf
+                    der Vorschau daneben sofort, und der Griff gehört dorthin,
+                    wo der Blick ohnehin hinfällt. */}
+                <TrayButton
+                  label={`Seite ${index + 1} drehen`}
+                  disabled={busy}
+                  onClick={() => onRotate(page.id)}
+                >
+                  <path d="M4 12a8 8 0 1 1 2.5 5.8" />
+                  <path d="M4 7v5h5" />
+                </TrayButton>
+                <TrayButton
+                  label={`Seite ${index + 1} nach oben`}
+                  disabled={index === 0 || busy}
+                  onClick={() => onMove(page.id, -1)}
+                >
+                  <path d="m6 14 6-6 6 6" />
+                </TrayButton>
+                <TrayButton
+                  label={`Seite ${index + 1} nach unten`}
+                  disabled={index === pages.length - 1 || busy}
+                  onClick={() => onMove(page.id, 1)}
+                >
+                  <path d="m6 10 6 6 6-6" />
+                </TrayButton>
+                <TrayButton
+                  label={`Seite ${index + 1} entfernen`}
+                  disabled={busy}
+                  onClick={() => onRemove(page.id)}
+                >
+                  <path d="M5 7h14M10 7V5h4v2m-7 0 .8 12h8.4L17 7" />
+                </TrayButton>
+              </div>
+            </div>
           </li>
         ))}
       </ul>
