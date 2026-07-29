@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto'
 
 import {
+  computePayment,
   computeYear,
   createPaymentSchema,
   DEFAULT_FINANCE_SETTINGS,
   DONATION_LABELS,
   financeSettingsSchema,
   formatAmount,
+  monthListLabel,
   monthName,
+  normalizeMonths,
   saveMonthSchema,
   sumDonations,
   type Donation,
@@ -60,12 +63,16 @@ function toDonation(row: DonationRow): Donation {
     kind: row.kind as Donation['kind'],
     amountCents: row.amountCents,
     paidOn: row.paidOn,
-    note: row.note,
-    coversThroughMonth: row.coversThroughMonth,
+    coversMonths: parseMonths(row.coversMonths),
     taxAppliedCents: row.taxAppliedCents,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
   }
+}
+
+/** '3,4,5' → [3, 4, 5]. Leer und Unlesbares ergeben eine leere Liste. */
+function parseMonths(raw: string): number[] {
+  return normalizeMonths(raw.split(',').map((part) => Number(part.trim())))
 }
 
 /**
@@ -188,12 +195,13 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   /**
-   * Eine Zahlung: Zehnter und Fastopfer für denselben Zeitraum, dazu die
-   * Steuern, die dabei verrechnet werden.
+   * Eine Zahlung: die abgehakten Monate, das Fastopfer je Monat und das
+   * verrechnete Steuerguthaben.
    *
-   * Gespeichert wird je Art eine Zeile – die Kirche weist beides getrennt
-   * aus, und die bestehende Auswertung zählt je Art zusammen. Beide entstehen
-   * in einer Transaktion: Eine halbe Zahlung wäre schlimmer als keine.
+   * Der Zehnte kommt nicht aus dem Formular, sondern aus dem erfassten
+   * Einkommen dieser Monate – gerechnet mit derselben Funktion wie die
+   * Vorschau im Fenster. Ein Betrag, den der Server selbst kennt, soll nicht
+   * über das Netz gereicht werden können.
    */
   fastify.post('/api/finanzen/:year/zahlungen', async (request, reply) => {
     const user = request.user
@@ -206,41 +214,41 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const { year } = params.data
-    const payment = parsed.data
-    await loadSettings(year)
+    const stand = await loadYear(year)
+    const rechnung = computePayment(stand.entries, parsed.data, stand.figures.taxCreditOpenCents)
 
     const gemeinsam = {
       year,
-      paidOn: payment.paidOn,
-      note: payment.note,
+      paidOn: parsed.data.paidOn,
+      coversMonths: rechnung.months.join(','),
       createdBy: user.id,
     }
 
+    // Beide Zeilen entstehen in einer Transaktion: Eine halbe Zahlung wäre
+    // schlimmer als keine.
     db.transaction((tx) => {
-      // Auch eine Zahlung über 0 wird festgehalten, wenn sie Steuern
-      // verrechnet: Der Steuerabzug ist dann ihr ganzer Zweck.
-      if (payment.tithingCents > 0 || payment.taxAppliedCents > 0) {
-        tx.insert(donations)
-          .values({
-            ...gemeinsam,
-            id: randomUUID(),
-            kind: 'zehnten',
-            amountCents: payment.tithingCents,
-            coversThroughMonth: payment.coversThroughMonth,
-            taxAppliedCents: payment.taxAppliedCents,
-          })
-          .run()
-      }
+      // Der Zehnte wird immer festgehalten, auch mit 0 – er ist es, der die
+      // abgehakten Monate abrechnet, und ein Monat ohne Lohn will genauso
+      // abgehakt werden wie einer mit.
+      tx.insert(donations)
+        .values({
+          ...gemeinsam,
+          id: randomUUID(),
+          kind: 'zehnten',
+          amountCents: rechnung.netTithingCents,
+          taxAppliedCents: rechnung.taxAppliedCents,
+        })
+        .run()
 
-      if (payment.fastOfferingCents > 0) {
+      if (rechnung.fastOfferingCents > 0) {
         tx.insert(donations)
           .values({
             ...gemeinsam,
             id: randomUUID(),
             kind: 'fastopfer',
-            amountCents: payment.fastOfferingCents,
-            // Das Fastopfer rechnet keine Monate ab und verrechnet keine Steuern.
-            coversThroughMonth: null,
+            amountCents: rechnung.fastOfferingCents,
+            // Das Fastopfer verrechnet keine Steuern; die Monate stehen nur
+            // dabei, damit auf dem Beleg steht, wofür es geleistet wurde.
             taxAppliedCents: 0,
           })
           .run()
@@ -288,27 +296,23 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
         ]),
       [],
       ['Einkommen', formatAmount(figures.totalIncomeCents)],
-      ['Steuern verrechnet', formatAmount(figures.taxAppliedCents)],
-      ['Steuern ganzes Jahr', formatAmount(settings.taxCents)],
-      ['Basis', formatAmount(figures.baseCents)],
       ['Zehnter geschuldet', formatAmount(figures.owedTithingCents)],
+      ['Steuern ganzes Jahr', formatAmount(settings.taxCents)],
+      ['Davon verrechenbar (10 %)', formatAmount(figures.taxCreditTotalCents)],
+      ['Steuern verrechnet', formatAmount(figures.taxCreditAppliedCents)],
       ['Zehnter bezahlt', formatAmount(figures.paidTithingCents)],
       ['Noch offen', formatAmount(figures.openTithingCents)],
-      [
-        'Abgerechnet bis',
-        figures.settledThroughMonth === 0 ? '–' : monthName(figures.settledThroughMonth),
-      ],
+      ['Abgerechnete Monate', monthListLabel(figures.settledMonths) || '–'],
       [],
       // Die Belege gehören in dieselbe Datei – sonst muss man fürs
       // Jahresgespräch zwei Sachen zusammensuchen.
-      ['Zahlungen', 'Datum', 'Betrag', 'Steuern verrechnet', 'Rechnet ab bis', 'Notiz'],
+      ['Zahlungen', 'Datum', 'Betrag', 'Steuern verrechnet', 'Rechnet ab für'],
       ...paid.map((donation) => [
         DONATION_LABELS[donation.kind],
         donation.paidOn,
         formatAmount(donation.amountCents),
         donation.taxAppliedCents > 0 ? formatAmount(donation.taxAppliedCents) : '',
-        donation.coversThroughMonth ? monthName(donation.coversThroughMonth) : '',
-        donation.note,
+        monthListLabel(donation.coversMonths),
       ]),
       [],
       ['Fastopfer einbezahlt', formatAmount(figures.paidFastOfferingCents)],

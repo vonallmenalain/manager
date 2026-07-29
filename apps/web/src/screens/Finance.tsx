@@ -1,8 +1,9 @@
 import {
+  computePayment,
   DONATION_LABELS,
   formatAmount,
+  monthListLabel,
   monthName,
-  MONTH_NAMES,
   parseAmountToCents,
   type IncomeEntry,
   type MonthFigures,
@@ -52,7 +53,7 @@ export function Finance() {
                 <MonthRow
                   key={figures.month}
                   figures={figures}
-                  settled={figures.month <= data.figures.settledThroughMonth}
+                  settled={data.figures.settledMonths.includes(figures.month)}
                   onClick={() => setSheet({ kind: 'monat', month: figures.month })}
                 />
               ))}
@@ -143,16 +144,15 @@ function StatusCard({ data, onPay }: { data: FinanceYear; onPay: () => void }) {
 
       <dl className="mt-4 space-y-1 border-t border-white/20 pt-3 text-sm tabular-nums">
         <Row label="Einkommen" value={figures.totalIncomeCents} tone="soft" />
-        <Row label="− Steuern verrechnet" value={figures.taxAppliedCents} tone="soft" />
-        <Row label="= Basis" value={figures.baseCents} tone="soft" />
         <Row label="Zehnter (10 %)" value={figures.owedTithingCents} />
+        <Row label="− Steuern verrechnet" value={figures.taxCreditAppliedCents} tone="soft" />
         <Row label="− bereits bezahlt" value={figures.paidTithingCents} tone="soft" />
         <Row label="= offen" value={figures.openTithingCents} />
       </dl>
 
       <p className="mt-3 text-xs text-white/70">
         {figures.taxTotalCents > 0
-          ? `Steuern: CHF ${formatAmount(figures.taxAppliedCents)} von ${formatAmount(figures.taxTotalCents)} verrechnet, CHF ${formatAmount(figures.taxOpenCents)} noch offen.`
+          ? `Steuern CHF ${formatAmount(figures.taxTotalCents)}, davon verrechenbar CHF ${formatAmount(figures.taxCreditTotalCents)} (10 %): CHF ${formatAmount(figures.taxCreditAppliedCents)} verrechnet, CHF ${formatAmount(figures.taxCreditOpenCents)} noch offen.`
           : 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'}
         {figures.paidFastOfferingCents > 0
           ? ` Fastopfer bezahlt: CHF ${formatAmount(figures.paidFastOfferingCents)}.`
@@ -160,12 +160,10 @@ function StatusCard({ data, onPay }: { data: FinanceYear; onPay: () => void }) {
       </p>
 
       <p className="mt-1 text-xs text-white/70">
-        {figures.settledThroughMonth === 0
+        {figures.settledMonths.length === 0
           ? 'Noch nichts abgerechnet.'
-          : `Abgerechnet bis und mit ${monthName(figures.settledThroughMonth)}.`}
-        {figures.openMonths.length > 0
-          ? ` Offen: ${figures.openMonths.map(monthName).join(', ')}.`
-          : ''}
+          : `Abgerechnet: ${monthListLabel(figures.settledMonths)}.`}
+        {figures.openMonths.length > 0 ? ` Offen: ${monthListLabel(figures.openMonths)}.` : ''}
       </p>
 
       <button
@@ -257,16 +255,15 @@ function Payments({ data, year }: { data: FinanceYear; year: number }) {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">
                 {DONATION_LABELS[donation.kind]}
-                {donation.coversThroughMonth
-                  ? ` bis ${monthName(donation.coversThroughMonth)}`
+                {donation.coversMonths.length > 0
+                  ? ` · ${monthListLabel(donation.coversMonths)}`
                   : ''}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {formatDate(donation.paidOn)}
                 {donation.taxAppliedCents > 0
-                  ? ` · Steuern ${formatAmount(donation.taxAppliedCents)}`
+                  ? ` · Steuern ${formatAmount(donation.taxAppliedCents)} verrechnet`
                   : ''}
-                {donation.note ? ` · ${donation.note}` : ''}
               </p>
             </div>
             <span className="shrink-0 font-semibold tabular-nums">
@@ -549,7 +546,14 @@ function computeMonth(entries: readonly IncomeEntry[], month: number): MonthFigu
 }
 
 /**
- * Zahlung erfassen – Zehnter und Fastopfer in einem Vorgang.
+ * Zahlung erfassen – man hakt die offenen Monate ab, alles andere rechnet
+ * sich daraus.
+ *
+ * Eingegeben wird nur, was man wirklich weiss: welche Monate abgerechnet
+ * werden, wie hoch das Fastopfer je Monat ist, wie viel Steuerguthaben
+ * verrechnet wird und wann bezahlt wurde. Der Zehnte steht nicht zur Eingabe:
+ * Er ist ein Zehntel des erfassten Einkommens dieser Monate, und ein Feld
+ * dafür wäre bloss eine Gelegenheit, sich zu vertippen.
  *
  * Als Einziges hier ohne Autospeichern: Eine Zahlung ist ein Ereignis, kein
  * Text, an dem man arbeitet. Würde beim Tippen gespeichert, entstünde für
@@ -559,54 +563,67 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
   const add = useAddPayment(data.year)
   const { figures } = data
 
-  const [tithing, setTithing] = useState(() =>
-    figures.openTithingCents > 0 ? formatAmount(figures.openTithingCents) : '',
-  )
+  // Vorgewählt ist alles Offene – das ist der Normalfall. Wer nur einen Teil
+  // zahlt, hakt ab, was er nicht zahlt.
+  const [months, setMonths] = useState<number[]>(() => figures.openMonths)
   const [fastOffering, setFastOffering] = useState('')
   const [tax, setTax] = useState('')
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
-  const [note, setNote] = useState('')
-  const [covers, setCovers] = useState(() => Math.max(figures.lastEnteredMonth, 1))
   const [error, setError] = useState<string | null>(null)
+
+  const fastCents = readAmount(fastOffering)
+  const taxCents = readAmount(tax)
+  const lesbar = fastCents !== 'fehler' && taxCents !== 'fehler'
+
+  /**
+   * Die Vorschau – gerechnet mit derselben Funktion, die gleich danach auf
+   * dem Server den Beleg schreibt. So steht hier keine andere Zahl als dort.
+   */
+  const rechnung = useMemo(
+    () =>
+      computePayment(
+        data.entries,
+        {
+          months,
+          fastOfferingPerMonthCents: fastCents === 'fehler' ? 0 : (fastCents ?? 0),
+          taxAppliedCents: taxCents === 'fehler' ? 0 : (taxCents ?? 0),
+        },
+        figures.taxCreditOpenCents,
+      ),
+    [data.entries, months, fastCents, taxCents, figures.taxCreditOpenCents],
+  )
+
+  function toggleMonth(month: number) {
+    setMonths((current) =>
+      current.includes(month) ? current.filter((item) => item !== month) : [...current, month],
+    )
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
 
-    const betraege = {
-      tithingCents: readAmount(tithing),
-      fastOfferingCents: readAmount(fastOffering),
-      taxAppliedCents: readAmount(tax),
+    if (!lesbar) {
+      setError('Bitte einen lesbaren Betrag eingeben.')
+      return
     }
-
-    for (const wert of Object.values(betraege)) {
-      if (wert === 'fehler') {
-        setError('Bitte einen lesbaren Betrag eingeben.')
-        return
-      }
-    }
-
-    const tithingCents = betraege.tithingCents === 'fehler' ? 0 : (betraege.tithingCents ?? 0)
-    const fastOfferingCents =
-      betraege.fastOfferingCents === 'fehler' ? 0 : (betraege.fastOfferingCents ?? 0)
-    const taxAppliedCents = betraege.taxAppliedCents === 'fehler' ? 0 : (betraege.taxAppliedCents ?? 0)
-
-    if (tithingCents === 0 && fastOfferingCents === 0 && taxAppliedCents === 0) {
-      setError('Bitte einen Betrag eingeben.')
+    if (months.length === 0) {
+      setError('Bitte mindestens einen Monat anhaken.')
       return
     }
 
     add.mutate(
       {
-        tithingCents,
-        fastOfferingCents,
-        taxAppliedCents,
+        months: rechnung.months,
+        // Nach der Prüfung oben sind beide Felder lesbar; leer heisst 0.
+        fastOfferingPerMonthCents: fastCents ?? 0,
+        taxAppliedCents: rechnung.taxAppliedCents,
         paidOn,
-        note: note.trim(),
-        coversThroughMonth: tithingCents > 0 || taxAppliedCents > 0 ? covers : null,
       },
       { onSuccess: onClose },
     )
   }
+
+  const monatsWort = months.length === 1 ? '1 Monat' : `${months.length} Monate`
 
   return (
     <Modal
@@ -618,30 +635,71 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
           <ModalCloseButton onClick={onClose} label="Fenster schliessen" />
         </>
       }
+      footer={
+        <div className="space-y-3">
+          <PaymentSummary rechnung={rechnung} monatsWort={monatsWort} fastCents={fastCents} />
+
+          {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+
+          <Button
+            type="submit"
+            form="zahlung"
+            loading={add.isPending}
+            disabled={figures.openMonths.length === 0}
+          >
+            Zahlung erfassen
+          </Button>
+        </div>
+      }
     >
       <form id="zahlung" onSubmit={handleSubmit} className="space-y-4">
+        <fieldset>
+          <legend className="mb-1 text-sm font-medium">Monate abrechnen</legend>
+          {figures.openMonths.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {figures.lastEnteredMonth === 0
+                ? 'Für dieses Jahr ist noch kein Einkommen erfasst.'
+                : 'Alle erfassten Monate sind abgerechnet.'}
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {figures.months
+                .filter((month) => figures.openMonths.includes(month.month))
+                .map((month) => (
+                  <MonthCheck
+                    key={month.month}
+                    figures={month}
+                    checked={months.includes(month.month)}
+                    onToggle={() => toggleMonth(month.month)}
+                  />
+                ))}
+            </ul>
+          )}
+        </fieldset>
+
         <AmountField
-          label="Betrag Zehnten"
-          value={tithing}
-          onChange={setTithing}
-          autoFocus
+          label="Fastopfer pro Monat"
+          value={fastOffering}
+          onChange={setFastOffering}
           hint={
-            figures.openTithingCents > 0
-              ? `Offen sind CHF ${formatAmount(figures.openTithingCents)}.`
+            rechnung.fastOfferingCents > 0
+              ? `${monatsWort} × ${formatAmount(fastCents === 'fehler' ? 0 : (fastCents ?? 0))} = CHF ${formatAmount(rechnung.fastOfferingCents)}.`
               : undefined
           }
         />
-
-        <AmountField label="Betrag Fastopfer" value={fastOffering} onChange={setFastOffering} />
 
         <AmountField
           label="Steuern verrechnen"
           value={tax}
           onChange={setTax}
           hint={
-            figures.taxTotalCents > 0
-              ? `Von CHF ${formatAmount(figures.taxTotalCents)} sind noch CHF ${formatAmount(figures.taxOpenCents)} nicht verrechnet.`
-              : 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'
+            figures.taxTotalCents === 0
+              ? 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'
+              : `Von CHF ${formatAmount(figures.taxTotalCents)} Steuern sind 10 % verrechenbar, also CHF ${formatAmount(figures.taxCreditTotalCents)}. Davon sind CHF ${formatAmount(figures.taxCreditOpenCents)} noch nicht verrechnet.${
+                  taxCents !== 'fehler' && (taxCents ?? 0) > rechnung.maxTaxCreditCents
+                    ? ` Diese Zahlung trägt höchstens CHF ${formatAmount(rechnung.maxTaxCreditCents)} – der Rest bleibt für die nächste stehen.`
+                    : ''
+                }`
           }
         />
 
@@ -654,46 +712,85 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
             className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base dark:border-slate-700 dark:bg-slate-900"
           />
         </label>
-
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Rechnet ab bis und mit</span>
-          <select
-            value={covers}
-            onChange={(event) => setCovers(Number(event.target.value))}
-            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base dark:border-slate-700 dark:bg-slate-900"
-          >
-            {MONTH_NAMES.map((name, index) => (
-              <option key={name} value={index + 1}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Notiz (freiwillig)</span>
-          <input
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base dark:border-slate-700 dark:bg-slate-900"
-          />
-        </label>
-
-        {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-
-        <Button type="submit" loading={add.isPending}>
-          Zahlung erfassen
-        </Button>
       </form>
     </Modal>
+  )
+}
+
+/** Ein Monat zum Abhaken: Name, Einkommen, Zehnter. */
+function MonthCheck({
+  figures,
+  checked,
+  onToggle,
+}: {
+  figures: MonthFigures
+  checked: boolean
+  onToggle: () => void
+}) {
+  return (
+    <li>
+      <label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          className="size-5 shrink-0 accent-brand-700"
+        />
+        <span className="min-w-0 flex-1 font-medium">{monthName(figures.month)}</span>
+        <span className="shrink-0 text-xs tabular-nums text-slate-500 dark:text-slate-400">
+          {formatAmount(figures.incomeCents)}
+        </span>
+        <span className="w-24 shrink-0 text-right font-semibold tabular-nums">
+          {formatAmount(figures.tithingCents)}
+        </span>
+      </label>
+    </li>
+  )
+}
+
+/**
+ * Die Kachel unter dem Formular: was zu überweisen ist, und woraus es
+ * besteht. Sie steht im Fuss des Fensters und bleibt deshalb sichtbar,
+ * während man oben die Monate anhakt.
+ */
+function PaymentSummary({
+  rechnung,
+  monatsWort,
+  fastCents,
+}: {
+  rechnung: ReturnType<typeof computePayment>
+  monatsWort: string
+  fastCents: number | null | 'fehler'
+}) {
+  const jeMonat = fastCents === 'fehler' ? 0 : (fastCents ?? 0)
+
+  return (
+    <section className="rounded-xl bg-brand-800 p-3 text-white">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-sm text-white/70">Zu bezahlen</span>
+        <span className="text-2xl font-bold tabular-nums">
+          CHF {formatAmount(rechnung.totalCents)}
+        </span>
+      </div>
+
+      <dl className="mt-2 space-y-1 border-t border-white/20 pt-2 text-xs tabular-nums">
+        <Row label={`Zehnter (${monatsWort})`} value={rechnung.tithingCents} tone="soft" />
+        <Row label="− Steuern verrechnet" value={rechnung.taxAppliedCents} tone="soft" />
+        <Row
+          label={jeMonat > 0 ? `Fastopfer (${monatsWort} × ${formatAmount(jeMonat)})` : 'Fastopfer'}
+          value={rechnung.fastOfferingCents}
+          tone="soft"
+        />
+      </dl>
+    </section>
   )
 }
 
 /**
  * Die Steuern des Jahres – das Einzige, was zu einem Jahr eingestellt wird.
  *
- * Wie viel davon abgezogen wird, steht hier bewusst nicht: Das entscheidet
- * sich bei jeder Zahlung.
+ * Wann das Guthaben daraus verrechnet wird, steht hier bewusst nicht: Das
+ * entscheidet sich bei jeder Zahlung.
  */
 function TaxEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }) {
   const save = useSaveFinanceSettings(data.year)
@@ -736,11 +833,13 @@ function TaxEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }
           autoFocus
         />
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Dieser Betrag wird nicht von selbst abgezogen. Beim Erfassen einer Zahlung lässt sich
-          bestimmen, wie viel davon verrechnet wird – ganz oder in Teilen.
+          Steuern mindern nicht die Zahlung, sondern das Einkommen, auf das der Zehnte gerechnet
+          wird. Verrechnen lässt sich davon deshalb ein Zehntel – von diesem Betrag also CHF{' '}
+          {formatAmount(data.figures.taxCreditTotalCents)}.
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Bisher verrechnet: CHF {formatAmount(data.figures.taxAppliedCents)}.
+          Beim Erfassen einer Zahlung wird bestimmt, wie viel davon verrechnet wird – ganz oder in
+          Teilen. Bisher verrechnet: CHF {formatAmount(data.figures.taxCreditAppliedCents)}.
         </p>
       </div>
     </Modal>

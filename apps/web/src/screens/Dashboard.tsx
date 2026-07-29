@@ -1,4 +1,4 @@
-import { formatAmount, monthName, type PublicUser } from '@manager/shared'
+import { formatAmount, monthListLabel, type PublicUser } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -260,11 +260,11 @@ function TithingCard() {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {figures.openMonths.length === 0
               ? 'Alles Erfasste ist abgerechnet.'
-              : `offen für ${figures.openMonths.map(monthName).join(', ')}`}
+              : `offen für ${monthListLabel(figures.openMonths)}`}
           </p>
-          {figures.settledThroughMonth > 0 ? (
+          {figures.settledMonths.length > 0 ? (
             <p className="mt-1 text-xs text-slate-400">
-              Abgerechnet bis und mit {monthName(figures.settledThroughMonth)}.
+              Abgerechnet: {monthListLabel(figures.settledMonths)}.
             </p>
           ) : null}
         </>

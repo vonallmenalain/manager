@@ -71,6 +71,20 @@
       "when": 1785276182762,
       "tag": "0009_wealthy_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785309167283,
+      "tag": "0010_abgerechnete_monate",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785309177165,
+      "tag": "0011_zahlung_ohne_notiz",
+      "breakpoints": true
     }
   ]
 }
