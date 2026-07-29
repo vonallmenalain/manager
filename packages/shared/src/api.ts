@@ -29,6 +29,8 @@ export type Health = z.infer<typeof healthSchema>
 export const API_ERROR_CODES = {
   invalidCredentials: 'invalid_credentials',
   unauthorized: 'unauthorized',
+  /** Angemeldet, aber nicht zuständig – etwa beim Anlegen eines Mitglieds. */
+  forbidden: 'forbidden',
   validationFailed: 'validation_failed',
   notFound: 'not_found',
   rateLimited: 'rate_limited',

@@ -13,6 +13,10 @@ export function unauthorized(message = 'Bitte zuerst anmelden.'): ApiError {
   return apiError(API_ERROR_CODES.unauthorized, message)
 }
 
+export function forbidden(message = 'Dafür ist der Verwalter des Haushalts zuständig.'): ApiError {
+  return apiError(API_ERROR_CODES.forbidden, message)
+}
+
 export function notFound(message = 'Nicht gefunden.'): ApiError {
   return apiError(API_ERROR_CODES.notFound, message)
 }

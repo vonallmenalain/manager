@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import type { PublicUser } from '@manager/shared'
+import { isAdminEmail, type PublicUser } from '@manager/shared'
 import { sql } from 'drizzle-orm'
 
 import { hashPassword } from '../auth/password.js'
@@ -17,6 +17,7 @@ export function toPublicUser(user: User): PublicUser {
     email: user.email,
     color: user.color,
     createdAt: user.createdAt,
+    isAdmin: isAdminEmail(user.email),
   }
 }
 

@@ -1,9 +1,9 @@
 import type { PublicUser } from '@manager/shared'
 import { NavLink, Outlet } from 'react-router-dom'
 
-import { useLogout } from '../lib/session'
 import { ConnectionBanner } from './ConnectionBanner'
-import { CartIcon, CoinIcon, DocumentIcon, HomeIcon, LogoutIcon, NoteIcon } from './icons'
+import { CartIcon, CoinIcon, DocumentIcon, HomeIcon, NoteIcon } from './icons'
+import { ProfileMenu } from './ProfileMenu'
 
 const TABS = [
   { to: '/', label: 'Start', Icon: HomeIcon, end: true },
@@ -14,30 +14,11 @@ const TABS = [
 ] as const
 
 export function AppShell({ user }: { user: PublicUser }) {
-  const logout = useLogout()
-
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="pt-safe sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
         <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3">
-          <span
-            className="grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
-            style={{ backgroundColor: user.color }}
-            aria-hidden="true"
-          >
-            {user.name.slice(0, 1).toUpperCase()}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{user.name}</p>
-            <p className="truncate text-xs text-slate-500 dark:text-slate-400">Angemeldet</p>
-          </div>
-          <button
-            onClick={() => logout.mutate()}
-            className="grid size-10 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="Abmelden"
-          >
-            <LogoutIcon className="size-5" />
-          </button>
+          <ProfileMenu user={user} />
         </div>
         <ConnectionBanner />
       </header>

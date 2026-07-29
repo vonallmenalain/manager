@@ -1,11 +1,12 @@
 import type { CookieSerializeOptions } from '@fastify/cookie'
+import { isAdminEmail } from '@manager/shared'
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 
 import { SESSION_COOKIE, validateSession } from '../auth/session.js'
 import type { User } from '../db/schema.js'
 import { env, isProduction } from '../env.js'
-import { unauthorized } from '../lib/errors.js'
+import { forbidden, unauthorized } from '../lib/errors.js'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -15,6 +16,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Als preHandler verwenden, um eine Route anmeldepflichtig zu machen. */
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
+    /** Wie requireAuth, zusätzlich dem Verwalter des Haushalts vorbehalten. */
+    requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
   }
 }
 
@@ -64,6 +67,19 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.decorate('requireAuth', async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.user) {
       await reply.status(401).send(unauthorized())
+    }
+  })
+
+  // Die Prüfung gehört hierher und nicht nur in die Oberfläche: Ein
+  // ausgeblendeter Knopf ist keine Sperre, die Adresse der Route steht in
+  // jedem Netzwerk-Reiter.
+  fastify.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.user) {
+      await reply.status(401).send(unauthorized())
+      return
+    }
+    if (!isAdminEmail(request.user.email)) {
+      await reply.status(403).send(forbidden())
     }
   })
 }
