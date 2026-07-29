@@ -153,6 +153,14 @@ export type UpdateShoppingItemInput = z.infer<typeof updateShoppingItemSchema>
 export const NOTE_COLORS = ['default', 'gelb', 'gruen', 'blau', 'rosa'] as const
 export type NoteColor = (typeof NOTE_COLORS)[number]
 
+export const NOTE_COLOR_LABELS: Record<NoteColor, string> = {
+  default: 'Ohne Farbe',
+  gelb: 'Gelb',
+  gruen: 'Grün',
+  blau: 'Blau',
+  rosa: 'Rosa',
+}
+
 export const noteColorSchema = z.enum(NOTE_COLORS)
 
 /**
