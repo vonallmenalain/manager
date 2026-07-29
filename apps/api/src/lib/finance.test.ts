@@ -2,15 +2,19 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  computePayment,
   computeYear,
   DEFAULT_FINANCE_SETTINGS,
   formatAmount,
+  monthListLabel,
   monthlyTotals,
   parseAmountToCents,
   sumDonations,
+  taxCreditFor,
   type Donation,
   type FinanceSettings,
   type IncomeEntry,
+  type PaymentDraft,
 } from '@manager/shared'
 
 /** Kürzel, damit die Testfälle lesbar bleiben. */
@@ -42,13 +46,17 @@ function payment(overrides: Partial<Donation> = {}): Donation {
     kind: 'zehnten',
     amountCents: 0,
     paidOn: '2026-03-01',
-    note: '',
-    coversThroughMonth: null,
+    coversMonths: [],
     taxAppliedCents: 0,
     createdBy: 'alain',
     createdAt: '2026-03-01T10:00:00Z',
     ...overrides,
   }
+}
+
+/** Ein leerer Zahlungsentwurf, in dem nur das Nötige steht. */
+function leer(overrides: Partial<PaymentDraft> = {}): PaymentDraft {
+  return { months: [], fastOfferingPerMonthCents: 0, taxAppliedCents: 0, ...overrides }
 }
 
 const CHF = (francs: number) => francs * 100
@@ -101,40 +109,50 @@ describe('Zehnten-Berechnung', () => {
 })
 
 describe('Verrechnete Steuern', () => {
-  it('zieht die verrechneten Steuern von der Basis ab', () => {
+  it('gibt von einem Steuerbetrag genau ein Zehntel zum Verrechnen frei', () => {
+    // Der springende Punkt: CHF 15'000 Steuern mindern den Zehnten um
+    // CHF 1'500 – nicht um die ganze Summe.
+    assert.equal(taxCreditFor(CHF(15_000)), CHF(1500))
+
+    const figures = computeYear([], [], settings({ taxCents: CHF(15_000) }))
+
+    assert.equal(figures.taxTotalCents, CHF(15_000))
+    assert.equal(figures.taxCreditTotalCents, CHF(1500))
+    assert.equal(figures.taxCreditOpenCents, CHF(1500))
+  })
+
+  it('zieht das verrechnete Guthaben vom geschuldeten Zehnten ab', () => {
     const figures = computeYear(
       income({ 1: CHF(8000), 2: CHF(8000) }),
-      [payment({ amountCents: CHF(500), taxAppliedCents: CHF(4000) })],
+      [payment({ amountCents: CHF(500), taxAppliedCents: CHF(400) })],
       settings({ taxCents: CHF(12_000) }),
     )
 
-    assert.equal(figures.taxAppliedCents, CHF(4000))
-    assert.equal(figures.baseCents, CHF(12_000))
-    assert.equal(figures.owedTithingCents, CHF(1200))
+    assert.equal(figures.owedTithingCents, CHF(1600))
+    assert.equal(figures.taxCreditAppliedCents, CHF(400))
     assert.equal(figures.paidTithingCents, CHF(500))
     assert.equal(figures.openTithingCents, CHF(700))
   })
 
-  it('sagt, wie viel der Jahressteuer noch nicht verrechnet ist', () => {
+  it('sagt, wie viel des Guthabens noch nicht verrechnet ist', () => {
     const figures = computeYear(
       income({ 1: CHF(8000) }),
-      [payment({ taxAppliedCents: CHF(3000) })],
+      [payment({ taxAppliedCents: CHF(300) })],
       settings({ taxCents: CHF(12_000) }),
     )
 
-    assert.equal(figures.taxTotalCents, CHF(12_000))
-    assert.equal(figures.taxOpenCents, CHF(9000))
+    assert.equal(figures.taxCreditTotalCents, CHF(1200))
+    assert.equal(figures.taxCreditOpenCents, CHF(900))
   })
 
-  it('wird nie negativ, wenn mehr Steuern verrechnet werden als Einkommen da ist', () => {
+  it('wird nie negativ, wenn mehr verrechnet wurde als Zehnter anfällt', () => {
     const figures = computeYear(
       income({ 1: CHF(3000) }),
-      [payment({ taxAppliedCents: CHF(9000) })],
+      [payment({ taxAppliedCents: CHF(900) })],
       settings({ taxCents: CHF(9000) }),
     )
 
-    assert.equal(figures.baseCents, 0)
-    assert.equal(figures.owedTithingCents, 0)
+    assert.equal(figures.owedTithingCents, CHF(300))
     assert.equal(figures.openTithingCents, 0)
   })
 
@@ -154,50 +172,48 @@ describe('Verrechnete Steuern', () => {
 describe('Abrechnungsstand', () => {
   const drei = income({ 1: CHF(8000), 2: CHF(8000), 3: CHF(8000) })
 
-  it('folgt der Zahlung, die am weitesten reicht', () => {
+  it('hakt genau die Monate ab, die eine Zahlung abrechnet', () => {
     const figures = computeYear(
       drei,
       [
-        payment({ id: 'a', amountCents: CHF(800), coversThroughMonth: 1 }),
-        payment({ id: 'b', amountCents: CHF(800), coversThroughMonth: 2 }),
+        payment({ id: 'a', amountCents: CHF(800), coversMonths: [1] }),
+        payment({ id: 'b', amountCents: CHF(800), coversMonths: [2] }),
       ],
       settings(),
     )
 
-    assert.equal(figures.settledThroughMonth, 2)
+    assert.deepEqual(figures.settledMonths, [1, 2])
     assert.deepEqual(figures.openMonths, [3])
   })
 
-  it('lässt sich von einer späteren Zahlung mit kleinerem Monat nicht zurückstellen', () => {
-    // Ein nachgetragener alter Beleg darf den Stand nicht zurückdrehen.
+  it('lässt einzelne Monate offen, wenn eine Zahlung sie überspringt', () => {
+    // Wer im Januar nichts verdient hat und den Monat später abrechnen will,
+    // soll ihn nicht durch eine spätere Zahlung verlieren.
     const figures = computeYear(
       drei,
-      [
-        payment({ id: 'a', amountCents: CHF(2400), coversThroughMonth: 3 }),
-        payment({ id: 'b', amountCents: CHF(100), coversThroughMonth: 1 }),
-      ],
+      [payment({ amountCents: CHF(1600), coversMonths: [2, 3] })],
       settings(),
     )
 
-    assert.equal(figures.settledThroughMonth, 3)
-    assert.deepEqual(figures.openMonths, [])
+    assert.deepEqual(figures.settledMonths, [2, 3])
+    assert.deepEqual(figures.openMonths, [1])
   })
 
-  it('steht ohne Zahlung bei null', () => {
+  it('steht ohne Zahlung bei nichts Abgerechnetem', () => {
     const figures = computeYear(drei, [], settings())
 
-    assert.equal(figures.settledThroughMonth, 0)
+    assert.deepEqual(figures.settledMonths, [])
     assert.deepEqual(figures.openMonths, [1, 2, 3])
   })
 
   it('verkraftet eine Zahlung, die weiter reicht als das Erfasste', () => {
     const figures = computeYear(
       income({ 1: CHF(8000) }),
-      [payment({ amountCents: CHF(800), coversThroughMonth: 12 })],
+      [payment({ amountCents: CHF(800), coversMonths: [1, 2, 3] })],
       settings(),
     )
 
-    assert.equal(figures.settledThroughMonth, 12)
+    assert.deepEqual(figures.settledMonths, [1, 2, 3])
     assert.deepEqual(figures.openMonths, [])
   })
 
@@ -214,6 +230,74 @@ describe('Abrechnungsstand', () => {
     assert.equal(figures.paidTithingCents, CHF(800))
     assert.equal(figures.paidFastOfferingCents, CHF(200))
     assert.equal(figures.openTithingCents, 0)
+  })
+})
+
+describe('Zahlung erfassen', () => {
+  const vier = income({ 1: CHF(5000), 2: CHF(5000), 3: CHF(5000), 4: CHF(5000) })
+
+  it('rechnet den Zehnten aus den angehakten Monaten', () => {
+    const rechnung = computePayment(vier, leer({ months: [1, 2, 3] }), 0)
+
+    assert.equal(rechnung.incomeCents, CHF(15_000))
+    assert.equal(rechnung.tithingCents, CHF(1500))
+    assert.equal(rechnung.totalCents, CHF(1500))
+  })
+
+  it('nimmt das Fastopfer mal Anzahl Monate', () => {
+    // Vier Monate zu CHF 50 sind CHF 200 – das Beispiel aus dem Alltag.
+    const rechnung = computePayment(
+      vier,
+      leer({ months: [1, 2, 3, 4], fastOfferingPerMonthCents: CHF(50) }),
+      0,
+    )
+
+    assert.equal(rechnung.fastOfferingCents, CHF(200))
+    assert.equal(rechnung.totalCents, CHF(2000) + CHF(200))
+  })
+
+  it('zieht das verrechnete Steuerguthaben vom Zehnten ab', () => {
+    const rechnung = computePayment(
+      vier,
+      leer({ months: [1, 2], taxAppliedCents: CHF(300) }),
+      taxCreditFor(CHF(15_000)),
+    )
+
+    assert.equal(rechnung.tithingCents, CHF(1000))
+    assert.equal(rechnung.taxAppliedCents, CHF(300))
+    assert.equal(rechnung.netTithingCents, CHF(700))
+    assert.equal(rechnung.totalCents, CHF(700))
+  })
+
+  it('verrechnet höchstens das, was an Guthaben noch da ist', () => {
+    const rechnung = computePayment(vier, leer({ months: [1, 2], taxAppliedCents: CHF(900) }), CHF(400))
+
+    assert.equal(rechnung.maxTaxCreditCents, CHF(400))
+    assert.equal(rechnung.taxAppliedCents, CHF(400))
+  })
+
+  it('verrechnet höchstens so viel, wie diese Zahlung an Zehnten trägt', () => {
+    // Der Rest bleibt stehen – ein Beleg über einen negativen Betrag wäre
+    // keine Zahlung.
+    const rechnung = computePayment(vier, leer({ months: [1], taxAppliedCents: CHF(900) }), CHF(1500))
+
+    assert.equal(rechnung.tithingCents, CHF(500))
+    assert.equal(rechnung.maxTaxCreditCents, CHF(500))
+    assert.equal(rechnung.taxAppliedCents, CHF(500))
+    assert.equal(rechnung.totalCents, 0)
+  })
+
+  it('ordnet die Monate und wirft Doppelte weg', () => {
+    const rechnung = computePayment(vier, leer({ months: [3, 1, 3] }), 0)
+
+    assert.deepEqual(rechnung.months, [1, 3])
+    assert.equal(rechnung.incomeCents, CHF(10_000))
+  })
+
+  it('nennt zusammenhängende Monate als Strecke', () => {
+    assert.equal(monthListLabel([1, 2, 3, 6]), 'Januar–März, Juni')
+    assert.equal(monthListLabel([5]), 'Mai')
+    assert.equal(monthListLabel([]), '')
   })
 })
 

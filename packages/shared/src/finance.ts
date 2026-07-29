@@ -20,6 +20,33 @@ export function monthName(month: number): string {
 }
 
 /**
+ * Eine Liste von Monaten so, wie man sie ausspricht: Was zusammenhängt, wird
+ * zu „Januar–März", der Rest kommt mit Komma dahinter. „Januar–März, Juni"
+ * liest sich in einer Zeile, zwölf Monatsnamen tun das nicht.
+ */
+export function monthListLabel(months: readonly number[]): string {
+  const sorted = normalizeMonths(months)
+  if (sorted.length === 0) return ''
+
+  const parts: string[] = []
+  let from = sorted[0] as number
+  let to = from
+
+  for (const month of sorted.slice(1)) {
+    if (month === to + 1) {
+      to = month
+      continue
+    }
+    parts.push(from === to ? monthName(from) : `${monthName(from)}–${monthName(to)}`)
+    from = month
+    to = month
+  }
+  parts.push(from === to ? monthName(from) : `${monthName(from)}–${monthName(to)}`)
+
+  return parts.join(', ')
+}
+
+/**
  * Der Zehnte ist ein Zehntel – daher der Name.
  *
  * Stand früher als einstellbarer Satz in der Datenbank. Ein Feld, das seit
@@ -37,14 +64,25 @@ export const DONATION_LABELS: Record<DonationKind, string> = {
   andere: 'Weitere Spende',
 }
 
+/**
+ * Was sich von einem Steuerbetrag überhaupt verrechnen lässt: ein Zehntel.
+ *
+ * Steuern mindern nicht die Zahlung, sondern das Einkommen, auf das der
+ * Zehnte gerechnet wird. Von CHF 15'000 Steuern bleiben darum CHF 1'500
+ * übrig, um die es beim Zehnten weniger wird – und nicht die ganze Summe.
+ */
+export function taxCreditFor(taxCents: number): number {
+  return Math.round(taxCents * TITHING_RATE)
+}
+
 // ---------------------------------------------------------------- Schemas
 
 /**
  * Was zu einem Jahr eingestellt wird: der Steuerbetrag. Sonst nichts.
  *
- * Wie viel davon abgezogen wird, entscheidet sich nicht hier, sondern bei
- * jeder Zahlung – dort weiss man, wie viel Steuern bis dahin tatsächlich
- * angefallen sind.
+ * Wann die daraus entstehende Gutschrift verrechnet wird, entscheidet sich
+ * nicht hier, sondern bei jeder Zahlung – dort weiss man, wie viel Steuern
+ * bis dahin tatsächlich angefallen sind.
  */
 export const financeSettingsSchema = z.object({
   /** Steuerbetrag für das ganze Jahr, in Rappen. */
@@ -95,10 +133,9 @@ export const donationSchema = z.object({
   kind: z.enum(DONATION_KINDS),
   amountCents: z.number().int(),
   paidOn: z.string(),
-  note: z.string(),
-  /** Nur beim Zehnten: bis und mit welchem Monat diese Zahlung abrechnet. */
-  coversThroughMonth: z.number().int().min(1).max(12).nullable(),
-  /** Nur beim Zehnten: wie viel der Jahressteuer mit ihr verrechnet wurde. */
+  /** Die Monate, die diese Zahlung abrechnet – aufsteigend und ohne Doppel. */
+  coversMonths: z.array(z.number().int().min(1).max(12)),
+  /** Nur beim Zehnten: wie viel Steuerguthaben mit ihr verrechnet wurde. */
   taxAppliedCents: z.number().int().min(0),
   createdBy: z.string(),
   createdAt: z.string(),
@@ -107,26 +144,25 @@ export const donationSchema = z.object({
 export type Donation = z.infer<typeof donationSchema>
 
 /**
- * Eine Zahlung, wie sie im Alltag stattfindet: Zehnter und Fastopfer gehen
- * zusammen aufs Mal, für denselben Zeitraum. Deshalb ein Vorgang mit zwei
- * Beträgen statt zweier Formulare – gespeichert werden trotzdem zwei Zeilen,
- * weil die Kirche beides getrennt ausweist.
+ * Eine Zahlung, wie sie im Alltag stattfindet: Man hakt die Monate ab, die
+ * noch nicht abgerechnet sind, und überweist, was dafür zusammenkommt.
+ *
+ * Eingegeben wird nur, was man wirklich weiss – die Monate, das Fastopfer je
+ * Monat, das verrechnete Steuerguthaben und der Zahltag. Der Zehnte selbst
+ * ergibt sich aus dem erfassten Einkommen dieser Monate; ein Feld dafür wäre
+ * eine Gelegenheit, sich zu vertippen.
+ *
+ * Gespeichert werden zwei Zeilen (Zehnter und Fastopfer), weil die Kirche
+ * beides getrennt ausweist.
  */
-export const createPaymentSchema = z
-  .object({
-    tithingCents: z.number().int().min(0).max(100_000_000).default(0),
-    fastOfferingCents: z.number().int().min(0).max(100_000_000).default(0),
-    /** Wie viel der Jahressteuer diese Zahlung verrechnet. */
-    taxAppliedCents: z.number().int().min(0).max(100_000_000).default(0),
-    paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Datum im Format JJJJ-MM-TT'),
-    note: z.string().trim().max(200).default(''),
-    coversThroughMonth: z.number().int().min(1).max(12).nullable().default(null),
-  })
-  .refine(
-    (payment) =>
-      payment.tithingCents > 0 || payment.fastOfferingCents > 0 || payment.taxAppliedCents > 0,
-    { message: 'Bitte einen Betrag eingeben' },
-  )
+export const createPaymentSchema = z.object({
+  /** Die abgehakten Monate. Ohne Monat gibt es nichts abzurechnen. */
+  months: z.array(z.number().int().min(1).max(12)).min(1).max(12),
+  fastOfferingPerMonthCents: z.number().int().min(0).max(10_000_000).default(0),
+  /** Wie viel Steuerguthaben diese Zahlung verrechnet. */
+  taxAppliedCents: z.number().int().min(0).max(100_000_000).default(0),
+  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Datum im Format JJJJ-MM-TT'),
+})
 
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>
 
@@ -148,25 +184,27 @@ export interface YearFigures {
   lastEnteredMonth: number
 
   totalIncomeCents: number
-  /** Steuern, die über die Zahlungen bereits verrechnet wurden. */
-  taxAppliedCents: number
+  /** Ein Zehntel davon – der geschuldete Zehnte, vor jeder Verrechnung. */
+  owedTithingCents: number
+  /** Was an Zehnten einbezahlt wurde. */
+  paidTithingCents: number
+
   /** Der Steuerbetrag des ganzen Jahres, aus den Einstellungen. */
   taxTotalCents: number
-  /** Was davon noch nicht verrechnet ist. Nie negativ. */
-  taxOpenCents: number
+  /** Ein Zehntel davon: mehr lässt sich mit dem Zehnten nicht verrechnen. */
+  taxCreditTotalCents: number
+  /** Was davon über die Zahlungen schon verrechnet wurde. */
+  taxCreditAppliedCents: number
+  /** Was vom Guthaben noch übrig ist. Nie negativ. */
+  taxCreditOpenCents: number
 
-  /** Einkommen minus verrechnete Steuern. Nie negativ. */
-  baseCents: number
-  /** Ein Zehntel der Basis – der geschuldete Zehnte. */
-  owedTithingCents: number
-  paidTithingCents: number
-  /** Was noch offen ist. Nie negativ. */
+  /** Zehnter minus bezahlt minus verrechnetes Guthaben. Nie negativ. */
   openTithingCents: number
   paidFastOfferingCents: number
 
-  /** Bis und mit welchem Monat abgerechnet ist – aus den Zahlungen abgeleitet. */
-  settledThroughMonth: number
-  /** Die Monate, die seither erfasst und noch nicht abgerechnet sind. */
+  /** Die Monate, die eine Zahlung abrechnet – aufsteigend. */
+  settledMonths: number[]
+  /** Die Monate, für die etwas erfasst und noch nicht abgerechnet ist. */
   openMonths: number[]
 }
 
@@ -174,9 +212,8 @@ export interface YearFigures {
  * Rechnet ein Jahr durch.
  *
  * Die Rechnung ist bewusst eine Jahresrechnung und keine Aneinanderreihung
- * von Monaten: Einkommen aufsummieren, die bis dahin verrechneten Steuern
- * abziehen, davon ein Zehntel – und dagegen die geleisteten Zahlungen. Was
- * bleibt, ist offen.
+ * von Monaten: Einkommen aufsummieren, davon ein Zehntel – und dagegen das
+ * Bezahlte und das verrechnete Steuerguthaben. Was bleibt, ist offen.
  *
  * Früher stand hier eine kumulative Monatsrechnung, weil die Jahressteuer zu
  * zwölfteln war. Seit die Steuer bei der Zahlung verrechnet wird und nicht
@@ -185,8 +222,8 @@ export interface YearFigures {
  * erklären konnte.
  *
  * Der Monatswert ist damit schlicht ein Zehntel des Monatseinkommens. Die
- * Summe der Monate ist der Zehnte vor Steuerabzug; was die Steuern davon
- * abziehen, steht in der Jahresübersicht.
+ * Summe der Monate ist der geschuldete Zehnte; was das Steuerguthaben davon
+ * abzieht, steht in der Jahresübersicht.
  */
 export function computeYear(
   entries: readonly IncomeEntry[],
@@ -218,42 +255,124 @@ export function computeYear(
     })
   }
 
-  const taxAppliedCents = donations.reduce((sum, donation) => sum + donation.taxAppliedCents, 0)
-  const baseCents = Math.max(0, totalIncomeCents - taxAppliedCents)
-  const owedTithingCents = Math.round(baseCents * TITHING_RATE)
+  const owedTithingCents = Math.round(totalIncomeCents * TITHING_RATE)
   const paidTithingCents = sumDonations(donations, 'zehnten')
 
-  // Der Abrechnungsstand folgt den Zahlungen: Er ist der weiteste Monat, den
-  // eine Zahlung abdeckt. Eine gelöschte Zahlung nimmt ihn damit zurück, und
-  // es gibt keine zweite Stelle, an der er von Hand verstellt werden müsste.
-  let settledThroughMonth = 0
-  for (const donation of donations) {
-    if (donation.kind !== 'zehnten' || donation.coversThroughMonth === null) continue
-    if (donation.coversThroughMonth > settledThroughMonth) {
-      settledThroughMonth = donation.coversThroughMonth
-    }
-  }
+  const taxCreditTotalCents = taxCreditFor(settings.taxCents)
+  const taxCreditAppliedCents = donations.reduce(
+    (sum, donation) => sum + donation.taxAppliedCents,
+    0,
+  )
 
-  const openMonths: number[] = []
-  for (let month = Math.min(settledThroughMonth, lastEnteredMonth) + 1; month <= lastEnteredMonth; month += 1) {
-    openMonths.push(month)
+  // Der Abrechnungsstand folgt den Zahlungen: abgerechnet ist, was eine
+  // Zahlung abhakt. Eine gelöschte Zahlung gibt ihre Monate damit wieder
+  // frei, und es gibt keine zweite Stelle, an der von Hand nachzuführen wäre.
+  const settled = new Set<number>()
+  for (const donation of donations) {
+    if (donation.kind !== 'zehnten') continue
+    for (const month of donation.coversMonths) settled.add(month)
   }
+  const settledMonths = [...settled].sort((a, b) => a - b)
+
+  const openMonths = months
+    .filter((month) => month.entered && !settled.has(month.month))
+    .map((month) => month.month)
 
   return {
     months,
     lastEnteredMonth,
     totalIncomeCents,
-    taxAppliedCents,
-    taxTotalCents: settings.taxCents,
-    taxOpenCents: Math.max(0, settings.taxCents - taxAppliedCents),
-    baseCents,
     owedTithingCents,
     paidTithingCents,
-    openTithingCents: Math.max(0, owedTithingCents - paidTithingCents),
+    taxTotalCents: settings.taxCents,
+    taxCreditTotalCents,
+    taxCreditAppliedCents,
+    taxCreditOpenCents: Math.max(0, taxCreditTotalCents - taxCreditAppliedCents),
+    openTithingCents: Math.max(0, owedTithingCents - paidTithingCents - taxCreditAppliedCents),
     paidFastOfferingCents: sumDonations(donations, 'fastopfer'),
-    settledThroughMonth,
+    settledMonths,
     openMonths,
   }
+}
+
+// ------------------------------------------------------- Rechnung je Zahlung
+
+export interface PaymentDraft {
+  /** Die abgehakten Monate. */
+  months: readonly number[]
+  fastOfferingPerMonthCents: number
+  /** Was an Steuerguthaben verrechnet werden soll – wird gedeckelt. */
+  taxAppliedCents: number
+}
+
+export interface PaymentFigures {
+  /** Die Monate der Zahlung, aufsteigend und ohne Doppel. */
+  months: number[]
+  /** Einkommen der gewählten Monate. */
+  incomeCents: number
+  /** Ein Zehntel davon – der Zehnte dieser Zahlung. */
+  tithingCents: number
+  /** So viel Steuerguthaben lässt sich hier höchstens verrechnen. */
+  maxTaxCreditCents: number
+  /** Was tatsächlich verrechnet wird: der Wunsch, gedeckelt. */
+  taxAppliedCents: number
+  /** Fastopfer je Monat mal Anzahl Monate. */
+  fastOfferingCents: number
+  /** Der Zehnte, wie er einbezahlt wird: nach Abzug des Guthabens. */
+  netTithingCents: number
+  /** Was insgesamt zu überweisen ist. */
+  totalCents: number
+}
+
+/**
+ * Rechnet eine Zahlung aus, bevor es sie gibt.
+ *
+ * Dieselbe Funktion rechnet die Vorschau im Fenster und den Beleg auf dem
+ * Server. So kann am Bildschirm keine andere Zahl stehen als gleich danach in
+ * der Liste – und was sich nicht verrechnen lässt, wird an beiden Orten
+ * gleich gedeckelt statt einmal abgewiesen und einmal übernommen.
+ */
+export function computePayment(
+  entries: readonly IncomeEntry[],
+  draft: PaymentDraft,
+  taxCreditOpenCents: number,
+): PaymentFigures {
+  const months = normalizeMonths(draft.months)
+  const chosen = new Set(months)
+
+  const incomeCents = entries
+    .filter((entry) => chosen.has(entry.month))
+    .reduce((sum, entry) => sum + entry.amountCents, 0)
+  const tithingCents = Math.round(incomeCents * TITHING_RATE)
+
+  // Verrechnet werden kann nur, was noch an Guthaben da ist – und höchstens
+  // so viel, wie diese Zahlung an Zehnten trägt. Ein Rest bleibt stehen und
+  // wartet auf die nächste Zahlung; ein negativer Beleg wäre keine Zahlung.
+  const maxTaxCreditCents = Math.min(Math.max(0, taxCreditOpenCents), tithingCents)
+  const taxAppliedCents = Math.min(Math.max(0, draft.taxAppliedCents), maxTaxCreditCents)
+
+  const netTithingCents = tithingCents - taxAppliedCents
+  const fastOfferingCents = Math.max(0, draft.fastOfferingPerMonthCents) * months.length
+
+  return {
+    months,
+    incomeCents,
+    tithingCents,
+    maxTaxCreditCents,
+    taxAppliedCents,
+    fastOfferingCents,
+    netTithingCents,
+    totalCents: netTithingCents + fastOfferingCents,
+  }
+}
+
+/** Monate aufsteigend, ohne Doppel und ohne Unmögliches. */
+export function normalizeMonths(months: readonly number[]): number[] {
+  const clean = new Set<number>()
+  for (const month of months) {
+    if (Number.isInteger(month) && month >= 1 && month <= 12) clean.add(month)
+  }
+  return [...clean].sort((a, b) => a - b)
 }
 
 /** Fasst die Einträge eines Jahres zu zwölf Monatssummen zusammen. */

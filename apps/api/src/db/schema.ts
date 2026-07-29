@@ -298,9 +298,9 @@ export const incomeEntries = sqliteTable(
 export type IncomeEntryRow = typeof incomeEntries.$inferSelect
 
 /**
- * Geleistete Zahlungen: Zehnter, Fastopfer, weitere Spenden. Beim Zehnten
- * hält `covers_through_month` fest, bis wann die Zahlung abrechnet – daraus
- * ergibt sich die Antwort auf „bis wann haben wir abgerechnet?".
+ * Geleistete Zahlungen: Zehnter, Fastopfer, weitere Spenden. `covers_months`
+ * hält fest, welche Monate die Zahlung abrechnet – daraus ergibt sich die
+ * Antwort auf „welche Monate haben wir abgerechnet?".
  */
 export const donations = sqliteTable(
   'donations',
@@ -311,9 +311,13 @@ export const donations = sqliteTable(
     amountCents: integer('amount_cents').notNull(),
     /** Zahltag als ISO-Datum ohne Zeit – die Uhrzeit spielt hier keine Rolle. */
     paidOn: text('paid_on').notNull(),
-    note: text('note').notNull().default(''),
-    coversThroughMonth: integer('covers_through_month'),
-    /** Nur beim Zehnten: wie viel der Jahressteuer diese Zahlung verrechnet. */
+    /**
+     * Die abgerechneten Monate als '3,4,5'. Eine eigene Tabelle für höchstens
+     * zwölf Zahlen je Zeile wäre Ballast: Es wird nie nach einem einzelnen
+     * Monat gesucht, sondern immer die ganze Zahlung geladen.
+     */
+    coversMonths: text('covers_months').notNull().default(''),
+    /** Nur beim Zehnten: wie viel Steuerguthaben diese Zahlung verrechnet. */
     taxAppliedCents: integer('tax_applied_cents').notNull().default(0),
     createdBy: text('created_by')
       .notNull()

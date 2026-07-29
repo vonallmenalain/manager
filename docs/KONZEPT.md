@@ -179,8 +179,9 @@ erDiagram
   Anheftung und eigener Suchspalte
 * `finance_years` – Steuerbetrag je Jahr. Mehr wird zu einem Jahr nicht eingestellt
 * `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
-* `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum, Beleg-Notiz und –
-  beim Zehnten – dem abgerechneten Monat und den damit verrechneten Steuern
+* `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum, den abgerechneten
+  Monaten (`covers_months`, z. B. `3,4,5`) und – beim Zehnten – dem damit verrechneten
+  Steuerguthaben
 * `sessions` – angemeldete Geräte
 
 **Dokument-Status:** `offen` → `in_arbeit` → `erledigt` → `archiviert`.
@@ -333,7 +334,13 @@ Das Konzept sah ursprünglich drei Berechnungsbasen vor (`brutto`, `brutto_minus
 oder das ausbezahlte Netto einträgt, ist dieselbe Rechnung mit einer anderen Zahl im
 Feld.
 
-**Wie die Steuern abgezogen werden: bei der Zahlung, nicht über den Kalender.**
+**Von den Steuern ist ein Zehntel verrechenbar, nicht die ganze Summe.**
+
+Steuern mindern nicht die Zahlung, sondern das Einkommen, auf das der Zehnte gerechnet
+wird. Wer CHF 15 000 Steuern hinterlegt, zahlt darum über das Jahr CHF 1 500 weniger
+Zehnten – nicht CHF 15 000. Genau dieses Guthaben führt die App: `taxCreditFor()` macht
+aus dem Steuerbetrag den verrechenbaren Betrag, und in der Zahlung steht, wie viel davon
+gerade verrechnet wird.
 
 Ursprünglich verteilte die App den Jahressteuerbetrag gleichmässig auf zwölf Monate und
 rechnete kumulativ, damit die Monatswerte am Jahresende genau aufgingen. Das war
@@ -342,46 +349,69 @@ wie viel Steuern bis dahin angefallen sind – ein Zwölftel je Monat ist bloss 
 Annahme. Und ein erfasster Monat ohne Lohn bekam einen negativen Zehnten, den am
 Bildschirm niemand erklären konnte.
 
-Neu wird beim Erfassen einer Zahlung eingetragen, wie viel der Jahressteuer damit
-verrechnet wird – ganz oder in Teilen. Die Jahresrechnung ist dadurch eine schlichte
-Jahresrechnung:
+Verrechnet wird deshalb bei der Zahlung – ganz oder in Teilen. Die Jahresrechnung ist
+dadurch eine schlichte Jahresrechnung:
 
 ```
 Einkommen (alle erfassten Monate)   CHF 16 000.00
-- Steuern verrechnet                 CHF  4 000.00
-= Basis                              CHF 12 000.00
--> Zehnter (10 %)                    CHF  1 200.00
+-> Zehnter (10 %)                    CHF  1 600.00
+- Steuern verrechnet                 CHF    400.00
 - bereits bezahlt                    CHF    400.00
 = offen                              CHF    800.00
 ```
 
-Der Monatswert in der Liste ist damit schlicht ein Zehntel des Monatseinkommens – der
-Zehnte vor Steuerabzug. Was die Steuern davon abziehen, steht in der Kachel zuoberst,
-zusammen mit dem Stand: wie viel der Jahressteuer schon verrechnet ist und wie viel noch
-offen.
+Der Monatswert in der Liste ist damit schlicht ein Zehntel des Monatseinkommens. Was das
+Steuerguthaben davon abzieht, steht in der Kachel zuoberst, zusammen mit dem Stand: wie
+viel verrechenbar ist, wie viel schon verrechnet wurde und wie viel noch offen.
 
 **Abrechnungsstand:** In `donations` werden geleistete Zahlungen erfasst (Datum, Betrag,
-Art: Zehnten / Fastopfer / andere Spende, beim Zehnten zusätzlich "rechnet ab bis Monat"
-und die verrechneten Steuern). Der Stand ist der weiteste Monat, den eine Zahlung
-abdeckt – er wird nicht mehr getrennt geführt. Eine gelöschte Zahlung nimmt ihn damit
-zurück, und ein nachgetragener alter Beleg stellt ihn nicht zurück, weil das Maximum
-zählt.
+Art: Zehnten / Fastopfer / andere Spende, dazu die abgerechneten Monate und – beim
+Zehnten – das verrechnete Steuerguthaben). Abgerechnet ist, was eine Zahlung abgehakt
+hat. Eine gelöschte Zahlung gibt ihre Monate wieder frei, und es gibt keine zweite
+Stelle, an der von Hand nachzuführen wäre.
 
 Das Dashboard zeigt daraus dauerhaft:
 
-> **Zehnter 2026 · CHF 2 050.00** offen für Juni, Juli, August
-> *Abgerechnet bis und mit Mai.*
+> **Zehnter 2026 · CHF 2 050.00** offen für Juni–August
+> *Abgerechnet: Januar–Mai.*
 
-**Eine Zahlung, zwei Beträge:** Zehnter und Fastopfer gehen im Alltag zusammen aufs Mal,
-für denselben Zeitraum – deshalb ein Fenster mit beiden Feldern statt zweier Formulare.
-Gespeichert werden trotzdem zwei Zeilen, weil die Kirche beides getrennt ausweist.
+**Eine Zahlung, ein Vorgang:** Man hakt die offenen Monate ab – alles andere rechnet sich
+daraus. Der Zehnte steht nicht zur Eingabe: Er ist ein Zehntel des erfassten Einkommens
+dieser Monate, und ein Feld dafür wäre bloss eine Gelegenheit, sich zu vertippen. Zur
+Eingabe stehen die Monate, das Fastopfer je Monat, das verrechnete Steuerguthaben und
+der Zahltag; unten in der Kachel steht, was zu überweisen ist, und woraus es besteht:
 
-**Fastopfer** läuft rechnerisch getrennt – freier Betrag, keine Berechnung, nur
-Erfassung und Jahressumme. Es rechnet keine Monate ab und verändert den Zehnten nicht;
-erfasst wird es zusammen mit dem Zehnten im selben Fenster.
+```
+Monate abrechnen        [x] Januar   5 000.00   500.00
+                        [x] Februar  5 000.00   500.00
+                        [x] März     5 000.00   500.00
+                        [x] April    5 000.00   500.00
+Fastopfer pro Monat     CHF     50.00
+Steuern verrechnen      CHF  1 500.00
+Bezahlt am              01.05.2026
+
+  Zu bezahlen                        CHF  700.00
+  Zehnter (4 Monate)                    2 000.00
+  - Steuern verrechnet                  1 500.00
+  Fastopfer (4 Monate × 50.00)            200.00
+```
+
+Gespeichert werden zwei Zeilen, weil die Kirche Zehnten und Fastopfer getrennt ausweist.
+Die Zeile für den Zehnten entsteht immer – auch über 0. Sie ist es, die die Monate
+abrechnet, und ein Monat ohne Lohn will genauso abgehakt werden wie einer mit.
+
+Was sich nicht verrechnen lässt, wird gedeckelt statt abgewiesen: höchstens das
+verbleibende Guthaben und höchstens der Zehnte dieser Zahlung. Der Rest bleibt stehen
+und wartet auf die nächste – ein Beleg über einen negativen Betrag wäre keine Zahlung.
+Gerechnet wird mit derselben Funktion (`computePayment`) in der Vorschau und auf dem
+Server; am Bildschirm kann so keine andere Zahl stehen als gleich danach in der Liste.
+
+**Fastopfer** läuft rechnerisch getrennt – es verändert den Zehnten nicht. Eingegeben
+wird der Betrag je Monat, weil man ihn so festlegt; die Zahlung nimmt ihn mal Anzahl
+abgehakter Monate.
 
 **Jahresübersicht:** Zuoberst die Kachel mit dem Stand – offener Zehnter, Einkommen,
-verrechnete Steuern, Basis, bezahlt. Darunter die Monatsliste und die Zahlungen. Export als CSV, mit Semikolon und einem
+verrechnete Steuern, bezahlt. Darunter die Monatsliste und die Zahlungen. Export als CSV, mit Semikolon und einem
 BOM voran, damit Excel die Datei ohne Import-Dialog und mit richtigen Umlauten öffnet.
 Die Zahlungen stehen in derselben Datei – fürs Jahresgespräch soll man nicht zwei Sachen
 zusammensuchen müssen. **Kein PDF-Export:** Das Handy druckt jede Ansicht über
@@ -601,6 +631,8 @@ nichts davon hält den täglichen Gebrauch auf.
 | Volltextsuche | **Vereinheitlichte Spalte statt FTS5** | Löst zusätzlich die Umlaut-Frage, die FTS5 hier nicht gelöst hätte |
 | Zehnten-Rechnung | **Jahresrechnung, Steuern bei der Zahlung verrechnet** | Wer zahlt, weiss am besten, wie viel Steuern bis dahin angefallen sind – ein Zwölftel je Monat war bloss eine Annahme |
 | Berechnungsbasis | **Kein Schalter, keine drei Modi** | „brutto" und „netto" sind dieselbe Rechnung mit einer anderen Zahl im Feld; wie viel Steuern abgezogen werden, entscheidet die Zahlung |
+| Verrechenbare Steuern | **Ein Zehntel des Steuerbetrags** | Steuern mindern das Einkommen, nicht die Zahlung – von CHF 15 000 sind es CHF 1 500 |
+| Zahlung erfassen | **Monate abhaken, Beträge rechnen lassen** | Der Zehnte steht im Einkommen; ein Eingabefeld dafür wäre nur eine Gelegenheit, sich zu vertippen |
 | Jahresexport | **CSV, kein eigenes PDF** | Das Handy druckt jede Ansicht als PDF; eine eigene Erzeugung wäre Aufwand ohne Gewinn |
 
 ## 14. Noch offen
