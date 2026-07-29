@@ -22,6 +22,7 @@ import {
   useDeleteDocument,
   useDocument,
   useHouseholdUsers,
+  useRestoreDocument,
   useRetryOcr,
   useUpdateDocument,
 } from '../lib/documents'
@@ -32,6 +33,7 @@ export function DocumentDetail() {
   const query = useDocument(id)
   const update = useUpdateDocument(id ?? '')
   const remove = useDeleteDocument()
+  const restore = useRestoreDocument()
   const retryOcr = useRetryOcr(id ?? '')
   const categories = useCategories()
   const users = useHouseholdUsers()
@@ -82,7 +84,7 @@ export function DocumentDetail() {
 
       <div className="flex items-start gap-2">
         <h1 className="min-w-0 flex-1 text-xl font-bold">{document.title}</h1>
-        <StatusBadge status={document.status} />
+        {document.deletedAt ? null : <StatusBadge status={document.status} />}
         {/* Herunterladen und Bearbeiten standen als zwei breite Knöpfe unter
             der Vorschau – zwei Handgriffe, die man selten braucht, an der
             Stelle, an der das Dokument selbst stehen sollte. */}
@@ -94,25 +96,43 @@ export function DocumentDetail() {
         >
           <DownloadIcon className="size-5" />
         </a>
-        <button
-          onClick={() => setEditing((value) => !value)}
-          aria-label={editing ? 'Bearbeiten schliessen' : 'Bearbeiten'}
-          aria-pressed={editing}
-          title="Bearbeiten"
-          className={`grid size-9 shrink-0 place-items-center rounded-lg transition active:bg-black/5 dark:active:bg-white/10 ${
-            editing ? 'text-brand-700 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400'
-          }`}
-        >
-          <PencilIcon className="size-5" />
-        </button>
+        {/* Was im Papierkorb liegt, wird nicht bearbeitet – erst zurückholen. */}
+        {document.deletedAt ? null : (
+          <button
+            onClick={() => setEditing((value) => !value)}
+            aria-label={editing ? 'Bearbeiten schliessen' : 'Bearbeiten'}
+            aria-pressed={editing}
+            title="Bearbeiten"
+            className={`grid size-9 shrink-0 place-items-center rounded-lg transition active:bg-black/5 dark:active:bg-white/10 ${
+              editing ? 'text-brand-700 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <PencilIcon className="size-5" />
+          </button>
+        )}
       </div>
+
+      {document.deletedAt ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-slate-600 dark:text-slate-300">
+            Liegt seit {formatDateTime(document.deletedAt)} im Papierkorb.
+          </p>
+          <button
+            onClick={() => restore.mutate(document.id)}
+            disabled={restore.isPending}
+            className="min-h-10 rounded-xl bg-brand-800 px-4 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {restore.isPending ? 'Wird zurückgeholt …' : 'Wiederherstellen'}
+          </button>
+        </div>
+      ) : null}
 
       <DocumentPreview id={document.id} mimeType={document.mimeType} title={document.title} />
 
       {/* Die drei Angaben, die sich im Alltag ändern – direkt hier, ohne den
           Umweg über „Bearbeiten". Gespeichert wird beim Loslassen der Auswahl;
           ein Knopf dafür wäre eine Gelegenheit, es zu vergessen. */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className={`grid grid-cols-3 gap-2 ${document.deletedAt ? 'hidden' : ''}`}>
         <QuickSelect
           label="Kategorie"
           value={document.categoryId ?? ''}
@@ -198,12 +218,14 @@ export function DocumentDetail() {
         ) : null}
       </section>
 
-      <button
-        onClick={() => void handleDelete()}
-        className="w-full py-3 text-sm font-medium text-red-600 dark:text-red-400"
-      >
-        In den Papierkorb
-      </button>
+      {document.deletedAt ? null : (
+        <button
+          onClick={() => void handleDelete()}
+          className="w-full py-3 text-sm font-medium text-red-600 dark:text-red-400"
+        >
+          In den Papierkorb
+        </button>
+      )}
     </div>
   )
 }

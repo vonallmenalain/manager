@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { parseChecklist, serializeChecklist, sortChecklist } from '@manager/shared'
+import { parseChecklist, serializeChecklist, sortChecklist, splitLinks } from '@manager/shared'
 
 describe('parseChecklist', () => {
   it('liest offene und erledigte Einträge', () => {
@@ -93,5 +93,60 @@ describe('sortChecklist', () => {
       { text: 'Erledigt', done: true },
     ]
     assert.deepEqual(sortChecklist(items), items)
+  })
+})
+
+describe('splitLinks', () => {
+  it('macht aus einer Adresse einen Verweis', () => {
+    assert.deepEqual(splitLinks('Siehe https://sbb.ch für Zeiten'), [
+      { text: 'Siehe ' },
+      { text: 'https://sbb.ch', href: 'https://sbb.ch' },
+      { text: ' für Zeiten' },
+    ])
+  })
+
+  it('ergänzt bei www. das fehlende Schema, ohne den Text zu ändern', () => {
+    assert.deepEqual(splitLinks('www.sbb.ch'), [
+      { text: 'www.sbb.ch', href: 'https://www.sbb.ch' },
+    ])
+  })
+
+  it('erkennt E-Mail-Adressen', () => {
+    assert.deepEqual(splitLinks('Schreib an post@example.ch!'), [
+      { text: 'Schreib an ' },
+      { text: 'post@example.ch', href: 'mailto:post@example.ch' },
+      { text: '!' },
+    ])
+  })
+
+  it('lässt Satzzeichen am Ende beim Satz', () => {
+    // „Siehe https://sbb.ch." – der Punkt gehört nicht zur Adresse.
+    const teile = splitLinks('Siehe https://sbb.ch.')
+    assert.equal(teile[1]?.href, 'https://sbb.ch')
+    assert.equal(teile[2]?.text, '.')
+  })
+
+  it('behält eine Klammer, die zur Adresse gehört', () => {
+    const teile = splitLinks('https://de.wikipedia.org/wiki/Zehnt_(Abgabe)')
+    assert.equal(teile[0]?.href, 'https://de.wikipedia.org/wiki/Zehnt_(Abgabe)')
+    assert.equal(teile.length, 1)
+  })
+
+  it('hält Preise und Abkürzungen für gewöhnlichen Text', () => {
+    assert.deepEqual(splitLinks('Das kostet 12.50 pro Person, z.B. am Montag'), [
+      { text: 'Das kostet 12.50 pro Person, z.B. am Montag' },
+    ])
+  })
+
+  it('gibt leeren Text unverändert zurück', () => {
+    assert.deepEqual(splitLinks(''), [])
+  })
+
+  it('findet mehrere Verweise in einer Zeile', () => {
+    const teile = splitLinks('a www.eins.ch b https://zwei.ch c')
+    assert.deepEqual(
+      teile.filter((teil) => teil.href).map((teil) => teil.text),
+      ['www.eins.ch', 'https://zwei.ch'],
+    )
   })
 })

@@ -31,6 +31,7 @@ export function toApiDocument(row: DocumentRow, query?: string): ManagedDocument
     notes: row.notes,
     hasFile: true,
     ocrStatus: row.ocrStatus as OcrStatus,
+    deletedAt: row.deletedAt,
     // Nur bei einer Suche: zeigt, an welcher Stelle im erkannten Text der
     // Begriff steht. Beantwortet die Frage „warum ist das ein Treffer?".
     snippet: query && row.ocrText ? findSnippet(row.ocrText, query) : null,
@@ -132,8 +133,14 @@ export async function loadUserNames(): Promise<Map<string, string>> {
 }
 
 export async function findDocument(id: string): Promise<DocumentRow | undefined> {
-  const rows = await db.select().from(documents).where(eq(documents.id, id)).limit(1)
-  const row = rows[0]
-  // Gelöschte Dokumente liegen im Papierkorb und sind über die API unsichtbar.
+  const row = await findAnyDocument(id)
+  // Was im Papierkorb liegt, lässt sich nicht mehr ändern – es ist gelöscht.
+  // Anschauen darf man es (siehe findAnyDocument), verändern nicht.
   return row && !row.deletedAt ? row : undefined
+}
+
+/** Auch das Gelöschte – fürs Anschauen im Papierkorb und fürs Zurückholen. */
+export async function findAnyDocument(id: string): Promise<DocumentRow | undefined> {
+  const rows = await db.select().from(documents).where(eq(documents.id, id)).limit(1)
+  return rows[0]
 }

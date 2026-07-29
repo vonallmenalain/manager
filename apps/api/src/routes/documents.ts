@@ -15,7 +15,20 @@ import {
   updateDocumentSchema,
   type PreviewInfo,
 } from '@manager/shared'
-import { and, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQL } from 'drizzle-orm'
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -30,6 +43,7 @@ import {
 } from '../lib/preview.js'
 import {
   describeChanges,
+  findAnyDocument,
   findDocument,
   getActivity,
   loadUserNames,
@@ -206,9 +220,13 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const { q, status, categoryId, assignedTo, year, pending, limit, offset } = parsed.data
-    const { uploadedFrom, uploadedTo } = parsed.data
+    const { uploadedFrom, uploadedTo, deleted } = parsed.data
 
-    const conditions: SQL[] = [isNull(documents.deletedAt)]
+    const conditions: SQL[] = []
+    // Standard: ohne Papierkorb. 'nur' ist die Papierkorbansicht, 'mit' zeigt
+    // beides – dann trägt jede gelöschte Zeile in der Liste ihren Vermerk.
+    if (deleted === 'ohne') conditions.push(isNull(documents.deletedAt))
+    if (deleted === 'nur') conditions.push(isNotNull(documents.deletedAt))
 
     if (q) {
       // Beide Seiten werden gleich vereinheitlicht: die gespeicherte
@@ -284,7 +302,9 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get('/api/documents/:id', async (request, reply) => {
     const { id } = request.params as { id: string }
-    const row = await findDocument(id)
+    // Auch das Gelöschte: Wer im Papierkorb nachsieht, will es anschauen
+    // können – sonst wäre der Papierkorb eine Liste von Titeln.
+    const row = await findAnyDocument(id)
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
 
     return reply.send({
@@ -305,7 +325,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = request.params as { id: string }
     const { download } = request.query as { download?: string }
 
-    const row = await findDocument(id)
+    const row = await findAnyDocument(id)
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
 
     const absolute = resolveInStorage(row.storagePath)
@@ -338,7 +358,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
   // -------------------------------------------------------------------------
   fastify.get('/api/documents/:id/preview', async (request, reply) => {
     const { id } = request.params as { id: string }
-    const row = await findDocument(id)
+    const row = await findAnyDocument(id)
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
 
     if (row.mimeType.startsWith('image/')) {
@@ -369,7 +389,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         .send(apiError(API_ERROR_CODES.validationFailed, 'Ungültige Seitennummer.'))
     }
 
-    const row = await findDocument(id)
+    const row = await findAnyDocument(id)
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
     if (row.mimeType !== 'application/pdf') {
       return reply.status(404).send(notFound('Für diese Datei gibt es keine Seitenvorschau.'))
@@ -525,6 +545,50 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     await logActivity(id, user.id, 'delete', `„${row.title}" in den Papierkorb gelegt`)
 
     return reply.status(204).send()
+  })
+
+  /**
+   * Aus dem Papierkorb zurückholen.
+   *
+   * Ein Papierkorb, aus dem man nichts herausnehmen kann, ist keiner. Die
+   * Datei liegt unter `.trash/…` und wandert an ihren alten Platz zurück; die
+   * Vorschau-Bilder wurden beim Löschen entfernt und entstehen beim nächsten
+   * Ansehen von selbst neu.
+   */
+  fastify.post('/api/documents/:id/wiederherstellen', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const { id } = request.params as { id: string }
+    const row = await findAnyDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+    if (!row.deletedAt) {
+      return reply
+        .status(409)
+        .send(apiError(API_ERROR_CODES.validationFailed, 'Dieses Dokument liegt nicht im Papierkorb.'))
+    }
+
+    let storagePath = row.storagePath
+    const zurueck = storagePath.replace(/^\.trash[/\\]/, '')
+    try {
+      await moveWithinStorage(storagePath, zurueck)
+      storagePath = zurueck
+    } catch (error) {
+      // Die Datei bleibt notfalls im Papierkorb-Ordner liegen; der Eintrag ist
+      // wieder da und zeigt weiterhin auf sie. Besser ein Dokument an der
+      // falschen Stelle als eines, das man nicht zurückholen kann.
+      request.log.error({ err: error, documentId: id }, 'Zurückholen aus dem Papierkorb misslungen')
+    }
+
+    await db
+      .update(documents)
+      .set({ deletedAt: null, storagePath })
+      .where(eq(documents.id, id))
+
+    await logActivity(id, user.id, 'restore', `„${row.title}" aus dem Papierkorb geholt`)
+
+    const wieder = await findDocument(id)
+    return reply.send({ document: wieder ? toApiDocument(wieder) : null })
   })
 }
 

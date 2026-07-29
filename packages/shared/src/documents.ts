@@ -126,6 +126,12 @@ export const documentSchema = z.object({
   notes: z.string().nullable(),
   hasFile: z.boolean(),
   ocrStatus: ocrStatusSchema,
+  /**
+   * Wann das Dokument in den Papierkorb gelegt wurde, sonst null. Steht auch
+   * in der Liste, weil sich Gelöschtes dort einblenden lässt und dann als
+   * solches erkennbar sein muss.
+   */
+  deletedAt: z.string().nullable(),
   /** Nur in Suchergebnissen gesetzt: die Fundstelle im erkannten Text. */
   snippet: textSnippetSchema.nullable().optional(),
 })
@@ -255,6 +261,11 @@ export const documentQuerySchema = z.object({
   uploadedTo: isoDate.optional(),
   /** 'pendent' fasst offen und in_arbeit zusammen – der häufigste Filter. */
   pending: z.coerce.boolean().optional(),
+  /**
+   * Was mit dem Papierkorb geschehen soll. Standard ist `ohne`: Gelöschtes ist
+   * gelöscht und hat in der Liste nichts verloren, bis man danach fragt.
+   */
+  deleted: z.enum(['ohne', 'mit', 'nur']).default('ohne'),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 })

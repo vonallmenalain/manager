@@ -18,6 +18,8 @@ export interface DocumentFilters {
   /** Hochladedatum von/bis, als JJJJ-MM-TT. */
   uploadedFrom?: string
   uploadedTo?: string
+  /** Papierkorb: ohne (Standard), mit oder nur. */
+  deleted?: 'ohne' | 'mit' | 'nur'
   year?: number
   pending?: boolean
 }
@@ -41,6 +43,8 @@ export function countFilters(filters: DocumentFilters): number {
   let count = 0
   for (const [key, value] of Object.entries(filters)) {
     if (key === 'q' || value === undefined || value === '' || value === false) continue
+    // 'ohne' ist der Normalfall und kein gesetzter Filter.
+    if (key === 'deleted' && value === 'ohne') continue
     if (Array.isArray(value)) count += value.length
     else count += 1
   }
@@ -139,6 +143,18 @@ export function useDeleteDocument() {
   return useMutation({
     mutationFn: (id: string) => api.deleteDocument(id),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+}
+
+/** Holt ein Dokument aus dem Papierkorb zurück. */
+export function useRestoreDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.restoreDocument(id),
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: ['document', id] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
     },
   })

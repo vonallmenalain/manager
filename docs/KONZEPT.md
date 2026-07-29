@@ -297,6 +297,18 @@ waagrecht aus dem Bild und liess immer nur eines davon gelten.
 **Ansichten:** Startbildschirm (Kachel „Pendent" mit den nächsten Fristen) · Liste/Suche ·
 Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).
 
+**Der Papierkorb ist kein eigener Bildschirm**, sondern eine Einstellung dieser Liste:
+`Ausblenden` (Standard) · `Mit anzeigen` · `Nur Gelöschte`. So gelten Suche und Filter
+auch dort, und man muss nicht wissen, wo der Papierkorb steht – er steht, wo die
+Dokumente stehen. Gelöschte Zeilen tragen ihren Vermerk und einen durchgestrichenen
+Titel; im Dokument selbst steht, seit wann es im Papierkorb liegt, samt Knopf zum
+**Wiederherstellen**. Ändern lässt sich dort nichts: erst zurückholen, dann bearbeiten.
+
+Die Datei liegt derweil unter `.trash/…` in der Ablage und wandert beim Zurückholen an
+ihren Platz zurück; die gerasterten Vorschauseiten entstehen beim nächsten Ansehen neu.
+Angeschaut und heruntergeladen werden darf ein gelöschtes Dokument – ein Papierkorb, in
+den man nicht hineinsehen kann, ist nur ein langsameres Löschen.
+
 **Im Dokument** stehen Kategorie, Zuständigkeit und Status als drei Auswahlfelder direkt
 unter der Vorschau und speichern beim Loslassen. Das sind die drei Angaben, die sich im
 Alltag ändern – sie hinter „Bearbeiten" zu legen, hiess dreimal tippen für einen Griff.
@@ -373,6 +385,23 @@ Stufen stellen (neben der Farbe: Standard, Mittel, Breit). Die schmale Spalte is
 einen Merkzettel und zu eng für eine lange Liste. Am Handy erscheinen die Knöpfe nicht –
 dort füllt das Fenster ohnehin die Breite, und ein Knopf, der nichts bewirkt, ist einer zu
 viel.
+
+**Verweise sind anklickbar.** `splitLinks()` im geteilten Paket zerlegt den Text in Stücke
+und erkennt `https://…`, `http://…`, `www.…` und E-Mail-Adressen – bewusst diese vier und
+nicht „alles, was nach einer Domain aussieht": „Das kostet 12.50 pro Person" enthält
+keinen Verweis, und ein Muster, das ihn dafür hält, macht aus jeder Notiz ein Minenfeld.
+Satzzeichen am Ende bleiben beim Satz („Siehe https://sbb.ch." – der Punkt gehört nicht
+zur Adresse), eine schliessende Klammer nur dann, wenn im Verweis auch eine öffnende
+steht. Der Text wird dabei nicht verändert: Angezeigt wird, was dasteht („www.sbb.ch"),
+aufgerufen die Adresse mit Schema.
+
+In einem Textfeld ist ein Verweis aber nur Text. Die geöffnete Notiz zeigt deshalb
+zunächst den gelesenen Text mit Verweisen, und ein Griff hinein macht daraus das
+Eingabefeld – ausser auf einem Verweis, der führt dorthin, wo er hinführt. Beim Verlassen
+steht wieder der lesbare Text da. Eine frische Notiz beginnt gleich im Schreibmodus; dort
+gibt es nichts zu lesen. In der Übersicht liegt die Fläche zum Öffnen als Knopf unter dem
+Inhalt, damit die ganze Kachel ein Griff bleibt und ein Verweis trotzdem sein eigenes Ziel
+behält – ein `<a>` in einem `<button>` wäre nicht erlaubt.
 
 Rechts oben in jeder Notiz steht, **wann zuletzt geschrieben wurde**, mit Datum und
 Uhrzeit. Damit die Angabe stimmt, speichert das Autospeichern nur, was vom Stand beim
