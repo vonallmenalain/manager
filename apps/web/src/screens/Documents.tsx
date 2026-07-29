@@ -97,6 +97,12 @@ function SearchField({ value, onChange }: { value: string; onChange: (value: str
   )
 }
 
+const PAPIERKORB = [
+  { wert: 'ohne', label: 'Ausblenden' },
+  { wert: 'mit', label: 'Mit anzeigen' },
+  { wert: 'nur', label: 'Nur Gelöschte' },
+] as const satisfies readonly { wert: NonNullable<DocumentFilters['deleted']>; label: string }[]
+
 interface FilterMenuProps {
   filters: DocumentFilters
   onChange: (filters: DocumentFilters) => void
@@ -232,6 +238,29 @@ function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
               ))}
             </Gruppe>
 
+            {/* Der Papierkorb ist kein eigener Bildschirm, sondern eine
+                Einstellung dieser Liste: Suche und Filter gelten dort genauso,
+                und man muss nicht erst wissen, wo er steht. */}
+            <Gruppe titel="Papierkorb">
+              {PAPIERKORB.map((option) => (
+                <label key={option.wert} className="flex min-h-10 items-center gap-3 text-sm">
+                  <input
+                    type="radio"
+                    name="papierkorb"
+                    checked={(filters.deleted ?? 'ohne') === option.wert}
+                    onChange={() => {
+                      const geaendert = { ...filters }
+                      if (option.wert === 'ohne') delete geaendert.deleted
+                      else geaendert.deleted = option.wert
+                      onChange(geaendert)
+                    }}
+                    className="size-4 shrink-0 accent-brand-700"
+                  />
+                  <span className="min-w-0 truncate">{option.label}</span>
+                </label>
+              ))}
+            </Gruppe>
+
             <Gruppe titel="Hochgeladen">
               <label className="flex items-center justify-between gap-2 py-1 text-sm">
                 <span className="text-slate-500 dark:text-slate-400">von</span>
@@ -332,8 +361,16 @@ function DocumentRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="truncate font-medium">{document.title}</span>
-            <StatusBadge status={document.status} />
+            <span className={`truncate font-medium ${document.deletedAt ? 'line-through' : ''}`}>
+              {document.title}
+            </span>
+            {document.deletedAt ? (
+              <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                Papierkorb
+              </span>
+            ) : (
+              <StatusBadge status={document.status} />
+            )}
           </span>
           <span className="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400">
             {document.docDate}

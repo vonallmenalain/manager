@@ -192,6 +192,11 @@ export const api = {
   deleteDocument: (id: string) =>
     request<void>(`/api/documents/${id}`, { method: 'DELETE' }),
 
+  restoreDocument: (id: string) =>
+    request<{ document: ManagedDocument | null }>(`/api/documents/${id}/wiederherstellen`, {
+      method: 'POST',
+    }),
+
   retryOcr: (id: string) =>
     request<{ ocrStatus: string }>(`/api/documents/${id}/ocr`, { method: 'POST' }),
 

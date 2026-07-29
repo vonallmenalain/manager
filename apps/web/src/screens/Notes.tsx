@@ -6,6 +6,7 @@ import {
   parseChecklist,
   serializeChecklist,
   sortChecklist,
+  splitLinks,
   type ChecklistItem,
   type Note,
   type NoteColor,
@@ -382,13 +383,22 @@ function NoteCard({
   const regel = GROESSE_REGELN[groesse]
 
   return (
-    <button
-      onClick={onOpen}
-      className={`flex w-full flex-col overflow-hidden rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
+    // Die Fläche zum Öffnen liegt als Knopf unter dem Inhalt: So bleibt die
+    // ganze Kachel ein Griff, und ein Verweis im Text behält trotzdem sein
+    // eigenes Ziel. Ein <a> in einem <button> wäre nicht erlaubt.
+    <div
+      className={`relative flex w-full flex-col overflow-hidden rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
         COLOR_STYLES[note.color]
       } ${regel.hoehe[ansicht]}`}
     >
-      <span className="flex w-full items-start gap-2">
+      <button
+        onClick={onOpen}
+        aria-label={`Notiz ${note.title || 'ohne Titel'} öffnen`}
+        className="absolute inset-0"
+      />
+
+      {/* Der Inhalt lässt Griffe zum Knopf durch – nur Verweise fangen sie ab. */}
+      <span className="pointer-events-none relative flex w-full items-start gap-2">
         <span className="min-w-0 flex-1 font-medium">
           {note.title || <span className="text-slate-400">Ohne Titel</span>}
         </span>
@@ -411,12 +421,43 @@ function NoteCard({
         <ChecklistPreview body={note.body} max={regel.eintraege} />
       ) : note.body ? (
         <span
-          className={`mt-0.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300 ${regel.textZeilen}`}
+          className={`pointer-events-none relative mt-0.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300 ${regel.textZeilen}`}
         >
-          {note.body}
+          <LinkedText text={note.body} />
         </span>
       ) : null}
-    </button>
+    </div>
+  )
+}
+
+/**
+ * Text, in dem Verweise anklickbar sind.
+ *
+ * `pointer-events-auto` und `z-10`, weil in der Übersicht die ganze Kachel
+ * eine Fläche zum Öffnen der Notiz ist: Der Text lässt Griffe durch, der
+ * Verweis fängt seinen eigenen ab. `stopPropagation` hält ausserdem die
+ * darunterliegende Fläche davon ab, gleich noch die Notiz zu öffnen.
+ */
+function LinkedText({ text }: { text: string }) {
+  return (
+    <>
+      {splitLinks(text).map((teil, index) =>
+        teil.href ? (
+          <a
+            key={index}
+            href={teil.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="pointer-events-auto relative z-10 break-words text-brand-700 underline underline-offset-2 dark:text-brand-300"
+          >
+            {teil.text}
+          </a>
+        ) : (
+          <span key={index}>{teil.text}</span>
+        ),
+      )}
+    </>
   )
 }
 
@@ -441,13 +482,13 @@ function ChecklistPreview({ body, max }: { body: string; max: number }) {
   const offen = items.filter((item) => !item.done).length
 
   return (
-    <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">
+    <span className="pointer-events-none relative mt-1 block text-sm text-slate-600 dark:text-slate-300">
       {items.slice(0, max).map((item, index) => (
         <span
           key={index}
           className={`block truncate ${item.done ? 'text-slate-400 line-through dark:text-slate-500' : ''}`}
         >
-          {item.done ? '☑' : '☐'} {item.text}
+          {item.done ? '☑' : '☐'} <LinkedText text={item.text} />
         </span>
       ))}
       {items.length > max ? (
@@ -596,10 +637,55 @@ function NoteEditor({
         {kind === 'liste' ? (
           <Checklist items={items} onChange={setItems} />
         ) : (
-          <GrowingTextarea value={text} onChange={setText} />
+          <NoteText value={text} onChange={setText} startInEditing={!note || text === ''} />
         )}
       </>
     </Modal>
+  )
+}
+
+/**
+ * Der Text einer Notiz – zum Lesen mit anklickbaren Verweisen, zum Schreiben
+ * ein Textfeld.
+ *
+ * In einem Textfeld ist ein Verweis nur Text; anklickbar wird er erst, wenn er
+ * als Verweis gezeichnet ist. Deshalb zeigt die geöffnete Notiz zunächst den
+ * gelesenen Text, und ein Griff hinein macht daraus das Eingabefeld – ausser
+ * auf einem Verweis, der führt dorthin, wo er hinführt. Beim Verlassen des
+ * Feldes steht wieder der lesbare Text da.
+ *
+ * Eine frische oder leere Notiz beginnt gleich im Schreibmodus: Dort gibt es
+ * nichts zu lesen und nichts anzutippen.
+ */
+function NoteText({
+  value,
+  onChange,
+  startInEditing,
+}: {
+  value: string
+  onChange: (value: string) => void
+  startInEditing: boolean
+}) {
+  const [schreibt, setSchreibt] = useState(startInEditing)
+
+  if (schreibt) {
+    return (
+      <GrowingTextarea
+        value={value}
+        onChange={onChange}
+        autoFocus={!startInEditing}
+        onBlur={() => setSchreibt(false)}
+      />
+    )
+  }
+
+  return (
+    <div
+      onClick={() => setSchreibt(true)}
+      className="mt-3 min-h-40 w-full cursor-text whitespace-pre-wrap break-words text-base"
+    >
+      {value ? <LinkedText text={value} /> : <span className="text-slate-400">Text …</span>}
+    </div>
   )
 }
 
@@ -614,9 +700,13 @@ function NoteEditor({
 function GrowingTextarea({
   value,
   onChange,
+  autoFocus,
+  onBlur,
 }: {
   value: string
   onChange: (value: string) => void
+  autoFocus?: boolean
+  onBlur?: () => void
 }) {
   const field = useRef<HTMLTextAreaElement>(null)
 
@@ -629,11 +719,22 @@ function GrowingTextarea({
     element.style.height = `${element.scrollHeight}px`
   }, [value])
 
+  // Wer aus dem Lesen ins Schreiben wechselt, will weiterschreiben und nicht
+  // vorne beginnen – der Cursor gehört ans Ende.
+  useLayoutEffect(() => {
+    if (!autoFocus) return
+    const element = field.current
+    if (!element) return
+    element.focus()
+    element.setSelectionRange(element.value.length, element.value.length)
+  }, [autoFocus])
+
   return (
     <textarea
       ref={field}
       value={value}
       onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
       placeholder="Text …"
       aria-label="Text"
       // Eine Mindesthöhe, damit auch die leere Notiz eine Fläche hat, die man
