@@ -1,4 +1,8 @@
-import { STORE_SECTIONS, type ShoppingItem, type StoreSection } from '@manager/shared'
+import {
+  STORE_SECTIONS,
+  type ShoppingItem,
+  type UpdateShoppingItemInput,
+} from '@manager/shared'
 import { type FormEvent, useState } from 'react'
 
 import {
@@ -131,19 +135,15 @@ function Row({
       <button
         onClick={() => setEditing((value) => !value)}
         className="shrink-0 rounded-lg px-2 py-1 text-xs text-slate-400"
-        aria-label="Abteilung ändern"
+        aria-label={`„${item.text}“ bearbeiten`}
       >
         ⋯
       </button>
 
       {editing ? (
-        <SectionPicker
-          text={item.text}
-          current={item.section}
-          onPick={(section) => {
-            update.mutate({ id: item.id, changes: { section } })
-            setEditing(false)
-          }}
+        <ItemSheet
+          item={item}
+          onSave={(changes) => update.mutate({ id: item.id, changes })}
           onDelete={() => {
             remove.mutate(item.id)
             setEditing(false)
@@ -156,38 +156,85 @@ function Row({
 }
 
 /**
- * Auswahl der Abteilung. Die Korrektur hier ist zugleich das, was die Liste
- * lernt – beim nächsten Mal steht derselbe Artikel gleich richtig.
+ * Ein Eintrag zum Nachbessern: Name und Abteilung.
+ *
+ * Beides ist dieselbe Handbewegung – „das stimmt so nicht" –, und beides
+ * gehört deshalb hinter denselben Griff. Vorher stand hier nur die Abteilung;
+ * wer sich vertippt hatte oder „Milch" zu „Vollmilch" präzisieren wollte,
+ * musste den Eintrag löschen und neu tippen.
+ *
+ * Gespeichert wird ohne Knopf: beim Schliessen, beim Enter und beim Wählen
+ * einer Abteilung. Letzteres schickt beides in einem Zug – so lernt das
+ * Gedächtnis der Liste die Abteilung gleich unter dem neuen Namen.
  */
-function SectionPicker({
-  text,
-  current,
-  onPick,
+function ItemSheet({
+  item,
+  onSave,
   onDelete,
   onClose,
 }: {
-  text: string
-  current: StoreSection
-  onPick: (section: StoreSection) => void
+  item: ShoppingItem
+  onSave: (changes: UpdateShoppingItemInput) => void
   onDelete: () => void
   onClose: () => void
 }) {
+  const [text, setText] = useState(item.text)
+
+  /** Der geänderte Name – oder nichts, wenn er stehen geblieben ist. */
+  function namensAenderung(): UpdateShoppingItemInput {
+    const wert = text.trim()
+    // Ein leerer Name wäre kein Eintrag mehr; dann bleibt der alte stehen.
+    return wert && wert !== item.text ? { text: wert } : {}
+  }
+
+  function schliessen() {
+    const changes = namensAenderung()
+    if (changes.text) onSave(changes)
+    onClose()
+  }
+
   return (
     <>
-      <button className="fixed inset-0 z-20 bg-slate-900/30" onClick={onClose} aria-label="Schliessen" />
+      <button
+        className="fixed inset-0 z-20 bg-slate-900/30"
+        onClick={schliessen}
+        aria-label="Schliessen"
+      />
       <div className="pb-safe fixed inset-x-0 bottom-0 z-30 rounded-t-2xl bg-white p-4 shadow-2xl dark:bg-slate-900">
-        {/* Der Name steht dabei: Die Auswahl deckt die Zeile zu, auf die sie
-            sich bezieht. */}
-        <p className="mb-3 text-sm font-semibold">
-          „{text}“ – in welche Abteilung?
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            schliessen()
+          }}
+        >
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              Eintrag
+            </span>
+            <input
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              maxLength={120}
+              enterKeyHint="done"
+              aria-label="Eintrag umbenennen"
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40 dark:border-slate-700 dark:bg-slate-950"
+            />
+          </label>
+        </form>
+
+        <p className="mb-2 mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">
+          In welche Abteilung?
         </p>
         <div className="flex flex-wrap gap-2">
           {STORE_SECTIONS.map((section) => (
             <button
               key={section}
-              onClick={() => onPick(section)}
+              onClick={() => {
+                onSave({ ...namensAenderung(), section })
+                onClose()
+              }}
               className={`rounded-full px-3 py-2 text-sm font-medium ${
-                section === current
+                section === item.section
                   ? 'bg-brand-800 text-white'
                   : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
               }`}
@@ -196,6 +243,7 @@ function SectionPicker({
             </button>
           ))}
         </div>
+
         <button
           onClick={onDelete}
           className="mt-4 w-full py-2 text-sm font-medium text-red-600 dark:text-red-400"
