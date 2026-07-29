@@ -346,6 +346,15 @@ nächsten Mal von selbst.
 Das Gelernte steht bewusst in einer eigenen Tabelle (`shopping_memory`), nicht am Eintrag:
 „Aufräumen" läuft nach jedem Einkauf und würde das Gelernte sonst jedes Mal mitlöschen.
 
+**Nachbessern** – Name und Abteilung – steckt hinter dem „⋯" der Zeile. Beides ist
+dieselbe Handbewegung („das stimmt so nicht") und gehört deshalb hinter denselben Griff;
+vorher liess sich dort nur die Abteilung ändern, und wer sich vertippt hatte oder „Milch"
+zu „Vollmilch" präzisieren wollte, musste den Eintrag löschen und neu tippen. Gespeichert
+wird ohne Knopf: beim Schliessen, beim Enter und beim Wählen einer Abteilung. Letzteres
+schickt Name und Abteilung in einem Zug – so lernt das Gedächtnis die Abteilung gleich
+unter dem neuen Namen. Ein leer gelassenes Feld ändert nichts: Ein Eintrag ohne Namen
+wäre keiner.
+
 Jede Änderung erscheint sofort in der Liste und wird erst danach zum Server geschickt
 (bei einem Fehler zurückgerollt). Im Laden zählt das mehr als anderswo – mit einem Balken
 Empfang fühlt sich eine halbe Sekunde Verzögerung an, als hätte die App den Tipp
