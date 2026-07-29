@@ -47,6 +47,14 @@ export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 export const UNCATEGORIZED = 'unsortiert'
 export const UNCATEGORIZED_LABEL = 'Unsortiert'
 
+/**
+ * Kein Zuständiger heisst „beide" – nicht „niemand". Wie `UNCATEGORIZED` ist
+ * das keine Zeile in einer Tabelle, sondern das Fehlen einer Zuordnung; zum
+ * Filtern braucht es trotzdem einen Namen.
+ */
+export const UNASSIGNED = 'beide'
+export const UNASSIGNED_LABEL = 'Beide'
+
 export const categorySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -215,13 +223,36 @@ export const updateDocumentSchema = z.object({
 
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>
 
+/**
+ * Mehrfachauswahl als ein Parameter: `?status=offen,in_arbeit`.
+ *
+ * Ein Filter mit Häkchen liefert keine oder mehrere Werte. Wiederholte
+ * Parameter (`?status=a&status=b`) wären die andere Schreibweise – sie kommen
+ * je nach Anzahl mal als Zeichenkette und mal als Liste an, und genau daran
+ * scheitern solche Schnittstellen dann im Einzelfall.
+ */
+const commaSeparated = z
+  .string()
+  .max(1000)
+  .transform((value) =>
+    value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean),
+  )
+  .pipe(z.array(z.string().max(60)).max(50))
+
 export const documentQuerySchema = z.object({
   /** Freitext über Titel, Absender und Notizen. Ab Etappe 3 auch über OCR-Text. */
   q: z.string().trim().max(200).optional(),
-  status: documentStatusSchema.optional(),
-  categoryId: z.string().optional(),
-  assignedTo: z.string().optional(),
+  /** Eine oder mehrere Zuständigkeiten; `beide` steht für „niemandem zugeteilt". */
+  status: commaSeparated.optional(),
+  categoryId: commaSeparated.optional(),
+  assignedTo: commaSeparated.optional(),
   year: z.coerce.number().int().min(1900).max(2200).optional(),
+  /** Hochgeladen ab / bis, jeweils einschliesslich. */
+  uploadedFrom: isoDate.optional(),
+  uploadedTo: isoDate.optional(),
   /** 'pendent' fasst offen und in_arbeit zusammen – der häufigste Filter. */
   pending: z.coerce.boolean().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),

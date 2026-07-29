@@ -20,6 +20,7 @@ export function Modal({
   onClose,
   label,
   className = 'bg-white dark:bg-slate-950',
+  width = 'max-w-lg',
   header,
   footer,
   children,
@@ -29,6 +30,11 @@ export function Modal({
   label: string
   /** Färbung des Fensters – die Notizen nutzen dafür ihre Farbe. */
   className?: string
+  /**
+   * Grösste Breite. Auf dem Handy ist ohnehin der Bildschirm die Grenze; am
+   * grossen Schirm entscheidet das, wie breit eine Zeile werden darf.
+   */
+  width?: string
   header?: ReactNode
   footer?: ReactNode
   children: ReactNode
@@ -55,7 +61,7 @@ export function Modal({
         // dvh statt vh: Auf dem Handy zählt die sichtbare Höhe, nicht die mit
         // eingeblendeter Adressleiste gerechnete – sonst stünde der Fuss des
         // Fensters unter dem Bildschirmrand.
-        className={`flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col rounded-2xl border shadow-xl ${className}`}
+        className={`flex max-h-[calc(100dvh-1.5rem)] w-full ${width} flex-col rounded-2xl border shadow-xl ${className}`}
       >
         {header ? (
           <div className="flex items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">

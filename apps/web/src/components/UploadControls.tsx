@@ -12,6 +12,7 @@ import {
   defaultScanTitle,
   pageFromFile,
   releasePage,
+  rotatePage,
   type ScanPage,
 } from '../lib/scan/pages'
 import { collectSharedFiles } from '../lib/sharedFiles'
@@ -177,6 +178,30 @@ export function UploadControls() {
     })
   }
 
+  /**
+   * Eine Seite um eine Vierteldrehung drehen.
+   *
+   * Die gedrehte Seite tritt an die Stelle der alten, mit derselben Kennung –
+   * sie bleibt also, wo sie im Stapel steht. Die alte Vorschau-Adresse wird
+   * erst danach freigegeben: Gäbe man sie vorher frei, zeigte die Liste für
+   * einen Wimpernschlag ein leeres Bild.
+   */
+  async function rotate(id: string) {
+    const page = pages.find((entry) => entry.id === id)
+    if (!page) return
+
+    setPreparing(true)
+    try {
+      const gedreht = await rotatePage(page)
+      setPages((current) => current.map((entry) => (entry.id === id ? gedreht : entry)))
+      releasePage(page)
+    } catch {
+      setState({ running: 0, message: 'Die Seite liess sich nicht drehen.' })
+    } finally {
+      setPreparing(false)
+    }
+  }
+
   function openScanner() {
     setMenuOpen(false)
     setSource('scanner')
@@ -308,6 +333,7 @@ export function UploadControls() {
           onAddPage={() => (source === 'scanner' ? setScannerOpen(true) : cameraRef.current?.click())}
           onRemove={removePage}
           onMove={movePage}
+          onRotate={(id) => void rotate(id)}
           onDiscard={() => {
             if (window.confirm(`${pages.length === 1 ? 'Die Seite' : 'Alle Seiten'} verwerfen?`)) {
               discardPages()

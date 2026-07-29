@@ -8,6 +8,27 @@ import { useEffect } from 'react'
  * Zähler würde der eine beim Schliessen aufräumen, was der andere gerade
  * angemeldet hat, und die Navigationsleiste käme mitten im Scannen zurück.
  */
+/**
+ * Schliesst mit der Escape-Taste, solange etwas offen ist.
+ *
+ * Für Menüs, die kein Fenster über sich haben: Dort genügt der Griff daneben
+ * nicht als einziger Ausweg – wer mit der Tastatur arbeitet, erwartet Escape.
+ * Innerhalb eines Fensters wird die Taste bewusst nicht hier abgefangen,
+ * sonst schlösse sie beides auf einmal.
+ */
+export function useEscape(active: boolean, onEscape: () => void): void {
+  useEffect(() => {
+    if (!active) return
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onEscape()
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, onEscape])
+}
+
 export function useFullScreenOverlay(): void {
   useEffect(() => {
     const root = document.documentElement

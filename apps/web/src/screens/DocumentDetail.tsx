@@ -9,12 +9,13 @@ import {
   type DocumentStatus,
   type UpdateDocumentInput,
 } from '@manager/shared'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { Button } from '../components/Button'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { StatusBadge } from '../components/StatusBadge'
+import { DownloadIcon, PencilIcon } from '../components/icons'
+import { saveStateLabel, useAutosave } from '../lib/autosave'
 import {
   fileUrl,
   useCategories,
@@ -56,8 +57,6 @@ export function DocumentDetail() {
     )
   }
 
-  const category = categories.data?.categories.find((c) => c.id === document.categoryId)
-  const assignee = users.data?.users.find((u) => u.id === document.assignedTo)
   const uploader = users.data?.users.find((u) => u.id === document.uploadedBy)
 
   async function handleDelete() {
@@ -81,44 +80,82 @@ export function DocumentDetail() {
         Dokumente
       </button>
 
-      <div className="flex items-start gap-3">
-        <h1 className="flex-1 text-xl font-bold">{document.title}</h1>
+      <div className="flex items-start gap-2">
+        <h1 className="min-w-0 flex-1 text-xl font-bold">{document.title}</h1>
         <StatusBadge status={document.status} />
+        {/* Herunterladen und Bearbeiten standen als zwei breite Knöpfe unter
+            der Vorschau – zwei Handgriffe, die man selten braucht, an der
+            Stelle, an der das Dokument selbst stehen sollte. */}
+        <a
+          href={fileUrl(document.id, true)}
+          aria-label="Herunterladen"
+          title="Herunterladen"
+          className="grid size-9 shrink-0 place-items-center rounded-lg text-slate-500 transition active:bg-black/5 dark:text-slate-400 dark:active:bg-white/10"
+        >
+          <DownloadIcon className="size-5" />
+        </a>
+        <button
+          onClick={() => setEditing((value) => !value)}
+          aria-label={editing ? 'Bearbeiten schliessen' : 'Bearbeiten'}
+          aria-pressed={editing}
+          title="Bearbeiten"
+          className={`grid size-9 shrink-0 place-items-center rounded-lg transition active:bg-black/5 dark:active:bg-white/10 ${
+            editing ? 'text-brand-700 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400'
+          }`}
+        >
+          <PencilIcon className="size-5" />
+        </button>
       </div>
 
       <DocumentPreview id={document.id} mimeType={document.mimeType} title={document.title} />
 
-      <div className="flex gap-2">
-        <a
-          href={fileUrl(document.id, true)}
-          className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold transition active:bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
-        >
-          Herunterladen
-        </a>
-        <button
-          onClick={() => setEditing((value) => !value)}
-          className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-brand-800 px-4 text-sm font-semibold text-white transition active:bg-brand-900"
-        >
-          {editing ? 'Schliessen' : 'Bearbeiten'}
-        </button>
+      {/* Die drei Angaben, die sich im Alltag ändern – direkt hier, ohne den
+          Umweg über „Bearbeiten". Gespeichert wird beim Loslassen der Auswahl;
+          ein Knopf dafür wäre eine Gelegenheit, es zu vergessen. */}
+      <div className="grid grid-cols-3 gap-2">
+        <QuickSelect
+          label="Kategorie"
+          value={document.categoryId ?? ''}
+          onChange={(value) => update.mutate({ categoryId: value || null })}
+          options={[
+            { value: '', label: UNCATEGORIZED_LABEL },
+            ...(categories.data?.categories ?? []).map((entry) => ({
+              value: entry.id,
+              label: entry.name,
+            })),
+          ]}
+        />
+        <QuickSelect
+          label="Zuständig"
+          value={document.assignedTo ?? ''}
+          onChange={(value) => update.mutate({ assignedTo: value || null })}
+          options={[
+            { value: '', label: 'beide' },
+            ...(users.data?.users ?? []).map((entry) => ({ value: entry.id, label: entry.name })),
+          ]}
+        />
+        <QuickSelect
+          label="Status"
+          value={document.status}
+          onChange={(value) => update.mutate({ status: value as DocumentStatus })}
+          options={DOCUMENT_STATUSES.map((status) => ({
+            value: status,
+            label: DOCUMENT_STATUS_LABELS[status],
+          }))}
+        />
       </div>
 
       {editing ? (
         <EditForm
+          key={document.id}
           document={document}
-          categories={categories.data?.categories ?? []}
-          users={users.data?.users ?? []}
-          saving={update.isPending}
-          onSave={async (changes) => {
-            await update.mutateAsync(changes)
-            setEditing(false)
-          }}
+          onSave={(changes) => update.mutateAsync(changes).then(() => undefined)}
         />
       ) : (
+        // Kategorie und Zuständigkeit stehen nicht mehr hier: Sie sind eine
+        // Zeile weiter oben zu sehen – und dort auch zu ändern.
         <dl className="divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
           <Row label="Datum" value={document.docDate} />
-          <Row label="Kategorie" value={category?.name ?? UNCATEGORIZED_LABEL} />
-          <Row label="Zuständig" value={assignee?.name ?? 'beide'} />
           <Row label="Fällig" value={document.dueDate ?? '–'} />
           <Row
             label="Betrag"
@@ -191,69 +228,99 @@ function formatDateTime(iso: string): string {
   })
 }
 
+/** Ein Auswahlfeld, das sofort speichert. */
+function QuickSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 interface EditFormProps {
   document: {
     title: string
-    status: DocumentStatus
-    categoryId: string | null
-    assignedTo: string | null
     docDate: string
     dueDate: string | null
     amountCents: number | null
     vendor: string | null
     notes: string | null
   }
-  categories: { id: string; name: string }[]
-  users: { id: string; name: string }[]
-  saving: boolean
   onSave: (changes: UpdateDocumentInput) => Promise<void>
 }
 
-function EditForm({ document, categories, users, saving, onSave }: EditFormProps) {
-  const [form, setForm] = useState({
+/**
+ * Die übrigen Angaben – Titel, Daten, Betrag, Absender, Notiz.
+ *
+ * Ohne Speichern-Knopf: Geschrieben wird kurz nach dem letzten Tastendruck und
+ * noch einmal beim Schliessen, wie bei den Notizen. Kategorie, Zuständigkeit
+ * und Status stehen nicht mehr hier – sie sind oben in einem Griff erreichbar.
+ */
+function EditForm({ document, onSave }: EditFormProps) {
+  const [form, setForm] = useState(() => ({
     title: document.title,
-    status: document.status,
-    categoryId: document.categoryId ?? '',
-    assignedTo: document.assignedTo ?? '',
     docDate: document.docDate,
     dueDate: document.dueDate ?? '',
     amount: document.amountCents !== null ? (document.amountCents / 100).toFixed(2) : '',
     vendor: document.vendor ?? '',
     notes: document.notes ?? '',
-  })
+  }))
 
-  useEffect(() => {
-    setForm({
-      title: document.title,
-      status: document.status,
-      categoryId: document.categoryId ?? '',
-      assignedTo: document.assignedTo ?? '',
-      docDate: document.docDate,
-      dueDate: document.dueDate ?? '',
-      amount: document.amountCents !== null ? (document.amountCents / 100).toFixed(2) : '',
-      vendor: document.vendor ?? '',
-      notes: document.notes ?? '',
-    })
-  }, [document])
+  // Ein Titel darf nicht leer werden – der Server lehnte das ab, und die
+  // Änderung wäre still verloren.
+  const lesbar = form.title.trim() !== '' && (form.amount.trim() === '' || parseAmountToCents(form.amount) !== null)
+
+  const autosave = useAutosave(
+    form,
+    async (stand) => {
+      await onSave({
+        title: stand.title.trim(),
+        docDate: stand.docDate,
+        dueDate: stand.dueDate || null,
+        amountCents: stand.amount.trim() === '' ? null : parseAmountToCents(stand.amount),
+        vendor: stand.vendor || null,
+        notes: stand.notes || null,
+      })
+    },
+    {
+      savable: (stand) =>
+        stand.title.trim() !== '' &&
+        (stand.amount.trim() === '' || parseAmountToCents(stand.amount) !== null),
+    },
+  )
 
   return (
     <form
       className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void onSave({
-          title: form.title,
-          status: form.status,
-          categoryId: form.categoryId || null,
-          assignedTo: form.assignedTo || null,
-          docDate: form.docDate,
-          dueDate: form.dueDate || null,
-          amountCents: parseAmountToCents(form.amount),
-          vendor: form.vendor || null,
-          notes: form.notes || null,
-        })
-      }}
+      onSubmit={(event) => event.preventDefault()}
     >
+      <p className="text-right text-xs text-slate-500 dark:text-slate-400">
+        {saveStateLabel(autosave.state, lesbar ? undefined : 'Titel oder Betrag prüfen')}
+      </p>
+
       <Labelled label="Titel">
         <input
           value={form.title}
@@ -261,50 +328,6 @@ function EditForm({ document, categories, users, saving, onSave }: EditFormProps
           className={inputClass}
           required
         />
-      </Labelled>
-
-      <Labelled label="Status">
-        <select
-          value={form.status}
-          onChange={(event) => setForm({ ...form, status: event.target.value as DocumentStatus })}
-          className={inputClass}
-        >
-          {DOCUMENT_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {DOCUMENT_STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
-      </Labelled>
-
-      <Labelled label="Kategorie">
-        <select
-          value={form.categoryId}
-          onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
-          className={inputClass}
-        >
-          <option value="">{UNCATEGORIZED_LABEL}</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-      </Labelled>
-
-      <Labelled label="Zuständig">
-        <select
-          value={form.assignedTo}
-          onChange={(event) => setForm({ ...form, assignedTo: event.target.value })}
-          className={inputClass}
-        >
-          <option value="">beide</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name}
-            </option>
-          ))}
-        </select>
       </Labelled>
 
       <div className="grid grid-cols-2 gap-3">
@@ -356,10 +379,6 @@ function EditForm({ document, categories, users, saving, onSave }: EditFormProps
           className={inputClass}
         />
       </Labelled>
-
-      <Button type="submit" loading={saving}>
-        Speichern
-      </Button>
     </form>
   )
 }

@@ -274,6 +274,39 @@ export async function pageFromFile(file: File): Promise<ScanPage> {
 }
 
 /**
+ * Dreht eine Seite um eine Vierteldrehung im Uhrzeigersinn.
+ *
+ * Nötig, weil in einem mehrseitigen Brief gern eine einzelne Seite quer liegt
+ * – eine Tabelle, ein Plan – und ein Stapel, in dem eine Seite auf der Seite
+ * steht, später niemand mehr gerade rückt.
+ *
+ * Gedreht wird das Bild selbst und nicht bloss die Anzeige: Was in die PDF
+ * eingebettet wird, ist genau diese Datei, und ein Vermerk „bitte gedreht
+ * lesen" überlebt den Weg dorthin nicht. Der Preis ist ein erneutes Kodieren
+ * je Drehung; bei den ein, zwei Griffen, um die es geht, sieht man das nicht.
+ */
+export async function rotatePage(page: ScanPage): Promise<ScanPage> {
+  const blob = await withImage(page.blob, (image) => {
+    const canvas = document.createElement('canvas')
+    // Hoch wird breit: Die Seitenlängen tauschen den Platz.
+    canvas.width = image.naturalHeight
+    canvas.height = image.naturalWidth
+
+    const context = context2d(canvas)
+    context.imageSmoothingQuality = 'high'
+    context.translate(canvas.width / 2, canvas.height / 2)
+    context.rotate(Math.PI / 2)
+    context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2)
+
+    return canvasToJpeg(canvas)
+  })
+
+  // Dieselbe Kennung, damit die Seite an ihrer Stelle im Stapel bleibt; die
+  // alte Vorschau-Adresse gibt der Aufrufer frei.
+  return { id: page.id, blob, url: URL.createObjectURL(blob) }
+}
+
+/**
  * „Scan 28.07.2026 14.32" – der Titel, wenn keiner eingegeben wird.
  *
  * Mit Uhrzeit, weil an einem Tag mehr als ein Brief ankommt und die Liste
