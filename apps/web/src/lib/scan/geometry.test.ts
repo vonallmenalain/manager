@@ -3,8 +3,10 @@ import { describe, it } from 'node:test'
 
 import {
   applyHomography,
+  clampQuad,
   convexHull,
   isPlausibleQuad,
+  nearestCorner,
   orderCorners,
   outputSize,
   polygonArea,
@@ -154,6 +156,56 @@ describe('isPlausibleQuad', () => {
       { x: 0, y: 200 },
     ]
     assert.equal(isPlausibleQuad(dented, 200, 200), false)
+  })
+})
+
+describe('clampQuad', () => {
+  it('lässt ein Viereck im Bild unangetastet', () => {
+    const inside: Quad = [
+      { x: 10, y: 20 },
+      { x: 190, y: 15 },
+      { x: 185, y: 180 },
+      { x: 15, y: 175 },
+    ]
+    assert.deepEqual(clampQuad(inside, 200, 200), inside)
+  })
+
+  it('holt eine Ecke neben dem Bild an den Rand', () => {
+    // Genau das liefert die Erkennung bei einem Blatt, das über den Sucher
+    // hinausragte: Sie rechnet die abgeschnittene Ecke dorthin zurück, wo sie
+    // wäre – neben das Foto, wo kein Griff mehr zu erreichen ist.
+    const beyond: Quad = [
+      { x: -30, y: -12 },
+      { x: 260, y: 20 },
+      { x: 190, y: 240 },
+      { x: 15, y: 175 },
+    ]
+    assert.deepEqual(clampQuad(beyond, 200, 200), [
+      { x: 0, y: 0 },
+      { x: 200, y: 20 },
+      { x: 190, y: 200 },
+      { x: 15, y: 175 },
+    ])
+  })
+})
+
+describe('nearestCorner', () => {
+  it('nimmt die Ecke, die am nächsten liegt', () => {
+    assert.equal(nearestCorner(square, { x: 90, y: 8 }, 44), 1)
+    assert.equal(nearestCorner(square, { x: 12, y: 88 }, 44), 3)
+  })
+
+  it('fasst eine Ecke am Bildrand von innen an', () => {
+    // Der eigentliche Zweck: Eine Ecke auf 0/0 lässt sich nicht mittig
+    // treffen – die Hälfte des Griffs liegt am Bildschirmrand. Ein Tippen
+    // dreissig Punkte weiter innen muss sie erwischen.
+    assert.equal(nearestCorner(square, { x: 30, y: 22 }, 44), 0)
+  })
+
+  it('gibt null zurück, wenn keine Ecke nahe genug ist', () => {
+    // Sonst würde ein Tippen in die Bildmitte den Beschnitt verschieben,
+    // obwohl niemand einen Griff gemeint hat.
+    assert.equal(nearestCorner(square, { x: 50, y: 50 }, 44), null)
   })
 })
 

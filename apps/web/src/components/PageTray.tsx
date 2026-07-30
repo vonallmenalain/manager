@@ -1,8 +1,30 @@
-import { formatFileSize } from '@manager/shared'
+import {
+  DOCUMENT_STATUS_LABELS,
+  DOCUMENT_STATUSES,
+  formatFileSize,
+  UNASSIGNED_LABEL,
+  UNCATEGORIZED_LABEL,
+  type Category,
+  type DocumentStatus,
+  type PublicUser,
+} from '@manager/shared'
 import { createPortal } from 'react-dom'
 
 import { useFullScreenOverlay } from '../lib/overlay'
 import type { ScanPage } from '../lib/scan/pages'
+
+/**
+ * Was am Dokument festgelegt wird, bevor es abgelegt wird.
+ *
+ * Kategorie und Zuständigkeit sind leer, solange nichts gewählt ist – das ist
+ * kein fehlender Wert, sondern „unsortiert" und „beide".
+ */
+export interface TrayDetails {
+  title: string
+  categoryId: string | null
+  assignedTo: string | null
+  status: DocumentStatus
+}
 
 /**
  * Die gesammelten Seiten, bevor sie ein Dokument werden.
@@ -21,9 +43,11 @@ import type { ScanPage } from '../lib/scan/pages'
  */
 export function PageTray({
   pages,
-  title,
-  onTitleChange,
+  details,
+  onDetailsChange,
   defaultTitle,
+  categories,
+  users,
   busy,
   onAddPage,
   onRemove,
@@ -33,10 +57,13 @@ export function PageTray({
   onUpload,
 }: {
   pages: readonly ScanPage[]
-  title: string
-  onTitleChange: (title: string) => void
+  details: TrayDetails
+  onDetailsChange: (details: TrayDetails) => void
   /** Was ohne Eingabe im Archiv stehen würde. */
   defaultTitle: string
+  /** Zur Auswahl stehende Kategorien; leer, solange sie nicht geladen sind. */
+  categories: readonly Category[]
+  users: readonly PublicUser[]
   busy: boolean
   onAddPage: () => void
   onRemove: (id: string) => void
@@ -132,8 +159,8 @@ export function PageTray({
             Titel
           </span>
           <input
-            value={title}
-            onChange={(event) => onTitleChange(event.target.value)}
+            value={details.title}
+            onChange={(event) => onDetailsChange({ ...details, title: event.target.value })}
             disabled={busy}
             maxLength={200}
             // Beim Tippen von Titeln wie „Rechnung Krankenkasse" hilft die
@@ -144,6 +171,44 @@ export function PageTray({
             className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base dark:border-slate-700 dark:bg-slate-900"
           />
         </label>
+
+        {/* Dieselben drei Angaben wie oben in der Detailansicht, nur eine
+            Station früher: Wer die Post gerade in der Hand hatte, weiss in
+            diesem Moment, in welche Kategorie sie gehört und wen sie angeht.
+            Danach hiesse es, das Dokument in der Liste wiederzufinden und
+            dreimal auszuwählen – und meistens bleibt es dann liegen. */}
+        <div className="grid grid-cols-3 gap-2">
+          <TraySelect
+            label="Kategorie"
+            value={details.categoryId ?? ''}
+            disabled={busy}
+            onChange={(value) => onDetailsChange({ ...details, categoryId: value || null })}
+            options={[
+              { value: '', label: UNCATEGORIZED_LABEL },
+              ...categories.map((entry) => ({ value: entry.id, label: entry.name })),
+            ]}
+          />
+          <TraySelect
+            label="Zuständig"
+            value={details.assignedTo ?? ''}
+            disabled={busy}
+            onChange={(value) => onDetailsChange({ ...details, assignedTo: value || null })}
+            options={[
+              { value: '', label: UNASSIGNED_LABEL },
+              ...users.map((entry) => ({ value: entry.id, label: entry.name })),
+            ]}
+          />
+          <TraySelect
+            label="Status"
+            value={details.status}
+            disabled={busy}
+            onChange={(value) => onDetailsChange({ ...details, status: value as DocumentStatus })}
+            options={DOCUMENT_STATUSES.map((status) => ({
+              value: status,
+              label: DOCUMENT_STATUS_LABELS[status],
+            }))}
+          />
+        </div>
 
         <div className="flex gap-2">
           <button
@@ -164,6 +229,47 @@ export function PageTray({
       </div>
     </div>,
     document.body,
+  )
+}
+
+/**
+ * Eines der drei Auswahlfelder unter dem Titel.
+ *
+ * Bewusst ein <select> und keine Reihe von Knöpfen: Die Kategorienliste eines
+ * Haushalts hat ein Dutzend Einträge, und die Auswahl des Systems ist auf dem
+ * Telefon die, die sich mit einer Hand bedienen lässt.
+ */
+function TraySelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: { value: string; label: string }[]
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 

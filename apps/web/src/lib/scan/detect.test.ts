@@ -102,6 +102,33 @@ describe('detectPageQuad', () => {
     assert.equal(detectPageQuad(raster(240, 180, 128)), null)
   })
 
+  it('lässt keine Ecke neben dem Bild liegen', () => {
+    // Ein Blatt, das über den Sucher hinausragt: Die Erkennung rechnet die
+    // abgeschnittene Ecke dorthin zurück, wo das Papier sie hätte – ausserhalb
+    // des Fotos. Dort gibt es keine Bildpunkte zum Entzerren, und der Griff zum
+    // Verschieben läge neben der Anzeige, wo niemand mehr hinkommt.
+    const image = raster(240, 180, 55)
+    paint(
+      image,
+      [
+        { x: -8, y: -6 },
+        { x: 205, y: 20 },
+        { x: 195, y: 165 },
+        { x: 20, y: 150 },
+      ],
+      215,
+    )
+
+    const quad = detectPageQuad(image)
+    assert.ok(quad, 'kein Viereck erkannt')
+    for (const [index, point] of quad.entries()) {
+      assert.ok(
+        point.x >= 0 && point.x <= 240 && point.y >= 0 && point.y <= 180,
+        `Ecke ${index} liegt bei ${point.x}/${point.y} ausserhalb des Bildes`,
+      )
+    }
+  })
+
   it('gibt auf, wenn das Blatt den Untergrund völlig verdeckt', () => {
     // Kein sichtbarer Rand heisst: kein Beschnitt, den man erkennen könnte.
     // Der Aufrufer zeigt dann den vollen Ausschnitt an.

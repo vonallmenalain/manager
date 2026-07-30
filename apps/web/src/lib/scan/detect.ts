@@ -17,6 +17,7 @@
  * null zurückgeben, statt zu raten.
  */
 import {
+  clampQuad,
   convexHull,
   isPlausibleQuad,
   pruneCollinear,
@@ -208,7 +209,13 @@ function quadFromRegion(region: Region, width: number, height: number): Quad | n
   const diagonal = Math.hypot(width, height)
   const hull = convexHull(points)
   const pruned = pruneCollinear(hull, diagonal * 0.012)
-  const quad = reduceToQuad(pruned, diagonal * 0.35)
+  const reduced = reduceToQuad(pruned, diagonal * 0.35)
+
+  // Ins Bild geholt wird vor der Prüfung, nicht danach: Wenn das Zurechtziehen
+  // aus einem plausiblen Viereck eine unbrauchbare Form macht – etwa weil drei
+  // Ecken auf demselben Bildrand landen –, ist der volle Ausschnitt zum
+  // Selbstverschieben der bessere Vorschlag.
+  const quad = reduced && clampQuad(reduced, width, height)
 
   return quad && isPlausibleQuad(quad, width, height) ? quad : null
 }

@@ -1,10 +1,16 @@
+import { DEFAULT_DOCUMENT_STATUS } from '@manager/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { DocumentScanner } from './DocumentScanner'
-import { PageTray } from './PageTray'
+import { PageTray, type TrayDetails } from './PageTray'
 import { ApiRequestError } from '../lib/api'
-import { useUploadDocument } from '../lib/documents'
+import {
+  useCategories,
+  useHouseholdUsers,
+  useUploadDocument,
+  type UploadDetails,
+} from '../lib/documents'
 import {
   buildUpload,
   cameraAvailable,
@@ -25,6 +31,14 @@ interface UploadState {
 /** Woher die nächste Seite kommt, wenn im Stapel „Weitere Seite" gewählt wird. */
 type PageSource = 'scanner' | 'kamera'
 
+/** Ein leerer Stapel: kein Titel, unsortiert, für beide, pendent. */
+const EMPTY_DETAILS: TrayDetails = {
+  title: '',
+  categoryId: null,
+  assignedTo: null,
+  status: DEFAULT_DOCUMENT_STATUS,
+}
+
 /**
  * Alle Wege, auf denen ein Dokument in die App kommt:
  *
@@ -42,6 +56,11 @@ type PageSource = 'scanner' | 'kamera'
 export function UploadControls() {
   const [searchParams, setSearchParams] = useSearchParams()
   const upload = useUploadDocument()
+  // Kategorien und Personen ändern sich praktisch nie und liegen deshalb
+  // ohnehin im Zwischenspeicher der Dokumentenliste – für den Stapel entsteht
+  // dadurch keine zusätzliche Anfrage.
+  const categories = useCategories()
+  const users = useHouseholdUsers()
 
   const cameraRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -49,13 +68,13 @@ export function UploadControls() {
   const [state, setState] = useState<UploadState>({ running: 0, message: null })
 
   const [pages, setPages] = useState<ScanPage[]>([])
-  const [title, setTitle] = useState('')
+  const [details, setDetails] = useState<TrayDetails>(EMPTY_DETAILS)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [preparing, setPreparing] = useState(false)
   const [source, setSource] = useState<PageSource>('scanner')
 
   const uploadFiles = useCallback(
-    async (files: File[], documentTitle?: string): Promise<boolean> => {
+    async (files: File[], documentDetails?: UploadDetails): Promise<boolean> => {
       if (files.length === 0) return false
       setState({ running: files.length, message: null })
 
@@ -64,7 +83,7 @@ export function UploadControls() {
 
       for (const file of files) {
         try {
-          await upload.mutateAsync({ file, title: documentTitle })
+          await upload.mutateAsync({ file, ...documentDetails })
           done += 1
         } catch (error) {
           if (error instanceof ApiRequestError && error.code === 'duplicate') {
@@ -155,7 +174,7 @@ export function UploadControls() {
   function discardPages() {
     for (const page of pages) releasePage(page)
     setPages([])
-    setTitle('')
+    setDetails(EMPTY_DETAILS)
   }
 
   function removePage(id: string) {
@@ -243,7 +262,7 @@ export function UploadControls() {
   }
 
   async function uploadPages() {
-    const chosen = title.trim() || defaultScanTitle()
+    const chosen = details.title.trim() || defaultScanTitle()
 
     let file: File
     try {
@@ -258,8 +277,8 @@ export function UploadControls() {
     }
 
     // Nur bei Erfolg verwerfen: Reisst die Verbindung ab, bleibt der Stapel
-    // erhalten und ein zweiter Versuch kostet keine neue Aufnahme.
-    if (await uploadFiles([file], chosen)) discardPages()
+    // samt Angaben erhalten und ein zweiter Versuch kostet keine neue Aufnahme.
+    if (await uploadFiles([file], { ...details, title: chosen })) discardPages()
   }
 
   function handleCameraInput(event: React.ChangeEvent<HTMLInputElement>) {
@@ -326,9 +345,11 @@ export function UploadControls() {
       ) : pages.length > 0 ? (
         <PageTray
           pages={pages}
-          title={title}
-          onTitleChange={setTitle}
+          details={details}
+          onDetailsChange={setDetails}
           defaultTitle={defaultScanTitle()}
+          categories={categories.data?.categories ?? []}
+          users={users.data?.users ?? []}
           busy={busy}
           onAddPage={() => (source === 'scanner' ? setScannerOpen(true) : cameraRef.current?.click())}
           onRemove={removePage}

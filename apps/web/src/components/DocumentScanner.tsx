@@ -6,11 +6,14 @@ import {
   cameraAvailable,
   canvasToJpeg,
   capturePhoto,
+  DEFAULT_SCAN_FILTER,
   drawToCanvas,
   findCorners,
+  nearestCorner,
   renderScan,
   SCAN_FILTER_LABELS,
   SCAN_FILTERS,
+  type Point,
   type Quad,
   type ScanFilter,
 } from '../lib/scan/pages'
@@ -61,6 +64,32 @@ const CAPTURE_MAX_EDGE = 3000
  */
 const PREVIEW_MAX_EDGE = 1400
 
+/** Sichtbare Grösse eines Eckgriffs, in Bildschirmpunkten. */
+const HANDLE_RADIUS = 20
+
+/**
+ * Abstand zwischen Foto und Rand der Anzeige, in Bildschirmpunkten.
+ *
+ * Ein Blatt, das über den Sucher hinausragte, hat seine Ecken auf dem Bildrand
+ * – ohne diesen Rahmen lägen deren Griffe halb ausserhalb des Bildschirms, dort
+ * wo bei einem Mobiltelefon das Wischen vom Rand die Bewegung übernimmt, bevor
+ * die Seite sie zu sehen bekommt. Der Rahmen ist breiter als ein Griff, damit
+ * auch ein Griff genau auf der Kante noch vollständig innerhalb liegt.
+ */
+const CROP_MARGIN = HANDLE_RADIUS + 8
+
+/**
+ * Wie weit neben einer Ecke sie noch angefasst werden kann, in Bildschirmpunkten.
+ *
+ * Getroffen werden muss nicht der Kreis, sondern nur seine Nähe. Das ist der
+ * eigentliche Grund, weshalb sich auch eine Ecke am äussersten Bildrand
+ * zurechtziehen lässt: Angefasst wird sie mit einem Tippen weiter innen, weg
+ * vom Rand. Bei vier Ecken auf einer Bildschirmbreite ist so viel Umgebung
+ * unbedenklich – näher als hundert Punkte liegen sie selten beieinander, und
+ * eine andere Bewegung gibt es auf dieser Fläche nicht.
+ */
+const GRAB_RADIUS = 44
+
 interface Captured {
   canvas: HTMLCanvasElement
   url: string
@@ -92,7 +121,7 @@ export function DocumentScanner({
   const stillPhotoRef = useRef(true)
   const [captured, setCaptured] = useState<Captured | null>(null)
   const [quad, setQuad] = useState<Quad | null>(null)
-  const [filter, setFilter] = useState<ScanFilter>('farbe')
+  const [filter, setFilter] = useState<ScanFilter>(DEFAULT_SCAN_FILTER)
   const [working, setWorking] = useState(false)
   // Zwei Arten von Fehler, bewusst getrennt: `error` heisst, dass die Kamera
   // gar nicht läuft – dann hilft nur noch der Weg über die Kamera-App.
@@ -420,6 +449,11 @@ function CropStage({
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragging, setDragging] = useState<number | null>(null)
+  // Der Abstand zwischen Berührung und Ecke im Moment des Anfassens. Er bleibt
+  // während des Ziehens erhalten: Eine Ecke, die man bewusst etwas weiter innen
+  // angefasst hat, soll nicht unter den Finger springen und dabei den Beschnitt
+  // verschieben, den man gerade nur prüfen wollte.
+  const grabOffset = useRef<Point>({ x: 0, y: 0 })
   // Wie viele Bildpunkte des Fotos auf einen Bildschirmpunkt kommen. Bestimmt
   // die Grösse der Griffe: Sie sollen unabhängig von der Auflösung des Fotos
   // immer gleich gross unter dem Daumen liegen.
@@ -445,79 +479,146 @@ function CropStage({
   /**
    * Rechnet einen Berührungspunkt in Bildpunkte des Fotos um.
    *
-   * Das SVG füllt seinen Kasten nicht aus: Es zeigt das Foto mit
-   * preserveAspectRatio zentriert, genau wie das <img> darunter. Die Ränder
-   * links und rechts (oder oben und unten) müssen deshalb abgezogen werden,
-   * sonst wandert jede Ecke beim Anfassen ein Stück zur Seite.
+   * Gemessen wird am SVG und nicht am angefassten Element: Bedient wird die
+   * ganze Fläche samt Rahmen, gerechnet wird im Foto. Und das SVG füllt seinen
+   * Kasten nicht aus – es zeigt das Foto mit preserveAspectRatio zentriert,
+   * genau wie das <img> darunter. Die Ränder links und rechts (oder oben und
+   * unten) müssen deshalb abgezogen werden, sonst wandert jede Ecke beim
+   * Anfassen ein Stück zur Seite.
+   *
+   * Bewusst ohne Begrenzung auf das Foto: Auch eine Berührung daneben – im
+   * Rahmen um das Bild – ist eine gültige Angabe, an welcher Ecke gezogen wird.
+   * Begrenzt wird erst die Ecke selbst.
    */
-  function toImagePoint(event: React.PointerEvent<SVGSVGElement>): { x: number; y: number } {
-    const rect = event.currentTarget.getBoundingClientRect()
+  function toImagePoint(event: React.PointerEvent<HTMLDivElement>): Point | null {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return null
+
     const scale = Math.min(rect.width / captured.width, rect.height / captured.height)
+    // Noch nicht ausgemessen – dann gibt es auch keine Ecke zu treffen.
+    if (!(scale > 0)) return null
+
     const offsetX = (rect.width - captured.width * scale) / 2
     const offsetY = (rect.height - captured.height * scale) / 2
 
     return {
-      x: Math.min(Math.max((event.clientX - rect.left - offsetX) / scale, 0), captured.width),
-      y: Math.min(Math.max((event.clientY - rect.top - offsetY) / scale, 0), captured.height),
+      x: (event.clientX - rect.left - offsetX) / scale,
+      y: (event.clientY - rect.top - offsetY) / scale,
     }
   }
 
-  function moveCorner(event: React.PointerEvent<SVGSVGElement>) {
+  /**
+   * Hält eine Ecke innerhalb des Fotos.
+   *
+   * Daneben gibt es keine Bildpunkte, die sich entzerren liessen – der Scan
+   * hätte dort einen schwarzen Keil. Begrenzt wird die Ecke und nicht der
+   * Finger: Sonst käme eine Ecke, die genau auf der Bildkante liegen soll, nur
+   * mit einem Finger genau auf derselben Kante dorthin.
+   */
+  function clampToImage(point: Point): Point {
+    return {
+      x: Math.min(Math.max(point.x, 0), captured.width),
+      y: Math.min(Math.max(point.y, 0), captured.height),
+    }
+  }
+
+  /**
+   * Fasst die Ecke an, die der Berührung am nächsten liegt.
+   *
+   * Die Berührung nimmt die ganze Fläche an und nicht der Kreis: Ein Griff, der
+   * nur auf sich selbst hört, ist genau dann nicht mehr zu bedienen, wenn man
+   * ihn am dringendsten braucht – am Bildrand, wo der Daumen ihn kaum mittig
+   * trifft und das Betriebssystem beim Rand mitreden will. Zur Fläche gehört
+   * auch der Rahmen um das Foto: Dort liegt die äussere Hälfte eines Griffs,
+   * der auf der Bildkante sitzt.
+   */
+  function grabCorner(event: React.PointerEvent<HTMLDivElement>) {
+    const point = toImagePoint(event)
+    if (!point) return
+
+    const nearest = nearestCorner(quad, point, GRAB_RADIUS * pixelsPerScreenPoint)
+    if (nearest === null) return
+
+    const corner = quad[nearest] as Point
+    grabOffset.current = { x: corner.x - point.x, y: corner.y - point.y }
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDragging(nearest)
+  }
+
+  function moveCorner(event: React.PointerEvent<HTMLDivElement>) {
     if (dragging === null) return
     const point = toImagePoint(event)
+    if (!point) return
+
     const next = [...quad] as Quad
-    next[dragging] = point
+    next[dragging] = clampToImage({
+      x: point.x + grabOffset.current.x,
+      y: point.y + grabOffset.current.y,
+    })
     onQuadChange(next)
   }
 
-  const handleRadius = 20 * pixelsPerScreenPoint
+  const handleRadius = HANDLE_RADIUS * pixelsPerScreenPoint
   const strokeWidth = 2 * pixelsPerScreenPoint
   const polygon = quad.map((point) => `${point.x},${point.y}`).join(' ')
 
   return (
     <>
-      <div className="relative min-h-0 flex-1">
-        <img
-          src={captured.url}
-          alt="Aufgenommene Seite"
-          className="absolute inset-0 h-full w-full object-contain"
-        />
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${captured.width} ${captured.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          className="absolute inset-0 h-full w-full"
+      {/* Die Berührung nimmt diese Fläche an, samt Rahmen – nicht das SVG
+          darin: Ein Griff auf der Bildkante liegt zur Hälfte im Rahmen, und was
+          dort ankommt, gehört genauso zum Zurechtziehen. */}
+      <div
+        className="relative min-h-0 flex-1"
+        style={{
+          padding: CROP_MARGIN,
           // touchAction: Ohne das scrollt oder zoomt die Seite beim Ziehen,
           // statt die Ecke zu verschieben.
-          style={{ touchAction: 'none' }}
-          onPointerMove={moveCorner}
-          onPointerUp={() => setDragging(null)}
-          onPointerCancel={() => setDragging(null)}
-        >
-          <polygon
-            points={polygon}
-            fill="rgba(86, 140, 192, 0.25)"
-            stroke="#8ab0d6"
-            strokeWidth={strokeWidth}
-            strokeLinejoin="round"
+          touchAction: 'none',
+        }}
+        onPointerDown={grabCorner}
+        onPointerMove={moveCorner}
+        onPointerUp={() => setDragging(null)}
+        onPointerCancel={() => setDragging(null)}
+        onLostPointerCapture={() => setDragging(null)}
+      >
+        <div className="relative h-full w-full">
+          <img
+            src={captured.url}
+            alt="Aufgenommene Seite"
+            className="absolute inset-0 h-full w-full object-contain"
           />
-          {quad.map((point, index) => (
-            <circle
-              key={index}
-              cx={point.x}
-              cy={point.y}
-              r={handleRadius}
-              fill={dragging === index ? '#8ab0d6' : 'rgba(255,255,255,0.9)'}
-              stroke="#1e3a5f"
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${captured.width} ${captured.height}`}
+            preserveAspectRatio="xMidYMid meet"
+            className="absolute inset-0 h-full w-full"
+            // overflow: Ein Griff auf der Bildkante ragt um seinen Radius über
+            // das Foto hinaus. Ein SVG schneidet das von sich aus ab – zu sehen
+            // wäre nur die innere Hälfte. Der Rahmen um das Foto hält den Platz
+            // dafür frei.
+            style={{ overflow: 'visible' }}
+          >
+            <polygon
+              points={polygon}
+              fill="rgba(86, 140, 192, 0.25)"
+              stroke="#8ab0d6"
               strokeWidth={strokeWidth}
-              onPointerDown={(event) => {
-                event.preventDefault()
-                svgRef.current?.setPointerCapture(event.pointerId)
-                setDragging(index)
-              }}
+              strokeLinejoin="round"
             />
-          ))}
-        </svg>
+            {quad.map((point, index) => (
+              <circle
+                key={index}
+                cx={point.x}
+                cy={point.y}
+                r={handleRadius}
+                fill={dragging === index ? '#8ab0d6' : 'rgba(255,255,255,0.9)'}
+                stroke="#1e3a5f"
+                strokeWidth={strokeWidth}
+              />
+            ))}
+          </svg>
+        </div>
 
         {working ? (
           <div className="absolute inset-0 grid place-items-center bg-slate-950/70 text-sm">

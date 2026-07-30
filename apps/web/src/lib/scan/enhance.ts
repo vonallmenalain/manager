@@ -24,13 +24,24 @@ import type { Raster } from './geometry.ts'
  * jedem kleinen Bildausschnitt neu bestimmt; bis die gebaut ist, liefern
  * Graustufen für Ausdruck wie Texterkennung das bessere Ergebnis.
  */
-export const SCAN_FILTERS = ['farbe', 'grau'] as const
+export const SCAN_FILTERS = ['grau', 'farbe'] as const
 export type ScanFilter = (typeof SCAN_FILTERS)[number]
 
 export const SCAN_FILTER_LABELS: Record<ScanFilter, string> = {
-  farbe: 'Farbe',
   grau: 'Graustufen',
+  farbe: 'Farbe',
 }
+
+/**
+ * Womit der Scanner beginnt: Graustufen.
+ *
+ * Ein Brief, eine Rechnung, ein Formular – was hier eingescannt wird, ist fast
+ * immer schwarz auf weiss. Graustufen holen aus so einem Blatt das ruhigere
+ * Bild und die kleinere Datei, und Farbe kostet bei einem Prospekt oder einem
+ * farbigen Vermerk nur einen Tap. Deshalb steht Farbe im Umschalter gleich
+ * daneben und nicht davor.
+ */
+export const DEFAULT_SCAN_FILTER: ScanFilter = 'grau'
 
 /** Kachelgrösse für die Helligkeitsschätzung, in Bildpunkten. */
 const TILE_TARGET = 24

@@ -8,6 +8,7 @@
 import { DETECT_EDGE, detectPageQuad } from './detect.ts'
 import { enhance, type ScanFilter } from './enhance.ts'
 import {
+  clampQuad,
   fullFrameQuad,
   outputSize,
   scaleQuad,
@@ -223,7 +224,14 @@ export function findCorners(canvas: HTMLCanvasElement): Quad {
   const quad = detectPageQuad(context.getImageData(0, 0, small.width, small.height))
   if (!quad) return fullFrameQuad(canvas.width, canvas.height)
 
-  return scaleQuad(quad, canvas.width / small.width, canvas.height / small.height)
+  // Nochmals ins Bild geholt: Das Hochrechnen auf die volle Auflösung kann eine
+  // Ecke, die am Rand des verkleinerten Bildes klebte, um Bruchteile eines
+  // Bildpunktes darüber hinausschieben.
+  return clampQuad(
+    scaleQuad(quad, canvas.width / small.width, canvas.height / small.height),
+    canvas.width,
+    canvas.height,
+  )
 }
 
 /** Entzerrt den gewählten Ausschnitt, bereitet ihn auf und gibt ein JPEG zurück. */
@@ -343,5 +351,11 @@ export async function buildUpload(pages: readonly ScanPage[], title: string): Pr
   return new File([buildPdfFromJpegs(jpegs)], `${name}.pdf`, { type: 'application/pdf' })
 }
 
-export type { Quad } from './geometry.ts'
-export { SCAN_FILTERS, SCAN_FILTER_LABELS, type ScanFilter } from './enhance.ts'
+export { nearestCorner } from './geometry.ts'
+export type { Point, Quad } from './geometry.ts'
+export {
+  DEFAULT_SCAN_FILTER,
+  SCAN_FILTERS,
+  SCAN_FILTER_LABELS,
+  type ScanFilter,
+} from './enhance.ts'

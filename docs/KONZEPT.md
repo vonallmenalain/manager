@@ -257,9 +257,21 @@ genommen und in dieser Sitzung nicht mehr nachgefragt. Darin wird die Seite gesu
 zurückgeführt), zur Kontrolle angezeigt und von Hand nachziehbar. Danach wird perspektivisch entzerrt und – der Schritt,
 der am meisten ausmacht – der Helligkeitsverlauf herausgerechnet: Jeder Bildpunkt wird
 durch die geschätzte Papierhelligkeit an seiner Stelle geteilt, womit der Schatten des
-eigenen Kopfes verschwindet. Zur Wahl stehen Farbe, Graustufen und Schwarz-Weiss.
-Gerechnet wird ohne Bildverarbeitungs-Bibliothek; OpenCV.js wöge ein Vielfaches der
-ganzen App.
+eigenen Kopfes verschwindet. Zur Wahl stehen Graustufen (die Vorauswahl – was hier
+eingescannt wird, ist fast immer schwarz auf weiss) und Farbe. Gerechnet wird ohne
+Bildverarbeitungs-Bibliothek; OpenCV.js wöge ein Vielfaches der ganzen App.
+
+**Die vier Ecken müssen erreichbar bleiben**, sonst ist die Kontrolle keine. Drei Dinge
+sorgen dafür. Erstens werden erkannte Ecken ins Bild geholt: Bei einem Blatt, das über den
+Sucher hinausragte, rechnet die Erkennung die abgeschnittene Ecke dorthin zurück, wo das
+Papier sie hätte – neben das Foto, wo kein Griff mehr zu sehen und keiner zu treffen ist.
+Zweitens liegt zwischen Foto und Bildschirmrand ein Rahmen, breiter als ein Griff: Eine
+Ecke auf der Bildkante bekommt ihren Kreis noch vollständig gezeichnet, statt halb im
+Nichts zu enden. Drittens nimmt die ganze Fläche die Berührung an und wählt die Ecke, die
+am nächsten liegt (bis 44 Punkte Abstand) – angefasst wird eine Randecke also mit einem
+Tippen weiter innen, weg von der Kante, an der ein Mobiltelefon die Bewegung lieber selbst
+als Wischen vom Rand auswertet. Der Abstand zum Griff bleibt beim Ziehen erhalten, damit
+die Ecke nicht unter den Finger springt.
 
 **Mehrere Seiten** landen zuerst in einem Stapel statt sofort in der Ablage. Jede
 übernommene Seite führt dorthin zurück; von dort geht es über „Weitere Seite" mit einer
@@ -280,9 +292,17 @@ ihm öffnet Android sofort die nackte Aufnahme-Ansicht, ohne es die Auswahl, üb
 die Kamera-App samt ihrem eigenen Dokumentenmodus öffnen lässt. Auch diese Fotos gehen in
 den Stapel, werden dort aber nicht nachbearbeitet – nur gedreht (EXIF) und verkleinert.
 
-**Erfassungs-Dialog** (erscheint direkt nach dem Upload, alles vorausgefüllt und optional):
-Titel · Kategorie · Datum · Zuständig (ich / Ehefrau / beide) · Status · Fällig am · Betrag.
-Ein Tap auf "Fertig" genügt, alles andere lässt sich später ergänzen.
+**Erfasst wird im Stapel, nicht danach**: Unter dem Titel stehen dieselben drei
+Auswahlfelder wie oben in der Detailansicht – Kategorie · Zuständig (samt „Beide") ·
+Status – und sie gehen mit dem Upload mit, als Formularfelder vor der Datei. Wer die Post
+gerade in der Hand hatte, weiss in diesem Moment, wohin sie gehört und wen sie angeht;
+danach hiesse es, das Dokument in der Liste wiederzufinden und dreimal auszuwählen – und
+dann bleibt es liegen. Alles davon ist freiwillig: Ohne Angabe liegt das Dokument
+unsortiert, für beide und pendent in der Ablage, wie bisher. Eine Kategorie, die es nicht
+mehr gibt, verwirft der Server still – ein abgewiesener Upload wäre die schlechtere
+Antwort, wenn die Datei schon übertragen ist. Ist eine Kategorie gewählt, wandert die Datei
+gleich in deren Ordner statt später beim ersten Bearbeiten. Datum, Fälligkeit und Betrag
+bleiben der Detailansicht: Sie stehen meist im Dokument selbst und werden dort abgelesen.
 
 **Suchen:** Ein Suchfeld über allem. Sucht gleichzeitig in Titel, Absender, Notizen und
 OCR-Volltext, mit Treffer-Hervorhebung im Textausschnitt.
