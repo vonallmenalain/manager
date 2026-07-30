@@ -4,6 +4,7 @@ import type {
   CreateShoppingItemInput,
   CreateUserInput,
   DocumentDetail,
+  DocumentStatus,
   Donation,
   FinanceSettings,
   Health,
@@ -43,6 +44,21 @@ export class ApiRequestError extends Error {
     this.code = code
     this.fields = fields ?? {}
   }
+}
+
+/**
+ * Was beim Hochladen schon festgelegt werden kann.
+ *
+ * Alles freiwillig: Ohne Angabe entsteht der Titel aus dem Dateinamen, und das
+ * Dokument liegt unsortiert, für beide und pendent in der Ablage. Leere Werte
+ * werden nicht mitgeschickt – „keine Kategorie" ist beim Hochladen kein Wunsch,
+ * sondern der Normalfall.
+ */
+export interface UploadDetails {
+  title?: string
+  categoryId?: string | null
+  assignedTo?: string | null
+  status?: DocumentStatus
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -168,12 +184,15 @@ export const api = {
 
   getDocument: (id: string) => request<{ document: DocumentDetail }>(`/api/documents/${id}`),
 
-  uploadDocument: (file: File, allowDuplicate = false, title?: string) => {
+  uploadDocument: (file: File, allowDuplicate = false, details: UploadDetails = {}) => {
     const body = new FormData()
-    // Der Titel muss vor der Datei stehen: Der Server liest den Datenstrom
+    // Alle Felder müssen vor der Datei stehen: Der Server liest den Datenstrom
     // der Reihe nach und hat beim Empfang der Datei nur die Felder zur Hand,
     // die vorher kamen.
-    if (title) body.append('title', title)
+    if (details.title) body.append('title', details.title)
+    if (details.categoryId) body.append('categoryId', details.categoryId)
+    if (details.assignedTo) body.append('assignedTo', details.assignedTo)
+    if (details.status) body.append('status', details.status)
     body.append('file', file)
     // Kein content-type setzen: Der Browser muss die multipart-Grenze selbst
     // bestimmen, sonst kann der Server den Datenstrom nicht zerlegen.

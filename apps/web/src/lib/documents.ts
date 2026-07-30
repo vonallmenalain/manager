@@ -9,7 +9,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
-import { api, API_BASE, ApiRequestError } from './api'
+import { api, API_BASE, ApiRequestError, type UploadDetails } from './api'
 
 export interface DocumentFilters {
   q?: string
@@ -143,13 +143,11 @@ export function useUploadDocument() {
     mutationFn: ({
       file,
       allowDuplicate,
-      title,
-    }: {
+      ...details
+    }: UploadDetails & {
       file: File
       allowDuplicate?: boolean
-      /** Ohne Angabe entsteht der Titel serverseitig aus dem Dateinamen. */
-      title?: string
-    }) => api.uploadDocument(file, allowDuplicate, title),
+    }) => api.uploadDocument(file, allowDuplicate, details),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
     },
@@ -321,5 +319,5 @@ export function usePrefetchPreviewPage(id: string | undefined, page: number, ena
   useQuery(previewPageQuery(id, page, enabled))
 }
 
-export type { Category, DocumentDetail, ManagedDocument, UpdateDocumentInput }
+export type { Category, DocumentDetail, ManagedDocument, UpdateDocumentInput, UploadDetails }
 export { ApiRequestError }

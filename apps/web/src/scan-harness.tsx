@@ -6,11 +6,12 @@
  * echten Browser anschauen lassen. Mit ?portal=0 wird die Fläche wie früher
  * als Kind des Inhalts gezeichnet – zum Vergleich.
  */
+import { DEFAULT_DOCUMENT_STATUS } from '@manager/shared'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { DocumentScanner } from './components/DocumentScanner'
-import { PageTray } from './components/PageTray'
+import { PageTray, type TrayDetails } from './components/PageTray'
 import {
   createPage,
   defaultScanTitle,
@@ -24,7 +25,12 @@ const usePortal = new URLSearchParams(location.search).get('portal') !== '0'
 
 function Harness() {
   const [pages, setPages] = useState<ScanPage[]>([])
-  const [title, setTitle] = useState('')
+  const [details, setDetails] = useState<TrayDetails>({
+    title: '',
+    categoryId: null,
+    assignedTo: null,
+    status: DEFAULT_DOCUMENT_STATUS,
+  })
   const [open, setOpen] = useState(true)
 
   return (
@@ -63,9 +69,13 @@ function Harness() {
         ) : pages.length > 0 ? (
           <PageTray
             pages={pages}
-            title={title}
-            onTitleChange={setTitle}
+            details={details}
+            onDetailsChange={setDetails}
             defaultTitle={defaultScanTitle()}
+            // Der Prüfstand hat keinen Server – die Auswahl bleibt bei
+            // „Unsortiert" und „Beide", der Status ist die einzige echte Wahl.
+            categories={[]}
+            users={[]}
             busy={false}
             onAddPage={() => setOpen(true)}
             onRemove={(id) => {

@@ -5,7 +5,6 @@ import {
   ALLOWED_MIME_TYPES,
   API_ERROR_CODES,
   buildSearchText,
-  DEFAULT_DOCUMENT_STATUS,
   DOCUMENT_STATUSES,
   documentQuerySchema,
   MAX_UPLOAD_BYTES,
@@ -14,6 +13,7 @@ import {
   UNASSIGNED,
   UNCATEGORIZED,
   updateDocumentSchema,
+  type DocumentStatus,
   type PreviewInfo,
 } from '@manager/shared'
 import {
@@ -34,7 +34,7 @@ import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
 import { ocrWorker } from '../ocr/index.js'
-import { categories, documents, type DocumentRow } from '../db/schema.js'
+import { categories, documents, users, type DocumentRow } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
 import {
   countPdfPages,
@@ -61,7 +61,12 @@ import {
   resolveInStorage,
   storeTemporarily,
 } from '../lib/storage.js'
-import { titleFromFields, titleFromFilename } from '../lib/upload-title.js'
+import {
+  metadataFromFields,
+  titleFromFields,
+  titleFromFilename,
+  type UploadMetadata,
+} from '../lib/upload-fields.js'
 
 const allowedMimeTypes = new Set<string>(ALLOWED_MIME_TYPES)
 
@@ -99,6 +104,41 @@ async function categoryNameFor(categoryId: string | null): Promise<string | null
     .where(eq(categories.id, categoryId))
     .limit(1)
   return rows[0]?.name ?? null
+}
+
+/**
+ * Prüft die Angaben aus dem Formular gegen die Datenbank.
+ *
+ * Eine Kennung, hinter der keine Kategorie und keine Person steht, wird still
+ * verworfen: Das Dokument liegt dann unsortiert beziehungsweise bei beiden – im
+ * Normalfall die Folge einer veralteten Kategorienliste im Browser, und dafür
+ * ist ein abgewiesener Upload die falsche Antwort. Beim Fremdschlüssel der
+ * Datenbank wäre er eine abgebrochene Anfrage mitten im Ablegen.
+ */
+async function verifyUploadMetadata(wanted: UploadMetadata): Promise<{
+  categoryId: string | null
+  categoryName: string | null
+  assignedTo: string | null
+  status: DocumentStatus
+}> {
+  const categoryName = await categoryNameFor(wanted.categoryId)
+
+  let assignedTo: string | null = null
+  if (wanted.assignedTo) {
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, wanted.assignedTo))
+      .limit(1)
+    assignedTo = rows[0]?.id ?? null
+  }
+
+  return {
+    categoryId: categoryName === null ? null : wanted.categoryId,
+    categoryName,
+    assignedTo,
+    status: wanted.status,
+  }
 }
 
 const documentRoutes: FastifyPluginAsync = async (fastify) => {
@@ -170,13 +210,17 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Das Feld steht im Formular vor der Datei und ist deshalb hier bereits
-    // gelesen – kommt keines, bleibt es beim Dateinamen.
+    // Die Felder stehen im Formular vor der Datei und sind deshalb hier bereits
+    // gelesen – kommt keines, bleibt es beim Dateinamen und bei den Vorgaben.
     const title = titleFromFields(upload.fields) ?? titleFromFilename(upload.filename)
+    const metadata = await verifyUploadMetadata(metadataFromFields(upload.fields))
     const docDate = today()
+    // Der Kategoriename gehört von Anfang an in den Pfad: Wer die Kategorie
+    // schon im Stapel festlegt, soll die Datei nicht erst unter „Unsortiert"
+    // ablegen und beim ersten Bearbeiten dorthin verschieben lassen.
     const storagePath = buildStoragePath({
       docDate,
-      categoryName: null,
+      categoryName: metadata.categoryName,
       title,
       documentId,
       extension: extensionFor(upload.mimetype, upload.filename),
@@ -195,7 +239,9 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         sha256: stored.sha256,
         uploadedBy: user.id,
         docDate,
-        status: DEFAULT_DOCUMENT_STATUS,
+        categoryId: metadata.categoryId,
+        assignedTo: metadata.assignedTo,
+        status: metadata.status,
         searchText: buildSearchText({ title }),
       })
       .returning()

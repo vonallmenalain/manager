@@ -271,6 +271,50 @@ export function isPlausibleQuad(quad: Quad, width: number, height: number): bool
   return true
 }
 
+/**
+ * Zieht Ecken, die ausserhalb des Bildes liegen, an den Bildrand.
+ *
+ * Die Erkennung rechnet eine abgeschnittene Ecke dorthin zurück, wo das Blatt
+ * sie hätte, wenn der Sucher weiter gereicht hätte – bei einem Brief, der über
+ * den Bildrand hinausragte, liegt sie dann neben dem Foto. Geometrisch ist das
+ * richtig, brauchbar ist es nicht: Dort gibt es keine Bildpunkte zum Entzerren,
+ * und der Griff zum Verschieben wäre ausserhalb der Anzeige und damit nicht
+ * mehr zu erreichen.
+ *
+ * Am Bildrand ist die Ecke am richtigen Ort: Mehr als das Fotografierte kann
+ * kein Beschnitt hergeben.
+ */
+export function clampQuad(quad: Quad, width: number, height: number): Quad {
+  const inside = (point: Point): Point => ({
+    x: Math.min(Math.max(point.x, 0), width),
+    y: Math.min(Math.max(point.y, 0), height),
+  })
+  return [inside(quad[0]), inside(quad[1]), inside(quad[2]), inside(quad[3])]
+}
+
+/**
+ * Welche Ecke zu einer Berührung gehört – oder null, wenn keine nahe genug liegt.
+ *
+ * Getroffen werden muss nicht der Griff selbst, sondern nur seine Umgebung.
+ * Damit lässt sich auch eine Ecke am äussersten Bildrand anfassen: mit einem
+ * Tippen weiter innen, weg von der Kante, an der ein Mobiltelefon die Bewegung
+ * lieber selbst auswertet.
+ */
+export function nearestCorner(quad: Quad, point: Point, maxDistance: number): number | null {
+  let nearest = -1
+  let nearestDistance = Infinity
+
+  for (let index = 0; index < quad.length; index += 1) {
+    const gap = distance(quad[index] as Point, point)
+    if (gap < nearestDistance) {
+      nearestDistance = gap
+      nearest = index
+    }
+  }
+
+  return nearest !== -1 && nearestDistance <= maxDistance ? nearest : null
+}
+
 /** Der volle Bildausschnitt, leicht eingerückt – der Rückfall ohne Erkennung. */
 export function fullFrameQuad(width: number, height: number, inset = 0.04): Quad {
   const x = width * inset
