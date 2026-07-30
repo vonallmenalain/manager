@@ -1,6 +1,6 @@
 import type { PublicUser } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 import { api, ApiRequestError } from '../lib/api'
 import { useLogout } from '../lib/session'
@@ -24,11 +24,32 @@ import { Modal, ModalCloseButton } from './Modal'
 export function ProfileMenu({ user }: { user: PublicUser }) {
   const [open, setOpen] = useState(false)
   const [household, setHousehold] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const logout = useLogout()
+
+  // Ein Griff irgendwo anders schliesst das Menü – über einen Horcher auf dem
+  // ganzen Dokument, nicht über eine unsichtbare Fläche dahinter. Die gab es
+  // hier schon einmal, als bildschirmfüllend gedachter position:fixed-Knopf.
+  // Er deckte in Wahrheit nur die Kopfzeile ab: Deren backdrop-blur macht sie
+  // zum Bezugsrahmen für fixed-Nachfahren, inset-0 endete also an ihrem Rand.
+  // Ein Tipp in den Inhalt liess das Menü stehen – und der auf das eigene
+  // Profilbild traf statt des Knopfs die Fläche darüber.
+  useEffect(() => {
+    if (!open) return
+
+    function onPointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && menuRef.current?.contains(event.target)) return
+      setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
 
   return (
     <>
       <div
+        ref={menuRef}
         className="relative"
         onKeyDown={(event) => {
           if (event.key === 'Escape' && open) {
@@ -54,51 +75,43 @@ export function ProfileMenu({ user }: { user: PublicUser }) {
         </button>
 
         {open ? (
-          <>
-            {/* Fängt den Griff daneben ab – sonst bliebe das Menü offen. */}
-            <button
-              className="fixed inset-0 z-20 cursor-default"
-              onClick={() => setOpen(false)}
-              aria-label="Menü schliessen"
-            />
-            <div
-              role="menu"
-              className="absolute left-0 top-12 z-30 w-64 rounded-2xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900"
-            >
-              <div className="px-3 py-2">
-                <p className="truncate text-sm font-semibold">{user.name}</p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
-              </div>
-
-              {user.isAdmin ? (
-                <>
-                  <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
-                  <BackendState />
-                  <button
-                    role="menuitem"
-                    onClick={() => {
-                      setOpen(false)
-                      setHousehold(true)
-                    }}
-                    className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10"
-                  >
-                    <PlusIcon className="size-4" />
-                    Mitglied hinzufügen
-                  </button>
-                </>
-              ) : null}
-
-              <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
-              <button
-                role="menuitem"
-                onClick={() => logout.mutate()}
-                className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10"
-              >
-                <LogoutIcon className="size-4" />
-                Abmelden
-              </button>
+          <div
+            role="menu"
+            className="absolute left-0 top-12 z-30 w-64 rounded-2xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="px-3 py-2">
+              <p className="truncate text-sm font-semibold">{user.name}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
             </div>
-          </>
+
+            {user.isAdmin ? (
+              <>
+                <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
+                <BackendState />
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false)
+                    setHousehold(true)
+                  }}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10"
+                >
+                  <PlusIcon className="size-4" />
+                  Mitglied hinzufügen
+                </button>
+              </>
+            ) : null}
+
+            <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
+            <button
+              role="menuitem"
+              onClick={() => logout.mutate()}
+              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10"
+            >
+              <LogoutIcon className="size-4" />
+              Abmelden
+            </button>
+          </div>
         ) : null}
       </div>
 
