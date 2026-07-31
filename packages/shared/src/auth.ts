@@ -41,25 +41,20 @@ export type SetupInput = z.infer<typeof setupSchema>
 /**
  * Der Haushalt hat einen Verwalter, und das ist dieses Konto.
  *
- * Bewusst eine feste Liste und keine Rollentabelle: Es gibt genau einen, der
- * die App betreibt, und er ändert sich nicht. Eine Tabelle mit Rollen, Rechten
- * und einer Oberfläche zum Vergeben wäre Verwaltung für eine Entscheidung, die
+ * Bewusst eine Adresse und keine Rollentabelle: Es gibt genau einen, der die
+ * App betreibt, und er ändert sich nicht. Eine Tabelle mit Rollen, Rechten und
+ * einer Oberfläche zum Vergeben wäre Verwaltung für eine Entscheidung, die
  * längst getroffen ist.
- *
- * Zwei Adressen stehen darin, weil dieselbe Person die App unter zwei Konten
- * erreichen kann – die Liste ist kein „mehrere Verwalter", sondern mehrere
- * Türen für denselben.
  *
  * Verwalter heisst nicht „darf mehr sehen" – Dokumente, Notizen und Finanzen
  * gehören dem Haushalt gemeinsam. Es heisst: darf den Haushalt selbst ändern
  * (Mitglieder anlegen, Kategorien umbenennen und löschen) und sieht, ob der
  * Server erreichbar ist.
  */
-export const ADMIN_EMAILS = ['vonallmenalain@gmail.com', 'alain.sc2@gmail.com'] as const
+export const ADMIN_EMAIL = 'alain.sc2@gmail.com'
 
 export function isAdminEmail(email: string): boolean {
-  const normalized = email.trim().toLowerCase()
-  return ADMIN_EMAILS.some((entry) => entry === normalized)
+  return email.trim().toLowerCase() === ADMIN_EMAIL
 }
 
 /** Öffentliches Nutzerprofil – enthält bewusst keinen Passwort-Hash. */

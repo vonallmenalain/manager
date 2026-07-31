@@ -222,15 +222,14 @@ Adresse und das Abmelden. Vorher stand daneben „Angemeldet" – eine Zeile, di
 was man nicht schon sieht – und ein Knopf zum Abmelden, den man täglich sah und selten
 brauchte.
 
-**Verwalter des Haushalts** ist genau eine Person (`ADMIN_EMAILS` im geteilten Paket –
-mehrere Adressen, aber derselbe Mensch: dieselbe Person erreicht die App unter zwei
-Konten). Es gibt keine Rollentabelle: Es gibt einen, der die App betreibt, und er ändert
-sich nicht. Verwalter heisst nicht „sieht mehr" – Dokumente, Notizen und Finanzen gehören
-dem Haushalt gemeinsam. Es heisst: darf **Mitglieder anlegen**, darf **Kategorien
-umbenennen und löschen**, und sieht im Kontomenü, **ob der Server erreichbar ist** (ohne
-Versionsnummer – die beantwortet keine Frage, die man sich am Handy stellt). Alles davon
-steckt im Kontomenü und nicht mehr als Kachel auf dem Startbildschirm: Das ist Betrieb,
-nicht Haushalt.
+**Verwalter des Haushalts** ist genau ein Konto (`ADMIN_EMAIL` im geteilten Paket). Es
+gibt keine Rollentabelle: Es gibt einen, der die App betreibt, und er ändert sich nicht.
+Verwalter heisst nicht „sieht mehr" – Dokumente, Notizen und Finanzen gehören dem Haushalt
+gemeinsam. Es heisst: darf **Mitglieder anlegen**, darf **Kategorien umbenennen und
+löschen**, und sieht im Kontomenü, **ob der Server erreichbar ist** (ohne Versionsnummer –
+die beantwortet keine Frage, die man sich am Handy stellt). Alles davon steckt im
+Kontomenü und nicht mehr als Kachel auf dem Startbildschirm: Das ist Betrieb, nicht
+Haushalt.
 
 **Kategorien** stehen ebenfalls dort, aber für alle: Anlegen darf jeder, löschen und
 umbenennen nur der Verwalter. Die Grenze verläuft dort, weil beides ungleich schwer wiegt.
@@ -702,7 +701,7 @@ sie bestimmt, welcher der beiden Wege in Etappe 2 gebaut wird (oder beide).
 ## 9. Sicherheit und Zugang
 
 * **Konten:** Zwei, manuell angelegt, keine offene Registrierung. Anlegen darf nur der
-  Verwalter des Haushalts (`ADMIN_EMAILS`), geprüft im Server über `requireAdmin` – ein neues
+  Verwalter des Haushalts (`ADMIN_EMAIL`), geprüft im Server über `requireAdmin` – ein neues
   Konto ist der eine Vorgang, der Zugang schafft. Über dieselbe Prüfung läuft das
   Umbenennen und Löschen von Kategorien; angelegt werden dürfen sie von jedem angemeldeten
   Konto.
