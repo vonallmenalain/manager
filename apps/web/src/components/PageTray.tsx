@@ -1,8 +1,10 @@
 import {
+  DEFAULT_BEREICH,
   DOCUMENT_STATUS_LABELS,
   DOCUMENT_STATUSES,
   formatFileSize,
   UNASSIGNED_LABEL,
+  type Bereich,
   type Category,
   type DocumentStatus,
   type PublicUser,
@@ -25,6 +27,18 @@ export interface TrayDetails {
   assignedTo: string | null
   status: DocumentStatus
 }
+
+/**
+ * Welche Auswahlfelder unter dem Titel stehen.
+ *
+ * Der Haushalt braucht alle drei; die DocBase nur die Kategorie – dort gibt es
+ * niemanden, der zuständig wäre, und nichts, was noch zu erledigen ist. Die
+ * Felder wegzulassen ist deshalb keine Vereinfachung, sondern die richtige
+ * Antwort: Ein Feld, das immer denselben Wert trägt, ist eine Frage, die
+ * niemand gestellt hat.
+ */
+export type TrayField = 'kategorie' | 'zustaendig' | 'status'
+export const ALLE_TRAY_FELDER: readonly TrayField[] = ['kategorie', 'zustaendig', 'status']
 
 /**
  * Die gesammelten Seiten, bevor sie ein Dokument werden.
@@ -55,6 +69,9 @@ export function PageTray({
   onRotate,
   onDiscard,
   onUpload,
+  felder = ALLE_TRAY_FELDER,
+  bereich = DEFAULT_BEREICH,
+  akzent = 'bg-brand-800',
 }: {
   pages: readonly ScanPage[]
   details: TrayDetails
@@ -72,6 +89,12 @@ export function PageTray({
   onRotate: (id: string) => void
   onDiscard: () => void
   onUpload: () => void
+  /** Welche Auswahlfelder unter dem Titel stehen. */
+  felder?: readonly TrayField[]
+  /** In welche Sammlung das Dokument gehört – bestimmt auch neue Kategorien. */
+  bereich?: Bereich
+  /** Farbe des Ablegen-Knopfes – sie gehört der App, in der der Stapel steht. */
+  akzent?: string
 }) {
   useFullScreenOverlay()
   const bytes = pages.reduce((sum, page) => sum + page.blob.size, 0)
@@ -177,36 +200,43 @@ export function PageTray({
             diesem Moment, in welche Kategorie sie gehört und wen sie angeht.
             Danach hiesse es, das Dokument in der Liste wiederzufinden und
             dreimal auszuwählen – und meistens bleibt es dann liegen. */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid gap-2 ${felder.length > 1 ? 'grid-cols-3' : 'grid-cols-1'}`}>
           {/* Die Kategorie lässt sich hier auch anlegen. Genau hier ist der
               Moment dafür: Das Blatt liegt noch auf dem Tisch, und wer jetzt
               merkt, dass die Schublade fehlt, macht sie in einem Griff auf. */}
-          <CategorySelect
-            categories={categories}
-            value={details.categoryId ?? ''}
-            disabled={busy}
-            onChange={(value) => onDetailsChange({ ...details, categoryId: value || null })}
-          />
-          <TraySelect
-            label="Zuständig"
-            value={details.assignedTo ?? ''}
-            disabled={busy}
-            onChange={(value) => onDetailsChange({ ...details, assignedTo: value || null })}
-            options={[
-              { value: '', label: UNASSIGNED_LABEL },
-              ...users.map((entry) => ({ value: entry.id, label: entry.name })),
-            ]}
-          />
-          <TraySelect
-            label="Status"
-            value={details.status}
-            disabled={busy}
-            onChange={(value) => onDetailsChange({ ...details, status: value as DocumentStatus })}
-            options={DOCUMENT_STATUSES.map((status) => ({
-              value: status,
-              label: DOCUMENT_STATUS_LABELS[status],
-            }))}
-          />
+          {felder.includes('kategorie') ? (
+            <CategorySelect
+              categories={categories}
+              bereich={bereich}
+              value={details.categoryId ?? ''}
+              disabled={busy}
+              onChange={(value) => onDetailsChange({ ...details, categoryId: value || null })}
+            />
+          ) : null}
+          {felder.includes('zustaendig') ? (
+            <TraySelect
+              label="Zuständig"
+              value={details.assignedTo ?? ''}
+              disabled={busy}
+              onChange={(value) => onDetailsChange({ ...details, assignedTo: value || null })}
+              options={[
+                { value: '', label: UNASSIGNED_LABEL },
+                ...users.map((entry) => ({ value: entry.id, label: entry.name })),
+              ]}
+            />
+          ) : null}
+          {felder.includes('status') ? (
+            <TraySelect
+              label="Status"
+              value={details.status}
+              disabled={busy}
+              onChange={(value) => onDetailsChange({ ...details, status: value as DocumentStatus })}
+              options={DOCUMENT_STATUSES.map((status) => ({
+                value: status,
+                label: DOCUMENT_STATUS_LABELS[status],
+              }))}
+            />
+          ) : null}
         </div>
 
         <div className="flex gap-2">
@@ -220,7 +250,7 @@ export function PageTray({
           <button
             onClick={onUpload}
             disabled={busy || pages.length === 0}
-            className="min-h-12 flex-1 rounded-xl bg-brand-800 text-base font-semibold text-white disabled:opacity-50"
+            className={`min-h-12 flex-1 rounded-xl text-base font-semibold text-white disabled:opacity-50 ${akzent}`}
           >
             {busy ? 'Wird abgelegt …' : 'Ablegen'}
           </button>

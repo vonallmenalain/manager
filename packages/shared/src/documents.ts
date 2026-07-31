@@ -1,6 +1,44 @@
 import { z } from 'zod'
 
 /**
+ * Zwei Sammlungen, ein Mechanismus.
+ *
+ * Der Manager verwaltet den Haushalt: Rechnungen, Verträge, Post. Die DocBase
+ * ist etwas anderes – Studien, Kursunterlagen, eigene Notizen zu medizinischen
+ * Themen – und soll dem Haushalt nirgends begegnen: keine Verknüpfung, keine
+ * gemeinsame Liste, eine eigene App auf dem Startbildschirm.
+ *
+ * Getrennt wird deshalb an genau einer Stelle: einer Spalte. Alles darunter –
+ * Hochladen, Texterkennung, Vorschau, Papierkorb – bleibt ein einziger
+ * Mechanismus. Zwei Sätze Tabellen und zwei Warteschlangen wären dieselbe
+ * Sache zweimal, und die zweite hinkte der ersten ab dem ersten Tag hinterher.
+ *
+ * Die Ablage trennt hingegen wirklich: Jeder Bereich hat seinen eigenen
+ * Wurzelordner auf dem NAS.
+ */
+export const BEREICHE = ['manager', 'docbase'] as const
+export type Bereich = (typeof BEREICHE)[number]
+
+/**
+ * Ohne Angabe ist ein Dokument ein Haushaltsdokument. Der Standard steht hier
+ * und nicht bei jedem Aufruf: Eine Abfrage, die den Bereich vergisst, soll
+ * nichts aus der DocBase zeigen – nicht alles aus beiden.
+ */
+export const DEFAULT_BEREICH: Bereich = 'manager'
+
+export const bereichSchema = z.enum(BEREICHE)
+
+/**
+ * Der Ordner der DocBase in der Dokumentenablage.
+ *
+ * Er liegt in derselben Freigabe wie der Haushalt, eine Ebene darunter – also
+ * `…/Dokumente/Manager/DocBase`. Ein eigenes Volume wäre eine zweite Sache,
+ * die beim Einrichten schiefgehen kann; ein Unterordner ist beim Backup,
+ * beim Zugriff über SMB und in der Rechtevergabe einfach schon dabei.
+ */
+export const DOCBASE_DIR = 'DocBase'
+
+/**
  * Bewusst nur drei Zustände. Jeder weitere klingt beim Entwerfen sinnvoll und
  * führt im Alltag dazu, dass man vor dem Ablegen erst nachdenken muss.
  *
@@ -86,8 +124,11 @@ export const categoryNameSchema = z
   .transform((value) => value.replace(/\s+/g, ' ').trim())
   .pipe(z.string().min(1, 'Name fehlt').max(40, 'Name ist zu lang'))
 
-export const createCategorySchema = z.object({ name: categoryNameSchema })
-export type CreateCategoryInput = z.infer<typeof createCategorySchema>
+export const createCategorySchema = z.object({
+  name: categoryNameSchema,
+  bereich: bereichSchema.default(DEFAULT_BEREICH),
+})
+export type CreateCategoryInput = z.input<typeof createCategorySchema>
 
 export const updateCategorySchema = z.object({ name: categoryNameSchema })
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>
@@ -277,6 +318,11 @@ const commaSeparated = z
   .pipe(z.array(z.string().max(60)).max(50))
 
 export const documentQuerySchema = z.object({
+  /**
+   * Welche Sammlung gemeint ist. Ohne Angabe der Haushalt – eine Abfrage, die
+   * den Bereich vergisst, zeigt nichts aus der DocBase.
+   */
+  bereich: bereichSchema.default(DEFAULT_BEREICH),
   /** Freitext über Titel, Absender und Notizen. Ab Etappe 3 auch über OCR-Text. */
   q: z.string().trim().max(200).optional(),
   /** Eine oder mehrere Zuständigkeiten; `beide` steht für „niemandem zugeteilt". */

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 /**
  * Zeitstempel werden als ISO-8601-Text gespeichert, nicht als Unix-Zahl.
@@ -49,13 +49,26 @@ export const sessions = sqliteTable(
 
 export type Session = typeof sessions.$inferSelect
 
-export const categories = sqliteTable('categories', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull().unique(),
-  icon: text('icon').notNull().default('folder'),
-  sortOrder: integer('sort_order').notNull().default(100),
-  createdAt: text('created_at').notNull().default(now),
-})
+export const categories = sqliteTable(
+  'categories',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    icon: text('icon').notNull().default('folder'),
+    sortOrder: integer('sort_order').notNull().default(100),
+    /**
+     * Zu welcher Sammlung die Kategorie gehört: 'manager' oder 'docbase'.
+     * Der Haushalt und die medizinische Sammlung führen getrennte Listen.
+     */
+    bereich: text('bereich').notNull().default('manager'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [
+    // Eindeutig je Bereich und nicht mehr global: „Sonstiges" gibt es im
+    // Haushalt und in der DocBase, und das sind zwei verschiedene Schubladen.
+    uniqueIndex('categories_bereich_name_idx').on(table.bereich, table.name),
+  ],
+)
 
 export type Category = typeof categories.$inferSelect
 
@@ -78,6 +91,14 @@ export const documents = sqliteTable(
       .notNull()
       .references(() => users.id),
     uploadedAt: text('uploaded_at').notNull().default(now),
+
+    /**
+     * Zu welcher Sammlung das Dokument gehört: 'manager' (der Haushalt) oder
+     * 'docbase' (die medizinische Sammlung). Die beiden begegnen einander in
+     * der App nirgends; getrennt wird an dieser einen Spalte, während
+     * Texterkennung, Vorschau und Papierkorb ein einziger Mechanismus bleiben.
+     */
+    bereich: text('bereich').notNull().default('manager'),
 
     /** Datum auf dem Dokument. Beim Upload zunächst das Uploaddatum. */
     docDate: text('doc_date').notNull(),
@@ -121,6 +142,8 @@ export const documents = sqliteTable(
     updatedAt: text('updated_at').notNull().default(now),
   },
   (table) => [
+    // Jede Liste filtert zuerst danach – der Haushalt sieht nie die DocBase.
+    index('documents_bereich_idx').on(table.bereich),
     index('documents_status_idx').on(table.status),
     index('documents_category_idx').on(table.categoryId),
     index('documents_assigned_idx').on(table.assignedTo),

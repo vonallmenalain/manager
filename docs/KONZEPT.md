@@ -122,12 +122,23 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
 │   ├── Steuererklaerung/
 │   └── Unsortiert/                      ← alles frisch Hochgeladene
 ├── 2025/
+├── DocBase/                             ← die medizinische Sammlung, gleich aufgebaut
+│   ├── 2026/
+│   │   ├── Studien/
+│   │   └── Unsortiert/
+│   ├── .previews/
+│   └── .trash/
 ├── .previews/                           ← gerasterte PDF-Seiten, jederzeit neu erzeugbar
 └── .trash/                              ← 30 Tage Papierkorb, dann echt gelöscht
 ```
 
 * Dateiname = `Datum__Titel__kurz-ID`. Die 4-stellige ID am Ende macht ihn eindeutig,
   auch wenn zwei Dokumente gleich heissen.
+* **`DocBase/` ist ein Unterordner und kein zweites Volume.** Beides wäre möglich; ein
+  Unterordner ist beim Backup, beim Zugriff über SMB und in der Rechtevergabe aber schon
+  dabei, statt ein zweites Mal eingerichtet werden zu müssen. Innerhalb davon gilt exakt
+  dieselbe Struktur samt eigenem `.trash` und `.previews`; die Pfade in der Datenbank sind
+  relativ zum jeweiligen Wurzelordner, weshalb jede Ablage-Funktion dieselbe bleibt.
 * Die Datenbank kennt nur den **relativen Pfad**. Wird der Storage-Ordner verschoben,
   ändert sich nur eine Umgebungsvariable.
 * Bei Änderung von Titel/Kategorie/Datum benennt die App die Datei atomar um und
@@ -159,7 +170,12 @@ erDiagram
 * `users` – id, name, email, password_hash, avatar_color, created_at
 * `documents` – id, title, storage_path, mime, size_bytes, sha256, **uploaded_by**,
   **uploaded_at**, doc_date, category_id, **assigned_to**, **status**, due_date,
-  amount_chf, vendor, ocr_status, ocr_text, notes, deleted_at
+  amount_chf, vendor, ocr_status, ocr_text, notes, deleted_at, **bereich**
+* `documents.bereich` / `categories.bereich` – `manager` (der Haushalt) oder `docbase`
+  (die medizinische Sammlung, siehe 6.1a). Die einzige Trennlinie zwischen den beiden
+  Apps: Jede Liste filtert zuerst danach, und ohne Angabe gilt der Haushalt – eine
+  Abfrage, die den Bereich vergisst, zeigt nichts aus der DocBase statt alles aus beiden.
+  Texterkennung, Vorschau und Papierkorb bleiben ein einziger Mechanismus
 * `categories` – id, name, icon, sort_order (Steuererklärung, Kinder, Rechnungen,
   Wichtige Dokumente, Sonstiges). „Unsortiert" steht bewusst nicht darin: Das ist das
   Fehlen einer Zuordnung und damit der Zustand jedes frisch hochgeladenen Dokuments –
@@ -168,7 +184,9 @@ erDiagram
   keine einzige Kategorie da ist. Früher wurde bei jedem Start abgeglichen und entfernt,
   was nicht im Code stand – seit sich Kategorien in der App anlegen und löschen lassen,
   überlebte eine selbst angelegte den nächsten Neustart sonst nicht, und eine gelöschte
-  käme zurück.
+  käme zurück. Der Bereich (`manager` / `docbase`) gehört zum Namen: Eindeutig ist er je
+  Bereich, nicht global – „Sonstiges" gibt es in beiden Sammlungen, und das sind zwei
+  verschiedene Schubladen.
 * `tags`, `document_tags` – freie Verschlagwortung neben den Kategorien
 * `documents.search_text` – Titel, Absender, Notiz und OCR-Text in einer vereinheitlichten
   Spalte; dieselbe Aufbereitung nutzen auch `notes.search_text` und die Einkaufsliste
@@ -386,6 +404,47 @@ auch dort gibt es keinen Speichern-Knopf mehr: geschrieben wird kurz nach dem le
 Tastendruck und beim Schliessen, wie bei den Notizen. Herunterladen und Bearbeiten sind
 zwei Zeichen neben dem Status statt zweier breiter Knöpfe unter der Vorschau – zwei
 Handgriffe, die man selten braucht, an der Stelle, an der das Dokument stehen sollte.
+
+### 6.1a DocBase – die medizinische Sammlung
+
+**Eine zweite App auf derselben Adresse**, unter `manager.alae.app/docbase`. Sie sammelt
+Studien, Kursunterlagen und eigene Notizen zu medizinischen Themen: hochladen oder
+scannen, danach über den Volltext wiederfinden.
+
+**Warum getrennt und nicht ein sechster Reiter?** Weil der Zweck ein anderer ist. Der
+Haushalt ist eine Liste, die man abarbeitet – etwas kommt an, jemand ist zuständig,
+irgendwann ist es erledigt. Eine Fachsammlung arbeitet man nicht ab, man schlägt darin
+nach. Beides in einer Liste hiesse, die Post täglich an dreissig Studien vorbeizuscrollen
+und in jeder Studie die Frage „wer ist zuständig?" stehen zu haben. Deshalb: eigene App,
+eigenes Symbol auf dem Startbildschirm, und vom Manager aus **kein einziger Verweis**
+hierher. Wer sie öffnet, hat sich dafür entschieden.
+
+**Was fehlt, ist Absicht.** Kein Status, keine Zuständigkeit, keine Fälligkeit, kein
+Betrag, kein Absender. Ein Feld, das immer denselben Wert trägt, ist eine Frage, die
+niemand gestellt hat – und drei davon machen aus dem Ablegen eine Formularübung. Übrig
+bleiben Titel, Datum, Kategorie und eine Notiz; dazu die Dateigrösse und der erkannte
+Text. Die Suche steht ganz oben statt hinter einem Knopf: Sie ist hier nicht ein Weg zum
+Dokument, sondern der Grund für die ganze Seite.
+
+**Kategorien fangen bei null an.** Nur „Sonstiges" wird angelegt. Welche Schubladen eine
+Fachsammlung braucht, zeigt sich am ersten Dutzend Dokumente; vorgegebene Kategorien
+wären Rateversuche, an denen man sich beim Einsortieren dann entlanghangelt. Angelegt
+werden sie wie im Manager aus jeder Auswahl heraus.
+
+**Geteilt wird alles darunter:** dieselbe Anmeldung (ein Haushalt, ein Passwort, ein
+Cookie), derselbe Server, dieselbe Texterkennung, derselbe Scanner samt Randerkennung und
+Kamerawahl. Getrennt wird an genau zwei Stellen – einer Spalte `bereich` in `documents`
+und `categories`, und einem eigenen Wurzelordner in der Ablage. Zwei Sätze Tabellen und
+zwei OCR-Warteschlangen wären dieselbe Sache zweimal, und die zweite hinkte der ersten ab
+dem ersten Tag hinterher.
+
+**Zwei installierbare Apps auf einer Adresse** brauchen zwei Manifeste, zwei Service
+Worker und zwei Geltungsbereiche (`/` und `/docbase/`). Der Browser wählt für eine Seite
+immer den längsten passenden Bereich, deshalb bleibt der Manager überall sonst zuständig.
+Gebaut wird zweimal (`vite.config.ts` und `vite.config.docbase.ts`, der zweite nach dem
+ersten und ohne den Ordner zu leeren); der Service Worker des Managers nimmt `/docbase`
+ausdrücklich aus seiner Navigationsregel aus, sonst lieferte er dort seine eigene Hülle
+aus – man tippt auf DocBase und landet im Haushalt.
 
 ### 6.2 Einkaufsliste
 
@@ -667,6 +726,13 @@ Manifest mit `display: standalone`, Icons bis 512 px, Maskable-Icon, Theme-Color
 `orientation: portrait`. Auf Android über den Installations-Prompt, auf iOS über
 "Zum Home-Bildschirm". Ab iOS 26 öffnen Home-Screen-Sites standardmässig als Web-App.
 
+**Zwei Apps, zwei Symbole.** Manager (`/`) und DocBase (`/docbase/`) sind getrennt
+installierbar und liegen nebeneinander auf dem Startbildschirm – unterschiedliche Namen,
+unterschiedliche Farben (Marineblau gegen Petrol), unterschiedliche Geltungsbereiche.
+Möglich wird das durch je ein eigenes Manifest und einen eigenen Service Worker; für eine
+Adresse gilt immer der längste passende Bereich. Die DocBase hat bewusst kein Teilen-Ziel:
+Das gehört zum Haushalt, wo täglich Post ankommt – in eine Sammlung legt man bewusst ab.
+
 **Offline:** App-Shell und zuletzt geladene Listen werden vorgehalten, ein Hinweisband
 zeigt an, dass keine Verbindung besteht – man sieht also weiterhin, was auf der
 Einkaufsliste steht und was in den Notizen. Änderungen ohne Netz sind noch nicht
@@ -793,7 +859,9 @@ eigenes Skript, …), übernehmen wir stattdessen genau dieses Muster – bewäh
 ```
 manager/
 ├── apps/
-│   ├── web/          React-PWA  → Netlify
+│   ├── web/          Zwei React-PWAs → Netlify
+│   │                   src/          Manager, unter /
+│   │                   src/docbase/  DocBase, unter /docbase
 │   └── api/          Fastify + OCR-Worker → Container
 ├── packages/
 │   └── shared/       Typen, Zod-Schemas, Berechnungslogik (von beiden genutzt)

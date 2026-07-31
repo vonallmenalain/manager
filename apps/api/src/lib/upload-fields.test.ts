@@ -83,16 +83,18 @@ describe('titleFromFields', () => {
 })
 
 describe('metadataFromFields', () => {
-  it('nimmt Kategorie, Zuständigkeit und Status mit', () => {
+  it('nimmt Bereich, Kategorie, Zuständigkeit und Status mit', () => {
     assert.deepEqual(
       metadataFromFields(
         fields({
+          bereich: 'docbase',
           categoryId: 'e6c0a4d2-0000-4000-8000-000000000001',
           assignedTo: 'e6c0a4d2-0000-4000-8000-000000000002',
           status: 'erledigt',
         }),
       ),
       {
+        bereich: 'docbase',
         categoryId: 'e6c0a4d2-0000-4000-8000-000000000001',
         assignedTo: 'e6c0a4d2-0000-4000-8000-000000000002',
         status: 'erledigt',
@@ -100,17 +102,25 @@ describe('metadataFromFields', () => {
     )
   })
 
-  it('bleibt ohne Angaben bei unsortiert, beide und pendent', () => {
+  it('bleibt ohne Angaben beim Haushalt: unsortiert, beide und pendent', () => {
     assert.deepEqual(metadataFromFields(undefined), {
+      bereich: 'manager',
       categoryId: null,
       assignedTo: null,
       status: 'pendent',
     })
     assert.deepEqual(metadataFromFields({}), {
+      bereich: 'manager',
       categoryId: null,
       assignedTo: null,
       status: 'pendent',
     })
+  })
+
+  it('verwirft einen unbekannten Bereich, statt in der DocBase zu landen', () => {
+    // Ein Tippfehler oder eine ältere Fassung der App darf kein Dokument in
+    // eine Sammlung schreiben, die es nicht gibt – dann eben in den Haushalt.
+    assert.equal(metadataFromFields(fields({ bereich: 'archiv' })).bereich, 'manager')
   })
 
   it('verwirft einen unbekannten Status, statt den Upload abzulehnen', () => {

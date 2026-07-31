@@ -92,6 +92,13 @@
       "when": 1785318326973,
       "tag": "0012_pendent_statt_offen",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1785509162359,
+      "tag": "0013_bereich_docbase",
+      "breakpoints": true
     }
   ]
 }

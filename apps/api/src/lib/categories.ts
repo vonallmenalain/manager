@@ -7,7 +7,7 @@
  * Liste ist deshalb auch eine Änderung an der Freigabe – und genau das steht
  * hier, an einer Stelle, statt in jeder Route noch einmal.
  */
-import { normalizeForSearch } from '@manager/shared'
+import { normalizeForSearch, type Bereich } from '@manager/shared'
 import { eq } from 'drizzle-orm'
 
 import { dirname } from 'node:path'
@@ -25,6 +25,7 @@ export interface CategoryView {
   name: string
   icon: string
   sortOrder: number
+  bereich: Bereich
 }
 
 /**
@@ -51,38 +52,45 @@ export function sameCategoryName(a: string, b: string): boolean {
   return normalizeForSearch(a) === normalizeForSearch(b)
 }
 
-/** Die Kategorie mit diesem Namen, `exceptId` ausgenommen (fürs Umbenennen). */
+const CATEGORY_COLUMNS = {
+  id: categories.id,
+  name: categories.name,
+  icon: categories.icon,
+  sortOrder: categories.sortOrder,
+  bereich: categories.bereich,
+}
+
+/**
+ * Die Kategorie mit diesem Namen im selben Bereich, `exceptId` ausgenommen
+ * (fürs Umbenennen). Der Haushalt und die DocBase dürfen beide „Sonstiges"
+ * haben – das sind zwei verschiedene Schubladen.
+ */
 export async function findCategoryByName(
+  bereich: Bereich,
   name: string,
   exceptId?: string,
 ): Promise<CategoryView | undefined> {
-  const rows = await listCategories()
+  const rows = await listCategories(bereich)
   return rows.find((row) => row.id !== exceptId && sameCategoryName(row.name, name))
 }
 
-export async function listCategories(): Promise<CategoryView[]> {
-  return db
-    .select({
-      id: categories.id,
-      name: categories.name,
-      icon: categories.icon,
-      sortOrder: categories.sortOrder,
-    })
+export async function listCategories(bereich: Bereich): Promise<CategoryView[]> {
+  const rows = await db
+    .select(CATEGORY_COLUMNS)
     .from(categories)
+    .where(eq(categories.bereich, bereich))
+  return rows.map((row) => ({ ...row, bereich: row.bereich as Bereich }))
 }
 
 export async function findCategory(id: string): Promise<CategoryView | undefined> {
   const rows = await db
-    .select({
-      id: categories.id,
-      name: categories.name,
-      icon: categories.icon,
-      sortOrder: categories.sortOrder,
-    })
+    .select(CATEGORY_COLUMNS)
     .from(categories)
     .where(eq(categories.id, id))
     .limit(1)
-  return rows[0]
+
+  const row = rows[0]
+  return row ? { ...row, bereich: row.bereich as Bereich } : undefined
 }
 
 interface RelocatableDocument {
@@ -91,6 +99,8 @@ interface RelocatableDocument {
   docDate: string
   storagePath: string
   deletedAt: string | null
+  /** Bestimmt, in welcher Ablage die Datei liegt. */
+  bereich: string
 }
 
 /** Die Dokumente einer Kategorie – samt allem, was der Pfad braucht. */
@@ -102,6 +112,7 @@ export async function documentsOfCategory(categoryId: string): Promise<Relocatab
       docDate: documents.docDate,
       storagePath: documents.storagePath,
       deletedAt: documents.deletedAt,
+      bereich: documents.bereich,
     })
     .from(documents)
     .where(eq(documents.categoryId, categoryId))
@@ -131,14 +142,15 @@ export async function relocateDocuments(
       extension: document.storagePath.split('.').pop() ?? 'bin',
     })
 
+    const bereich = document.bereich as Bereich
     try {
-      if (await moveWithinStorage(document.storagePath, nextPath)) {
+      if (await moveWithinStorage(bereich, document.storagePath, nextPath)) {
         await db
           .update(documents)
           .set({ storagePath: nextPath })
           .where(eq(documents.id, document.id))
         // War es das letzte Dokument im alten Ordner, verschwindet auch er.
-        await removeEmptyDirectory(dirname(document.storagePath))
+        await removeEmptyDirectory(bereich, dirname(document.storagePath))
       }
     } catch {
       // Absicht: siehe oben.

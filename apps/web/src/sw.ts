@@ -27,12 +27,16 @@ cleanupOutdatedCaches()
  * bedient. Ohne diese Regel zeigt ein Aufruf ohne Verbindung die
  * Dinosaurier-Seite des Browsers, obwohl die App längst installiert ist.
  *
- * Ausgenommen sind API-Aufrufe – die müssen immer echt zum Server – und der
- * Teilen-Endpunkt, der weiter unten eigens behandelt wird.
+ * Ausgenommen sind API-Aufrufe – die müssen immer echt zum Server –, der
+ * Teilen-Endpunkt, der weiter unten eigens behandelt wird, und /docbase:
+ * Dieser Worker hat den Geltungsbereich `/` und bekäme deshalb auch die
+ * Navigation zur DocBase zu sehen, solange deren eigener Worker noch nicht
+ * installiert ist. Er würde ihr die Hülle des Managers ausliefern – man
+ * tippt auf DocBase und landet im Haushalt.
  */
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'), {
-    denylist: [/^\/api\//, /^\/share-target/],
+    denylist: [/^\/api\//, /^\/share-target/, /^\/docbase/],
   }),
 )
 
