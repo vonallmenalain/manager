@@ -5,8 +5,9 @@ import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { api, ApiRequestError } from '../lib/api'
 import { useLogout } from '../lib/session'
 import { Button } from './Button'
+import { CategorySheet } from './CategorySheet'
 import { Field } from './Field'
-import { LogoutIcon, PlusIcon } from './icons'
+import { FolderIcon, LogoutIcon, PlusIcon } from './icons'
 import { Modal, ModalCloseButton } from './Modal'
 
 /**
@@ -24,6 +25,7 @@ import { Modal, ModalCloseButton } from './Modal'
 export function ProfileMenu({ user }: { user: PublicUser }) {
   const [open, setOpen] = useState(false)
   const [household, setHousehold] = useState(false)
+  const [categories, setCategories] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const logout = useLogout()
 
@@ -84,6 +86,23 @@ export function ProfileMenu({ user }: { user: PublicUser }) {
               <p className="truncate text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
             </div>
 
+            <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
+            {/* Die Kategorien gehören dem Haushalt und nicht dem Konto –
+                anlegen darf sie jeder. Aufgeräumt wird trotzdem hier: Wer
+                Ordnung in der Ablage machen will, sucht sie nicht auf dem
+                Startbildschirm, sondern dort, wo auch der Haushalt steht. */}
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                setCategories(true)
+              }}
+              className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm transition active:bg-black/5 dark:active:bg-white/10"
+            >
+              <FolderIcon className="size-4" />
+              Kategorien
+            </button>
+
             {user.isAdmin ? (
               <>
                 <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
@@ -116,6 +135,9 @@ export function ProfileMenu({ user }: { user: PublicUser }) {
       </div>
 
       {household ? <HouseholdSheet onClose={() => setHousehold(false)} /> : null}
+      {categories ? (
+        <CategorySheet isAdmin={user.isAdmin} onClose={() => setCategories(false)} />
+      ) : null}
     </>
   )
 }

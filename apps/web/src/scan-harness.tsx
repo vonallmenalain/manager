@@ -7,6 +7,7 @@
  * als Kind des Inhalts gezeichnet – zum Vergleich.
  */
 import { DEFAULT_DOCUMENT_STATUS } from '@manager/shared'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -121,4 +122,11 @@ function Harness() {
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Wurzelelement #root nicht gefunden')
-createRoot(container).render(<Harness />)
+// Der Seitenstapel bietet inzwischen an, eine Kategorie anzulegen – und das
+// geht über dieselben Anfragen wie in der App. Hier fehlt der Server dafür;
+// der Rahmen muss trotzdem stehen, sonst zerbricht der Prüfstand am Aufbau.
+createRoot(container).render(
+  <QueryClientProvider client={new QueryClient()}>
+    <Harness />
+  </QueryClientProvider>,
+)

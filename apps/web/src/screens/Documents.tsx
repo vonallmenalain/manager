@@ -11,6 +11,7 @@ import {
 import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { NewCategoryDialog } from '../components/CategoryPicker'
 import { DocumentIcon } from '../components/icons'
 import { useEscape } from '../lib/overlay'
 import { SearchSnippet } from '../components/SearchSnippet'
@@ -134,9 +135,12 @@ interface FilterMenuProps {
  */
 function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
   const [open, setOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
   const anzahl = countFilters(filters)
 
-  useEscape(open, useCallback(() => setOpen(false), []))
+  // Nicht, solange das Fenster für die neue Kategorie offen ist: Escape gehört
+  // dann diesem Fenster, sonst schlösse eine Taste beides auf einmal.
+  useEscape(open && !creating, useCallback(() => setOpen(false), []))
 
   function toggle(key: 'status' | 'categoryId' | 'assignedTo', value: string) {
     const current = filters[key] ?? []
@@ -246,6 +250,18 @@ function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
                   {category.name}
                 </Haken>
               ))}
+              {/* Auch hier anlegen zu können, klingt zunächst verkehrt – man
+                  filtert ja, man legt nicht ab. Es ist aber die Liste, in der
+                  man merkt, dass eine Schublade fehlt: Sie steht vollständig
+                  vor einem. Die neue Kategorie wird gleich angehakt, sonst
+                  wäre der Griff folgenlos. */}
+              <button
+                onClick={() => setCreating(true)}
+                className="flex min-h-10 items-center gap-2 text-sm font-medium text-brand-700 dark:text-brand-300"
+              >
+                <span aria-hidden="true">+</span>
+                Neue Kategorie
+              </button>
             </Gruppe>
 
             {/* Der Papierkorb ist kein eigener Bildschirm, sondern eine
@@ -301,6 +317,16 @@ function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
             </button>
           </div>
         </>
+      ) : null}
+
+      {creating ? (
+        <NewCategoryDialog
+          onClose={() => setCreating(false)}
+          onCreated={(category) => {
+            toggle('categoryId', category.id)
+            setCreating(false)
+          }}
+        />
       ) : null}
     </div>
   )

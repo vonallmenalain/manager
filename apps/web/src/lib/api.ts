@@ -1,5 +1,6 @@
 import type {
   Category,
+  CreateCategoryInput,
   CreatePaymentInput,
   CreateShoppingItemInput,
   CreateUserInput,
@@ -17,6 +18,7 @@ import type {
   SaveMonthInput,
   SetupInput,
   ShoppingItem,
+  UpdateCategoryInput,
   UpdateDocumentInput,
   UpdateShoppingItemInput,
   UpsertNoteInput,
@@ -178,6 +180,22 @@ export const api = {
     }),
 
   listCategories: () => request<{ categories: Category[] }>('/api/categories'),
+
+  createCategory: (input: CreateCategoryInput) =>
+    request<{ category: Category }>('/api/categories', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  renameCategory: (id: string, input: UpdateCategoryInput) =>
+    request<{ category: Category }>(`/api/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  /** Antwortet mit der Zahl der Dokumente, die dadurch unsortiert geworden sind. */
+  deleteCategory: (id: string) =>
+    request<{ unsorted: number }>(`/api/categories/${id}`, { method: 'DELETE' }),
 
   listDocuments: (query = '') =>
     request<{ documents: ManagedDocument[]; total: number }>(`/api/documents${query}`),

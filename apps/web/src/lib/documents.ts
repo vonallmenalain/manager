@@ -125,6 +125,48 @@ export function useCategories() {
   })
 }
 
+/**
+ * Eine neue Kategorie – von überall dort, wo eine ausgewählt wird.
+ *
+ * Nach dem Anlegen wird die Liste neu geholt, aber nicht die Dokumente: An
+ * denen ändert eine leere Kategorie nichts.
+ */
+export function useCreateCategory() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => api.createCategory({ name }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['categories'] })
+    },
+  })
+}
+
+export function useRenameCategory() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.renameCategory(id, { name }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['categories'] })
+    },
+  })
+}
+
+/**
+ * Löschen zieht Dokumente mit: Sie werden unsortiert. Deshalb wird hier alles
+ * neu geholt, was eine Kategorie anzeigt – Liste wie Einzelansicht.
+ */
+export function useDeleteCategory() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteCategory(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['categories'] })
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['document'] })
+    },
+  })
+}
+
 export function useHouseholdUsers() {
   return useQuery({
     queryKey: ['users'],

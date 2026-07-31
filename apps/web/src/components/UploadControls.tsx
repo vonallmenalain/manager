@@ -28,8 +28,14 @@ interface UploadState {
   message: string | null
 }
 
-/** Woher die nächste Seite kommt, wenn im Stapel „Weitere Seite" gewählt wird. */
-type PageSource = 'scanner' | 'kamera'
+/**
+ * Woher die nächste Seite kommt, wenn im Stapel „Weitere Seite" gewählt wird.
+ *
+ * `foto` ist die Kamera, die sofort aufgeht; `kamera-app` der Umweg über die
+ * Auswahl des Systems, den es nur als Rückweg gibt, wenn der eigene Scanner
+ * nicht laufen kann.
+ */
+type PageSource = 'scanner' | 'foto' | 'kamera-app'
 
 /** Ein leerer Stapel: kein Titel, unsortiert, für beide, pendent. */
 const EMPTY_DETAILS: TrayDetails = {
@@ -45,13 +51,20 @@ const EMPTY_DETAILS: TrayDetails = {
  *  - Teilen aus einer anderen App (Android) – der Service Worker legt die
  *    Datei ab und leitet mit `?geteilt=n` hierher weiter
  *  - Dokument scannen – der eingebaute Scanner mit Randerkennung
- *  - Foto aufnehmen – die Kamera-App des Systems, mit allen Modi, die sie hat
+ *  - Foto aufnehmen – die Kamera geht sofort auf, das Bild bleibt wie es ist
  *  - Datei wählen – PDFs und Screenshots
  *  - App-Verknüpfung `?aufnehmen=1` – langer Druck auf das App-Symbol
  *
- * Aufnahmen aus den beiden Kamera-Wegen gehen nicht direkt in die Ablage,
- * sondern zuerst in einen Stapel. Erst wenn alle Seiten beisammen sind, wird
- * daraus ein Dokument – ein zweiseitiger Brief bleibt so ein Brief.
+ * „Foto aufnehmen" und „Datei wählen" waren lange fast dasselbe: Beide
+ * öffneten die Auswahl des Systems, in der die Kamera nur einer von mehreren
+ * Einträgen war. Jetzt trennen sie sich sauber – der eine Weg macht ein Bild,
+ * der andere sucht eines. Und der Zweck des ersten ist nicht das Blatt Papier,
+ * dafür gibt es den Scanner: Es ist die Kinderzeichnung, das Zeugnis an der
+ * Wand, alles, was man ablegen will, ohne es zurechtzuschneiden.
+ *
+ * Aufnahmen aus den Kamera-Wegen gehen nicht direkt in die Ablage, sondern
+ * zuerst in einen Stapel. Erst wenn alle Seiten beisammen sind, wird daraus ein
+ * Dokument – ein zweiseitiger Brief bleibt so ein Brief.
  */
 export function UploadControls() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -62,7 +75,8 @@ export function UploadControls() {
   const categories = useCategories()
   const users = useHouseholdUsers()
 
-  const cameraRef = useRef<HTMLInputElement>(null)
+  const photoRef = useRef<HTMLInputElement>(null)
+  const cameraAppRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [state, setState] = useState<UploadState>({ running: 0, message: null })
@@ -155,8 +169,7 @@ export function UploadControls() {
       setSource('scanner')
       setScannerOpen(true)
     } else {
-      setSource('kamera')
-      cameraRef.current?.click()
+      openCameraApp()
     }
   }, [capture, setSearchParams])
 
@@ -227,11 +240,25 @@ export function UploadControls() {
     setScannerOpen(true)
   }
 
-  function openSystemCamera() {
+  /** Die Kamera für ein Bild, das kein Blatt Papier ist. */
+  function openPhotoCamera() {
     setMenuOpen(false)
-    setSource('kamera')
+    setSource('foto')
     setScannerOpen(false)
-    cameraRef.current?.click()
+    photoRef.current?.click()
+  }
+
+  /**
+   * Der Rückweg, wenn der eigene Scanner nicht laufen kann: die Auswahl des
+   * Systems. Sie führt zur Kamera-App mit all ihren Modi – auch dem
+   * Dokumentenmodus, den die meisten mitbringen und der hier das Nächste ist,
+   * was es zum ausgefallenen Scanner gibt.
+   */
+  function openCameraApp() {
+    setMenuOpen(false)
+    setSource('kamera-app')
+    setScannerOpen(false)
+    cameraAppRef.current?.click()
   }
 
   /**
@@ -309,12 +336,23 @@ export function UploadControls() {
         </button>
       ) : null}
 
-      {/* Bewusst ohne capture-Attribut: Mit capture öffnet Android sofort die
-          nackte Aufnahme-Ansicht. Ohne es erscheint die Auswahl, über die sich
-          die Kamera-App mit all ihren Modi öffnen lässt – auch dem
-          Dokumentenmodus, den die meisten Kameras mitbringen. */}
+      {/* capture='environment': Ein Griff auf „Foto aufnehmen" soll die
+          Rückkamera öffnen und sonst nichts. Ohne das Attribut erscheint auf
+          Android erst die Auswahl des Systems – dieselbe, die auch „Datei
+          wählen" zeigt, und damit zwei Einträge im Menü, die dasselbe tun. */}
       <input
-        ref={cameraRef}
+        ref={photoRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleCameraInput}
+      />
+      {/* Dasselbe ohne capture, nur für den Rückweg aus dem Scanner: Dort
+          führt die Auswahl des Systems zur Kamera-App samt Dokumentenmodus –
+          und um ein Blatt Papier geht es in dem Moment ja gerade. */}
+      <input
+        ref={cameraAppRef}
         type="file"
         accept="image/*"
         className="hidden"
@@ -340,7 +378,7 @@ export function UploadControls() {
             setPages((current) => [...current, page])
           }}
           onClose={() => setScannerOpen(false)}
-          onFallback={openSystemCamera}
+          onFallback={openCameraApp}
         />
       ) : pages.length > 0 ? (
         <PageTray
@@ -351,7 +389,11 @@ export function UploadControls() {
           categories={categories.data?.categories ?? []}
           users={users.data?.users ?? []}
           busy={busy}
-          onAddPage={() => (source === 'scanner' ? setScannerOpen(true) : cameraRef.current?.click())}
+          onAddPage={() => {
+            if (source === 'scanner') setScannerOpen(true)
+            else if (source === 'foto') photoRef.current?.click()
+            else cameraAppRef.current?.click()
+          }}
           onRemove={removePage}
           onMove={movePage}
           onRotate={(id) => void rotate(id)}
@@ -380,7 +422,7 @@ export function UploadControls() {
                 </g>
               </svg>
             </MenuAction>
-            <MenuAction label="Foto aufnehmen" onClick={openSystemCamera}>
+            <MenuAction label="Foto aufnehmen" onClick={openPhotoCamera}>
               <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
                   d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z"

@@ -163,9 +163,12 @@ erDiagram
 * `categories` – id, name, icon, sort_order (Steuererklärung, Kinder, Rechnungen,
   Wichtige Dokumente, Sonstiges). „Unsortiert" steht bewusst nicht darin: Das ist das
   Fehlen einer Zuordnung und damit der Zustand jedes frisch hochgeladenen Dokuments –
-  als eigene Zeile gäbe es zwei Arten, dasselbe zu sagen. Die Liste im Code ist die
-  Wahrheit und wird bei jedem Start abgeglichen (`syncCategories`); Dokumente einer
-  entfernten Kategorie werden unsortiert und ihre Dateien wandern mit.
+  als eigene Zeile gäbe es zwei Arten, dasselbe zu sagen. Die Tabelle ist die Wahrheit,
+  nicht mehr eine Liste im Code: `seedCategories` legt die fünf oben nur an, solange
+  keine einzige Kategorie da ist. Früher wurde bei jedem Start abgeglichen und entfernt,
+  was nicht im Code stand – seit sich Kategorien in der App anlegen und löschen lassen,
+  überlebte eine selbst angelegte den nächsten Neustart sonst nicht, und eine gelöschte
+  käme zurück.
 * `tags`, `document_tags` – freie Verschlagwortung neben den Kategorien
 * `documents.search_text` – Titel, Absender, Notiz und OCR-Text in einer vereinheitlichten
   Spalte; dieselbe Aufbereitung nutzen auch `notes.search_text` und die Einkaufsliste
@@ -219,13 +222,25 @@ Adresse und das Abmelden. Vorher stand daneben „Angemeldet" – eine Zeile, di
 was man nicht schon sieht – und ein Knopf zum Abmelden, den man täglich sah und selten
 brauchte.
 
-**Verwalter des Haushalts** ist genau ein Konto (`ADMIN_EMAIL` im geteilten Paket). Es
-gibt keine Rollentabelle: Es gibt einen, der die App betreibt, und er ändert sich nicht.
-Verwalter heisst nicht „sieht mehr" – Dokumente, Notizen und Finanzen gehören dem Haushalt
-gemeinsam. Es heisst: darf **Mitglieder anlegen** und sieht im Kontomenü, **ob der Server
-erreichbar ist** (ohne Versionsnummer – die beantwortet keine Frage, die man sich am Handy
-stellt). Beides steckt im Kontomenü und nicht mehr als Kachel auf dem Startbildschirm:
-Das ist Betrieb, nicht Haushalt.
+**Verwalter des Haushalts** ist genau eine Person (`ADMIN_EMAILS` im geteilten Paket –
+mehrere Adressen, aber derselbe Mensch: dieselbe Person erreicht die App unter zwei
+Konten). Es gibt keine Rollentabelle: Es gibt einen, der die App betreibt, und er ändert
+sich nicht. Verwalter heisst nicht „sieht mehr" – Dokumente, Notizen und Finanzen gehören
+dem Haushalt gemeinsam. Es heisst: darf **Mitglieder anlegen**, darf **Kategorien
+umbenennen und löschen**, und sieht im Kontomenü, **ob der Server erreichbar ist** (ohne
+Versionsnummer – die beantwortet keine Frage, die man sich am Handy stellt). Alles davon
+steckt im Kontomenü und nicht mehr als Kachel auf dem Startbildschirm: Das ist Betrieb,
+nicht Haushalt.
+
+**Kategorien** stehen ebenfalls dort, aber für alle: Anlegen darf jeder, löschen und
+umbenennen nur der Verwalter. Die Grenze verläuft dort, weil beides ungleich schwer wiegt.
+Eine Kategorie dazu ist ein Eintrag mehr in einer Auswahl; eine weg ist ein Ordner weniger
+auf dem NAS und ein Dutzend Dokumente, die plötzlich unsortiert dastehen. Anlegen geht
+deshalb auch von überall dort, wo eine Kategorie ausgewählt wird – im Dokument, im
+Seitenstapel beim Scannen und im Filter der Dokumentenliste. Der Grund ist immer derselbe:
+Dass die passende Schublade fehlt, merkt man genau in dem Moment, in dem man ablegen will,
+und bis dorthin zurückzufinden kostet mehr als das Dokument wert ist – es bliebe
+unsortiert liegen.
 
 Die Prüfung steht im Server (`requireAdmin`), nicht nur in der Oberfläche. Ein
 ausgeblendeter Knopf ist keine Sperre – die Adresse der Route steht in jedem
@@ -287,10 +302,29 @@ JPEGs wandern unverändert hinein, `DCTDecode`), bei einer einzelnen bleibt es b
 Für die Texterkennung ändert sich dadurch nichts: Ein PDF ohne Textebene rastert der
 Server ohnehin und schickt es durch Tesseract.
 
-Die Kamera-App des Systems ist der zweite Weg, absichtlich ohne `capture`-Attribut: Mit
-ihm öffnet Android sofort die nackte Aufnahme-Ansicht, ohne es die Auswahl, über die sich
-die Kamera-App samt ihrem eigenen Dokumentenmodus öffnen lässt. Auch diese Fotos gehen in
-den Stapel, werden dort aber nicht nachbearbeitet – nur gedreht (EXIF) und verkleinert.
+**Die Kamera lässt sich aussuchen.** Ein heutiges Telefon hat hinten drei Linsen, und
+welche läuft, entschied bisher das System – gern mitten im Zielen um, sobald man dem Blatt
+näher kommt. Das Bild springt dann in Ausschnitt und Schärfe, und die Randerkennung sucht
+die Ecken auf einmal woanders. Über dem Auslöser steht deshalb eine Reihe: „Automatisch"
+(der Standard, und auf einem Gerät mit einer Kamera das Einzige – dann bleibt die Reihe
+ganz weg) und daneben jede Kamera einzeln. Angefordert wird sie mit `deviceId: { exact }`;
+ein Wunsch (`ideal`) liesse das Gerät weiter selbst entscheiden und wäre keine Wahl. Die
+Namen kommen von `enumerateDevices`, aber erst nachdem die Kamera läuft – vorher gibt der
+Browser keine heraus, und man hätte eine Auswahl aus „Kamera 1, 2, 3". Die Wahl merkt sich
+das Gerät (`localStorage`), nicht das Konto: Welche Linse die richtige ist, sagt das
+Telefon in der Hand. Gibt es sie beim nächsten Mal nicht mehr, fällt der Scanner auf
+Automatik zurück, statt mit einer Fehlermeldung stehen zu bleiben.
+
+**Foto aufnehmen** ist der zweite Weg – seit Neuestem mit `capture='environment'`, also
+mit sofort geöffneter Rückkamera. Ohne das Attribut erschien erst die Auswahl des Systems:
+dieselbe, die auch „Datei wählen" zeigt, womit zwei Einträge im Menü dasselbe taten. Der
+Zweck ist auch ein anderer als beim Scanner – nicht das Blatt Papier, sondern die
+Kinderzeichnung, das Zeugnis an der Wand, alles, was man ablegen will, ohne es
+zurechtzuschneiden. Auch diese Fotos gehen in den Stapel, werden dort aber nicht
+nachbearbeitet – nur gedreht (EXIF) und verkleinert. Den alten Weg ohne `capture` gibt es
+weiterhin, aber nur noch als Rückweg aus dem Scanner: Läuft die Kamera dort nicht, führt
+die Auswahl des Systems zur Kamera-App samt ihrem eigenen Dokumentenmodus – und um ein
+Blatt Papier geht es in dem Moment ja gerade.
 
 **Erfasst wird im Stapel, nicht danach**: Unter dem Titel stehen dieselben drei
 Auswahlfelder wie oben in der Detailansicht – Kategorie · Zuständig (samt „Beide") ·
@@ -309,8 +343,10 @@ OCR-Volltext, mit Treffer-Hervorhebung im Textausschnitt.
 
 **Filtern** steckt hinter einem Knopf oben rechts, wo vorher die Anzahl der Einträge
 stand – eine Zahl, die man abzählen kann und die nichts entscheidet. Dahinter Häkchen für
-Status, Zuständigkeit (samt „Beide" für das Fehlen einer Zuordnung) und Kategorie, dazu
-ein Zeitraum fürs Hochladedatum. Innerhalb einer Gruppe gilt „oder", zwischen den Gruppen
+Status, Zuständigkeit (samt „Beide" für das Fehlen einer Zuordnung) und Kategorie – dort
+auch „Neue Kategorie", denn das ist die Liste, in der man merkt, dass eine fehlt: Sie
+steht vollständig vor einem. Die neue wird gleich angehakt, sonst wäre der Griff
+folgenlos. Dazu ein Zeitraum fürs Hochladedatum. Innerhalb einer Gruppe gilt „oder", zwischen den Gruppen
 „und": Wer zwei Personen anhakt, will beide sehen – wer zusätzlich eine Kategorie wählt,
 davon nur diese. Die Zahl am Knopf sagt, wie viele Häkchen gesetzt sind; ein Filter, den
 man nicht sieht, muss sich bemerkbar machen, sonst sucht man ein Dokument, das die Liste
@@ -342,7 +378,9 @@ Angeschaut und heruntergeladen werden darf ein gelöschtes Dokument – ein Papi
 den man nicht hineinsehen kann, ist nur ein langsameres Löschen.
 
 **Im Dokument** stehen Kategorie, Zuständigkeit und Status als drei Auswahlfelder direkt
-unter der Vorschau und speichern beim Loslassen. Das sind die drei Angaben, die sich im
+unter der Vorschau und speichern beim Loslassen. Die Kategorienauswahl endet auf „Neue
+Kategorie …" – wer hier merkt, dass die passende fehlt, legt sie an, ohne die Seite zu
+verlassen; sie ist danach sofort gewählt. Das sind die drei Angaben, die sich im
 Alltag ändern – sie hinter „Bearbeiten" zu legen, hiess dreimal tippen für einen Griff.
 Alles Übrige (Titel, Daten, Betrag, Absender, Notiz) öffnet der Stift oben rechts, und
 auch dort gibt es keinen Speichern-Knopf mehr: geschrieben wird kurz nach dem letzten
@@ -664,8 +702,10 @@ sie bestimmt, welcher der beiden Wege in Etappe 2 gebaut wird (oder beide).
 ## 9. Sicherheit und Zugang
 
 * **Konten:** Zwei, manuell angelegt, keine offene Registrierung. Anlegen darf nur der
-  Verwalter des Haushalts (`ADMIN_EMAIL`), geprüft im Server über `requireAdmin` – ein neues
-  Konto ist der eine Vorgang, der Zugang schafft.
+  Verwalter des Haushalts (`ADMIN_EMAILS`), geprüft im Server über `requireAdmin` – ein neues
+  Konto ist der eine Vorgang, der Zugang schafft. Über dieselbe Prüfung läuft das
+  Umbenennen und Löschen von Kategorien; angelegt werden dürfen sie von jedem angemeldeten
+  Konto.
 * **Passwörter:** argon2id. Session als HttpOnly-, Secure-, SameSite=Lax-Cookie auf
   `.alae.app`. Da `manager.alae.app` und `manager-api.alae.app` dieselbe Registrable Domain
   teilen, gilt das als same-site – kein `SameSite=None` nötig, keine Third-Party-Cookie-Probleme.
