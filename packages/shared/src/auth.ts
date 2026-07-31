@@ -48,7 +48,8 @@ export type SetupInput = z.infer<typeof setupSchema>
  *
  * Verwalter heisst nicht „darf mehr sehen" – Dokumente, Notizen und Finanzen
  * gehören dem Haushalt gemeinsam. Es heisst: darf den Haushalt selbst ändern
- * (Mitglieder anlegen) und sieht, ob der Server erreichbar ist.
+ * (Mitglieder anlegen, Kategorien umbenennen und löschen) und sieht, ob der
+ * Server erreichbar ist.
  */
 export const ADMIN_EMAIL = 'alain.sc2@gmail.com'
 

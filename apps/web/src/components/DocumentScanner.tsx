@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { useLocalJson } from '../lib/einstellungen'
 import { useFullScreenOverlay } from '../lib/overlay'
+import {
+  cameraConstraints,
+  listCameras,
+  sanitizeCameraId,
+  type CameraOption,
+} from '../lib/scan/cameras'
 import {
   cameraAvailable,
   canvasToJpeg,
@@ -132,8 +139,23 @@ export function DocumentScanner({
   // Hochzählen startet die Kamera neu – der Weg zurück nach einer abgelehnten
   // oder von einer anderen App belegten Kamera.
   const [attempt, setAttempt] = useState(0)
+  // Die Kamerawahl hängt am Gerät und nicht am Konto: Welche Linse hier die
+  // richtige ist, sagt das Telefon in der Hand und nicht der Haushalt.
+  // null heisst „das System entscheidet".
+  const [cameraId, setCameraId] = useLocalJson<string | null>(
+    'scanner.kamera',
+    null,
+    sanitizeCameraId,
+  )
+  const [cameras, setCameras] = useState<readonly CameraOption[]>([])
 
   useFullScreenOverlay()
+
+  // Ob eine Kamera ein Standbild in voller Auflösung liefert, ist ihre eigene
+  // Eigenschaft – bei einem Wechsel darf die andere es wieder versuchen.
+  useEffect(() => {
+    stillPhotoRef.current = true
+  }, [cameraId])
 
   // Die Kamera läuft, solange der Scanner offen ist – auch während des
   // Zuschneidens. Sie bei jeder Seite neu zu starten kostete jedes Mal eine
@@ -150,22 +172,25 @@ export function DocumentScanner({
 
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          // 'environment' ist die Rückkamera. Als Wunsch und nicht als
-          // Bedingung formuliert: Ein Gerät mit nur einer Kamera soll die
-          // nehmen, die es hat, statt die Anfrage abzulehnen.
-          // Die hohe Wunschauflösung holt heraus, was die Kamera hergibt –
-          // A4 quer über 2160 Zeilen liest die Texterkennung sicher, über
-          // 1080 nur mit Glück.
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 3840 },
-            height: { ideal: 2160 },
-          },
+          video: cameraConstraints(cameraId),
           audio: false,
         })
       } catch (cause) {
+        const verweigert = cause instanceof DOMException && cause.name === 'NotAllowedError'
+
+        // Eine gemerkte Kamera, die es nicht mehr gibt – anderes Gerät,
+        // anderer Browser, oder das System hat die Kennungen neu vergeben.
+        // Das ist kein Fehler, den man melden müsste: zurück auf Automatik,
+        // und der Versuch läuft von selbst nochmals. Bei einer verweigerten
+        // Freigabe hilft das nicht – daran scheitert jede Kamera.
+        if (cameraId && !verweigert) {
+          setCameraId(null)
+          setNotice('Die gewählte Kamera ist nicht verfügbar – zurück auf Automatik.')
+          return
+        }
+
         setError(
-          cause instanceof DOMException && cause.name === 'NotAllowedError'
+          verweigert
             ? 'Die Kamera ist für diese Seite nicht freigegeben.'
             : 'Die Kamera liess sich nicht öffnen.',
         )
@@ -180,6 +205,13 @@ export function DocumentScanner({
       streamRef.current = stream
       trackRef.current = stream.getVideoTracks()[0] ?? null
       setStreamReady(true)
+
+      // Erst jetzt nach den Kameras fragen: Vor der Freigabe gibt der Browser
+      // ihre Namen nicht heraus, und eine Auswahl aus „Kamera 1, 2, 3" hilft
+      // niemandem beim Aussuchen.
+      void listCameras().then((found) => {
+        if (!stopped) setCameras(found)
+      })
 
       // Endet der Strom von sich aus – weil eine andere App die Kamera
       // übernimmt oder das Gerät sie nach einer Standbildaufnahme neu
@@ -200,7 +232,7 @@ export function DocumentScanner({
       setStreamReady(false)
       if (stream) for (const track of stream.getTracks()) track.stop()
     }
-  }, [attempt])
+  }, [attempt, cameraId, setCameraId])
 
   /**
    * Hängt den Kamerastrom an das Videoelement.
@@ -365,6 +397,12 @@ export function DocumentScanner({
           pageCount={pageCount}
           working={working}
           onShoot={() => void shoot()}
+          cameras={cameras}
+          cameraId={cameraId}
+          onCameraChange={(next) => {
+            setNotice(null)
+            setCameraId(next)
+          }}
         />
       )}
     </div>,
@@ -377,11 +415,17 @@ function CameraStage({
   pageCount,
   working,
   onShoot,
+  cameras,
+  cameraId,
+  onCameraChange,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>
   pageCount: number
   working: boolean
   onShoot: () => void
+  cameras: readonly CameraOption[]
+  cameraId: string | null
+  onCameraChange: (cameraId: string | null) => void
 }) {
   return (
     <>
@@ -402,6 +446,8 @@ function CameraStage({
         </p>
       </div>
 
+      <CameraChooser cameras={cameras} cameraId={cameraId} onChange={onCameraChange} />
+
       <div className="flex items-center justify-center gap-6 px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
         <span className="w-16 text-sm tabular-nums text-slate-400">
           {pageCount > 0 ? `${pageCount} ${pageCount === 1 ? 'Seite' : 'Seiten'}` : ''}
@@ -417,6 +463,72 @@ function CameraStage({
         <span className="w-16" />
       </div>
     </>
+  )
+}
+
+/**
+ * Die Wahl der Kamera – nur da, wo es etwas zu wählen gibt.
+ *
+ * Bei einer einzigen Kamera bleibt die Zeile weg: Eine Auswahl mit einem
+ * Eintrag ist keine. Auf einem Telefon mit drei Linsen hinten ist sie dagegen
+ * die Antwort auf das Umschalten mitten im Zielen – „Automatisch" bleibt der
+ * Standard, aber wer es leid ist, sucht sich seine Kamera aus und behält sie.
+ *
+ * Waagrecht scrollbar, weil Namen wie „Back Ultra Wide Camera" auf keinem
+ * Handybildschirm nebeneinander passen.
+ */
+function CameraChooser({
+  cameras,
+  cameraId,
+  onChange,
+}: {
+  cameras: readonly CameraOption[]
+  cameraId: string | null
+  onChange: (cameraId: string | null) => void
+}) {
+  if (cameras.length < 2) return null
+
+  return (
+    <div
+      role="group"
+      aria-label="Kamera wählen"
+      className="flex gap-1 overflow-x-auto px-4 pt-2 [scrollbar-width:none]"
+    >
+      <CameraChip pressed={cameraId === null} onClick={() => onChange(null)}>
+        Automatisch
+      </CameraChip>
+      {cameras.map((camera) => (
+        <CameraChip
+          key={camera.id}
+          pressed={cameraId === camera.id}
+          onClick={() => onChange(camera.id)}
+        >
+          {camera.label}
+        </CameraChip>
+      ))}
+    </div>
+  )
+}
+
+function CameraChip({
+  pressed,
+  onClick,
+  children,
+}: {
+  pressed: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={pressed}
+      className={`min-h-11 shrink-0 rounded-full px-3 text-sm font-medium transition ${
+        pressed ? 'bg-white text-slate-900' : 'bg-white/10 text-slate-200'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 

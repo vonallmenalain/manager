@@ -3,13 +3,13 @@ import {
   DOCUMENT_STATUSES,
   formatFileSize,
   UNASSIGNED_LABEL,
-  UNCATEGORIZED_LABEL,
   type Category,
   type DocumentStatus,
   type PublicUser,
 } from '@manager/shared'
 import { createPortal } from 'react-dom'
 
+import { CategorySelect } from './CategoryPicker'
 import { useFullScreenOverlay } from '../lib/overlay'
 import type { ScanPage } from '../lib/scan/pages'
 
@@ -178,15 +178,14 @@ export function PageTray({
             Danach hiesse es, das Dokument in der Liste wiederzufinden und
             dreimal auszuwählen – und meistens bleibt es dann liegen. */}
         <div className="grid grid-cols-3 gap-2">
-          <TraySelect
-            label="Kategorie"
+          {/* Die Kategorie lässt sich hier auch anlegen. Genau hier ist der
+              Moment dafür: Das Blatt liegt noch auf dem Tisch, und wer jetzt
+              merkt, dass die Schublade fehlt, macht sie in einem Griff auf. */}
+          <CategorySelect
+            categories={categories}
             value={details.categoryId ?? ''}
             disabled={busy}
             onChange={(value) => onDetailsChange({ ...details, categoryId: value || null })}
-            options={[
-              { value: '', label: UNCATEGORIZED_LABEL },
-              ...categories.map((entry) => ({ value: entry.id, label: entry.name })),
-            ]}
           />
           <TraySelect
             label="Zuständig"

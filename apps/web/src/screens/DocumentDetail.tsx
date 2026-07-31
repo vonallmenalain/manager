@@ -4,7 +4,6 @@ import {
   formatAmount,
   formatFileSize,
   parseAmountToCents,
-  UNCATEGORIZED_LABEL,
   type DocumentDetail,
   type DocumentStatus,
   type UpdateDocumentInput,
@@ -12,6 +11,7 @@ import {
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { CategorySelect } from '../components/CategoryPicker'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { StatusBadge } from '../components/StatusBadge'
 import { DownloadIcon, PencilIcon } from '../components/icons'
@@ -133,17 +133,12 @@ export function DocumentDetail() {
           Umweg über „Bearbeiten". Gespeichert wird beim Loslassen der Auswahl;
           ein Knopf dafür wäre eine Gelegenheit, es zu vergessen. */}
       <div className={`grid grid-cols-3 gap-2 ${document.deletedAt ? 'hidden' : ''}`}>
-        <QuickSelect
-          label="Kategorie"
+        {/* Die Kategorienauswahl kann auch anlegen: Wer hier merkt, dass die
+            passende fehlt, soll sie nicht woanders suchen müssen. */}
+        <CategorySelect
+          categories={categories.data?.categories ?? []}
           value={document.categoryId ?? ''}
           onChange={(value) => update.mutate({ categoryId: value || null })}
-          options={[
-            { value: '', label: UNCATEGORIZED_LABEL },
-            ...(categories.data?.categories ?? []).map((entry) => ({
-              value: entry.id,
-              label: entry.name,
-            })),
-          ]}
         />
         <QuickSelect
           label="Zuständig"

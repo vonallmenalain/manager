@@ -73,6 +73,25 @@ export const categorySchema = z.object({
 
 export type Category = z.infer<typeof categorySchema>
 
+/**
+ * Der Name einer Kategorie.
+ *
+ * Kurz gehalten, weil er zweimal sichtbar wird: in einem Auswahlfeld auf dem
+ * Handy und als Ordnername in der Freigabe. Zeilenumbrüche und doppelte
+ * Leerzeichen fallen weg – über die Zwischenablage geraten sie leicht hinein
+ * und ergäben zwei Kategorien, die gleich aussehen.
+ */
+export const categoryNameSchema = z
+  .string()
+  .transform((value) => value.replace(/\s+/g, ' ').trim())
+  .pipe(z.string().min(1, 'Name fehlt').max(40, 'Name ist zu lang'))
+
+export const createCategorySchema = z.object({ name: categoryNameSchema })
+export type CreateCategoryInput = z.infer<typeof createCategorySchema>
+
+export const updateCategorySchema = z.object({ name: categoryNameSchema })
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>
+
 export const activityActionSchema = z.enum([
   'upload',
   'edit',
