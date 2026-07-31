@@ -1,5 +1,7 @@
 import {
+  DEFAULT_BEREICH,
   DOCUMENT_STATUSES,
+  type Bereich,
   type Category,
   type DocumentDetail,
   type DocumentStatus,
@@ -12,6 +14,8 @@ import { useEffect, useState } from 'react'
 import { api, API_BASE, ApiRequestError, type UploadDetails } from './api'
 
 export interface DocumentFilters {
+  /** Welche Sammlung. Ohne Angabe der Haushalt – nie beide zusammen. */
+  bereich?: Bereich
   q?: string
   /** Mehrfachauswahl: leer oder fehlend heisst „alle". */
   status?: string[]
@@ -85,6 +89,9 @@ export function countFilters(filters: DocumentFilters): number {
     if (key === 'q' || value === undefined || value === '' || value === false) continue
     // 'ohne' ist der Normalfall und kein gesetzter Filter.
     if (key === 'deleted' && value === 'ohne') continue
+    // Der Bereich ist kein Filter, den man setzt oder zurücksetzt, sondern
+    // die Sammlung, in der man sich befindet.
+    if (key === 'bereich') continue
     if (Array.isArray(value)) count += value.length
     else count += 1
   }
@@ -116,10 +123,10 @@ export function useDocument(id: string | undefined) {
   })
 }
 
-export function useCategories() {
+export function useCategories(bereich: Bereich = DEFAULT_BEREICH) {
   return useQuery({
-    queryKey: ['categories'],
-    queryFn: api.listCategories,
+    queryKey: ['categories', bereich],
+    queryFn: () => api.listCategories(bereich),
     // Kategorien ändern sich praktisch nie – eine Stunde Ruhe reicht.
     staleTime: 60 * 60 * 1000,
   })
@@ -131,10 +138,10 @@ export function useCategories() {
  * Nach dem Anlegen wird die Liste neu geholt, aber nicht die Dokumente: An
  * denen ändert eine leere Kategorie nichts.
  */
-export function useCreateCategory() {
+export function useCreateCategory(bereich: Bereich = DEFAULT_BEREICH) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (name: string) => api.createCategory({ name }),
+    mutationFn: (name: string) => api.createCategory({ name, bereich }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['categories'] })
     },

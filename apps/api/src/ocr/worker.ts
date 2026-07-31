@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 
-import { buildSearchText } from '@manager/shared'
+import { buildSearchText, type Bereich } from '@manager/shared'
 import { and, asc, eq, isNull, lt, or } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 
@@ -129,7 +129,7 @@ export class OcrWorker {
       const started = Date.now()
       try {
         const result = await extractText(
-          resolveInStorage(document.storagePath),
+          resolveInStorage(document.bereich as Bereich, document.storagePath),
           document.mimeType,
           this.#languages,
         )
@@ -140,7 +140,11 @@ export class OcrWorker {
         // Ablage direkt über die Dateifreigabe durchsieht.
         const sidecar = document.storagePath.replace(/\.[^./\\]+$/, '.txt')
         try {
-          await writeFile(resolveInStorage(sidecar), text, 'utf8')
+          await writeFile(
+            resolveInStorage(document.bereich as Bereich, sidecar),
+            text,
+            'utf8',
+          )
         } catch (error) {
           this.#log.warn({ err: error, documentId: document.id }, 'Textdatei nicht geschrieben')
         }

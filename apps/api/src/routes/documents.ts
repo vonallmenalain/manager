@@ -13,6 +13,7 @@ import {
   UNASSIGNED,
   UNCATEGORIZED,
   updateDocumentSchema,
+  type Bereich,
   type DocumentStatus,
   type PreviewInfo,
 } from '@manager/shared'
@@ -96,12 +97,22 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-async function categoryNameFor(categoryId: string | null): Promise<string | null> {
+/**
+ * Der Name der Kategorie – aber nur, wenn sie zum selben Bereich gehört.
+ *
+ * Die Prüfung auf den Bereich ist keine Förmlichkeit: Eine Kennung aus der
+ * DocBase in einem Haushaltsdokument würde dessen Datei in einen Ordner
+ * legen, den der Haushalt gar nicht kennt.
+ */
+async function categoryNameFor(
+  bereich: Bereich,
+  categoryId: string | null,
+): Promise<string | null> {
   if (!categoryId) return null
   const rows = await db
     .select({ name: categories.name })
     .from(categories)
-    .where(eq(categories.id, categoryId))
+    .where(and(eq(categories.id, categoryId), eq(categories.bereich, bereich)))
     .limit(1)
   return rows[0]?.name ?? null
 }
@@ -121,7 +132,7 @@ async function verifyUploadMetadata(wanted: UploadMetadata): Promise<{
   assignedTo: string | null
   status: DocumentStatus
 }> {
-  const categoryName = await categoryNameFor(wanted.categoryId)
+  const categoryName = await categoryNameFor(wanted.bereich, wanted.categoryId)
 
   let assignedTo: string | null = null
   if (wanted.assignedTo) {
@@ -172,8 +183,16 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         )
     }
 
+    // Die Felder stehen im Formular vor der Datei und sind deshalb hier
+    // bereits gelesen. Der Bereich muss es sein, bevor auch nur ein Byte auf
+    // die Platte geht: Er bestimmt, in welcher Ablage schon der
+    // Zwischenspeicher liegt – ein Umbenennen über die Ordnergrenze hinweg
+    // wäre am Ende ein Kopieren.
+    const gewuenscht = metadataFromFields(upload.fields)
+    const bereich = gewuenscht.bereich
+
     const documentId = randomUUID()
-    const stored = await storeTemporarily(upload.file, documentId)
+    const stored = await storeTemporarily(bereich, upload.file, documentId)
 
     // truncated wird erst nach dem Lesen gesetzt – die Prüfung gehört hierhin,
     // nicht davor.
@@ -194,7 +213,13 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       const duplicates = await db
         .select()
         .from(documents)
-        .where(and(eq(documents.sha256, stored.sha256), isNull(documents.deletedAt)))
+        .where(
+          and(
+            eq(documents.sha256, stored.sha256),
+            eq(documents.bereich, bereich),
+            isNull(documents.deletedAt),
+          ),
+        )
         .limit(1)
 
       const duplicate = duplicates[0]
@@ -210,10 +235,9 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Die Felder stehen im Formular vor der Datei und sind deshalb hier bereits
-    // gelesen – kommt keines, bleibt es beim Dateinamen und bei den Vorgaben.
+    // Kommt kein Titel mit, bleibt es beim Dateinamen.
     const title = titleFromFields(upload.fields) ?? titleFromFilename(upload.filename)
-    const metadata = await verifyUploadMetadata(metadataFromFields(upload.fields))
+    const metadata = await verifyUploadMetadata(gewuenscht)
     const docDate = today()
     // Der Kategoriename gehört von Anfang an in den Pfad: Wer die Kategorie
     // schon im Stapel festlegt, soll die Datei nicht erst unter „Unsortiert"
@@ -226,7 +250,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       extension: extensionFor(upload.mimetype, upload.filename),
     })
 
-    await commitUpload(stored.tempPath, storagePath)
+    await commitUpload(bereich, stored.tempPath, storagePath)
 
     const inserted = await db
       .insert(documents)
@@ -238,6 +262,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         sizeBytes: stored.sizeBytes,
         sha256: stored.sha256,
         uploadedBy: user.id,
+        bereich,
         docDate,
         categoryId: metadata.categoryId,
         assignedTo: metadata.assignedTo,
@@ -267,9 +292,11 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const { q, status, categoryId, assignedTo, year, pending, limit, offset } = parsed.data
-    const { uploadedFrom, uploadedTo, deleted } = parsed.data
+    const { bereich, uploadedFrom, uploadedTo, deleted } = parsed.data
 
-    const conditions: SQL[] = []
+    // Steht immer zuerst und ist der einzige Filter ohne Ausweg: Der Haushalt
+    // bekommt nie ein Dokument der DocBase zu sehen und umgekehrt.
+    const conditions: SQL[] = [eq(documents.bereich, bereich)]
     // Standard: ohne Papierkorb. 'nur' ist die Papierkorbansicht, 'mit' zeigt
     // beides – dann trägt jede gelöschte Zeile in der Liste ihren Vermerk.
     if (deleted === 'ohne') conditions.push(isNull(documents.deletedAt))
@@ -375,7 +402,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     const row = await findAnyDocument(id)
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
 
-    const absolute = resolveInStorage(row.storagePath)
+    const absolute = resolveInStorage(row.bereich as Bereich, row.storagePath)
     const extension = row.storagePath.split('.').pop() ?? 'bin'
     // Der Dateiname für den Nutzer wird aus dem Titel gebildet, nicht aus dem
     // Ablagepfad – der enthält die technische Kurz-ID.
@@ -413,7 +440,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (row.mimeType === 'application/pdf') {
-      const pages = await countPdfPages(resolveInStorage(row.storagePath))
+      const pages = await countPdfPages(resolveInStorage(row.bereich as Bereich, row.storagePath))
       if (pages === 0) return reply.send({ kind: 'none', pages: 0 } satisfies PreviewInfo)
       return reply.send({
         kind: 'pdf',
@@ -444,7 +471,12 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     let imagePath: string
     try {
-      imagePath = await renderPdfPage(id, resolveInStorage(row.storagePath), pageNumber)
+      imagePath = await renderPdfPage(
+        row.bereich as Bereich,
+        id,
+        resolveInStorage(row.bereich as Bereich, row.storagePath),
+        pageNumber,
+      )
     } catch (error) {
       request.log.warn({ err: error, documentId: id, page: pageNumber }, 'Vorschau fehlgeschlagen')
       return reply
@@ -492,14 +524,14 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       const extension = before.storagePath.split('.').pop() ?? 'bin'
       const nextPath = buildStoragePath({
         docDate: merged.docDate,
-        categoryName: await categoryNameFor(merged.categoryId),
+        categoryName: await categoryNameFor(before.bereich as Bereich, merged.categoryId),
         title: merged.title,
         documentId: before.id,
         extension,
       })
 
       try {
-        if (await moveWithinStorage(before.storagePath, nextPath)) {
+        if (await moveWithinStorage(before.bereich as Bereich, before.storagePath, nextPath)) {
           storagePath = nextPath
         }
       } catch (error) {
@@ -573,14 +605,14 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     let storagePath = row.storagePath
     try {
-      storagePath = await moveToTrash(row.storagePath)
+      storagePath = await moveToTrash(row.bereich as Bereich, row.storagePath)
     } catch (error) {
       request.log.error({ err: error, documentId: id }, 'Verschieben in den Papierkorb fehlgeschlagen')
     }
 
     // Die gerasterten Seiten wandern nicht mit: Sie sind jederzeit neu
     // erzeugbar und hätten im Papierkorb nur Platz belegt.
-    await removePreviews(id).catch((error: unknown) => {
+    await removePreviews(row.bereich as Bereich, id).catch((error: unknown) => {
       request.log.warn({ err: error, documentId: id }, 'Vorschau-Bilder nicht entfernt')
     })
 
@@ -618,7 +650,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     let storagePath = row.storagePath
     const zurueck = storagePath.replace(/^\.trash[/\\]/, '')
     try {
-      await moveWithinStorage(storagePath, zurueck)
+      await moveWithinStorage(row.bereich as Bereich, storagePath, zurueck)
       storagePath = zurueck
     } catch (error) {
       // Die Datei bleibt notfalls im Papierkorb-Ordner liegen; der Eintrag ist

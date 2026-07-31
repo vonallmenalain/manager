@@ -1,4 +1,4 @@
-import type { Category } from '@manager/shared'
+import { DEFAULT_BEREICH, type Bereich, type Category } from '@manager/shared'
 import { useState, type FormEvent } from 'react'
 
 import { Button } from './Button'
@@ -21,8 +21,16 @@ import {
  * anderen Person mit. Der Server prüft dasselbe noch einmal; ein
  * ausgeblendeter Knopf ist keine Sperre.
  */
-export function CategorySheet({ isAdmin, onClose }: { isAdmin: boolean; onClose: () => void }) {
-  const categories = useCategories()
+export function CategorySheet({
+  isAdmin,
+  onClose,
+  bereich = DEFAULT_BEREICH,
+}: {
+  isAdmin: boolean
+  onClose: () => void
+  bereich?: Bereich
+}) {
+  const categories = useCategories(bereich)
   const [notice, setNotice] = useState<string | null>(null)
 
   return (
@@ -59,7 +67,7 @@ export function CategorySheet({ isAdmin, onClose }: { isAdmin: boolean; onClose:
         </p>
       ) : null}
 
-      <AddCategoryForm />
+      <AddCategoryForm bereich={bereich} />
     </Modal>
   )
 }
@@ -192,9 +200,9 @@ function RowButton({
 }
 
 /** Anlegen darf jeder – deshalb steht dieses Feld ohne Bedingung darunter. */
-function AddCategoryForm() {
+function AddCategoryForm({ bereich }: { bereich: Bereich }) {
   const [name, setName] = useState('')
-  const create = useCreateCategory()
+  const create = useCreateCategory(bereich)
   const error = create.error instanceof ApiRequestError ? create.error : null
 
   function handleSubmit(event: FormEvent) {

@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build -c vite.config.docbase.ts",
     "preview": "vite preview",
     "test": "node --test",
-    "typecheck": "tsc -b && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "dev:docbase": "vite -c vite.config.docbase.ts"
   },
   "dependencies": {
     "@manager/shared": "*",

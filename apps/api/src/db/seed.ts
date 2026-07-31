@@ -1,4 +1,4 @@
-import { buildSearchText } from '@manager/shared'
+import { BEREICHE, buildSearchText, type Bereich } from '@manager/shared'
 import { eq } from 'drizzle-orm'
 
 import { db } from './index.js'
@@ -15,33 +15,55 @@ import { categories, documents } from './schema.js'
  * sagen, und irgendwann stünden Dokumente in der einen und Dokumente in der
  * anderen.
  */
-const CATEGORIES = [
-  { name: 'Steuererklärung', icon: 'receipt', sortOrder: 10 },
-  { name: 'Kinder', icon: 'child', sortOrder: 20 },
-  { name: 'Rechnungen', icon: 'invoice', sortOrder: 30 },
-  { name: 'Wichtige Dokumente', icon: 'star', sortOrder: 40 },
-  { name: 'Sonstiges', icon: 'folder', sortOrder: 999 },
-] as const
+const CATEGORIES: Record<Bereich, readonly { name: string; icon: string; sortOrder: number }[]> = {
+  manager: [
+    { name: 'Steuererklärung', icon: 'receipt', sortOrder: 10 },
+    { name: 'Kinder', icon: 'child', sortOrder: 20 },
+    { name: 'Rechnungen', icon: 'invoice', sortOrder: 30 },
+    { name: 'Wichtige Dokumente', icon: 'star', sortOrder: 40 },
+    { name: 'Sonstiges', icon: 'folder', sortOrder: 999 },
+  ],
+  /**
+   * Die DocBase fängt mit einem leeren Blatt an.
+   *
+   * Was in einer medizinischen Sammlung die richtigen Schubladen sind, weiss
+   * niemand vorher – das zeigt sich am ersten Dutzend Dokumente. Vorgegebene
+   * Kategorien wären hier Rateversuche, an denen man sich beim Einsortieren
+   * dann entlanghangelt. „Sonstiges" steht trotzdem da, weil sonst die erste
+   * Auswahl leer wäre.
+   */
+  docbase: [{ name: 'Sonstiges', icon: 'folder', sortOrder: 999 }],
+}
 
 /**
- * Legt die Erstausstattung an, solange keine einzige Kategorie da ist.
+ * Legt die Erstausstattung eines Bereichs an, solange er keine einzige
+ * Kategorie hat.
  *
  * Früher war die Liste oben die Wahrheit: Bei jedem Start wurde abgeglichen
  * und entfernt, was nicht darin stand. Seit sich Kategorien in der App anlegen
  * und löschen lassen, wäre genau das verkehrt – eine selbst angelegte
  * Kategorie überlebte den nächsten Neustart nicht, und eine gelöschte käme
  * zurück. Die Datenbank ist jetzt die Wahrheit; die Liste hier ist nur noch
- * der Anfang, damit ein frischer Haushalt nicht vor einer leeren Auswahl steht.
+ * der Anfang, damit niemand vor einer leeren Auswahl steht.
  */
 export async function seedCategories(): Promise<string[]> {
-  const existing = await db.select({ id: categories.id }).from(categories).limit(1)
-  if (existing.length > 0) return []
+  const angelegt: string[] = []
 
-  for (const category of CATEGORIES) {
-    await db.insert(categories).values({ id: crypto.randomUUID(), ...category })
+  for (const bereich of BEREICHE) {
+    const existing = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.bereich, bereich))
+      .limit(1)
+    if (existing.length > 0) continue
+
+    for (const category of CATEGORIES[bereich]) {
+      await db.insert(categories).values({ id: crypto.randomUUID(), bereich, ...category })
+      angelegt.push(`${bereich}/${category.name}`)
+    }
   }
 
-  return CATEGORIES.map((category) => category.name)
+  return angelegt
 }
 
 /**

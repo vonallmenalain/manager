@@ -1,9 +1,9 @@
-import { DEFAULT_DOCUMENT_STATUS } from '@manager/shared'
+import { DEFAULT_BEREICH, DEFAULT_DOCUMENT_STATUS, type Bereich } from '@manager/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { DocumentScanner } from './DocumentScanner'
-import { PageTray, type TrayDetails } from './PageTray'
+import { ALLE_TRAY_FELDER, PageTray, type TrayDetails, type TrayField } from './PageTray'
 import { ApiRequestError } from '../lib/api'
 import {
   useCategories,
@@ -66,13 +66,28 @@ const EMPTY_DETAILS: TrayDetails = {
  * zuerst in einen Stapel. Erst wenn alle Seiten beisammen sind, wird daraus ein
  * Dokument – ein zweiseitiger Brief bleibt so ein Brief.
  */
-export function UploadControls() {
+export function UploadControls({
+  bereich = DEFAULT_BEREICH,
+  felder = ALLE_TRAY_FELDER,
+  akzent = 'bg-brand-800',
+}: {
+  /** In welche Sammlung das Hochgeladene gehört. */
+  bereich?: Bereich
+  /** Welche Angaben im Stapel abgefragt werden. */
+  felder?: readonly TrayField[]
+  /**
+   * Farbe des runden Knopfes unten rechts. Er ist der auffälligste Punkt der
+   * Seite und gehört deshalb der App, in der er steht – marineblau im
+   * Haushalt, petrol in der DocBase.
+   */
+  akzent?: string
+} = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const upload = useUploadDocument()
   // Kategorien und Personen ändern sich praktisch nie und liegen deshalb
   // ohnehin im Zwischenspeicher der Dokumentenliste – für den Stapel entsteht
   // dadurch keine zusätzliche Anfrage.
-  const categories = useCategories()
+  const categories = useCategories(bereich)
   const users = useHouseholdUsers()
 
   const photoRef = useRef<HTMLInputElement>(null)
@@ -97,7 +112,7 @@ export function UploadControls() {
 
       for (const file of files) {
         try {
-          await upload.mutateAsync({ file, ...documentDetails })
+          await upload.mutateAsync({ file, bereich, ...documentDetails })
           done += 1
         } catch (error) {
           if (error instanceof ApiRequestError && error.code === 'duplicate') {
@@ -119,7 +134,7 @@ export function UploadControls() {
 
       return problems.length === 0
     },
-    [upload],
+    [upload, bereich],
   )
 
   // Geteilte Dateien abholen. Läuft genau einmal pro Weiterleitung; der
@@ -388,6 +403,9 @@ export function UploadControls() {
           defaultTitle={defaultScanTitle()}
           categories={categories.data?.categories ?? []}
           users={users.data?.users ?? []}
+          felder={felder}
+          bereich={bereich}
+          akzent={akzent}
           busy={busy}
           onAddPage={() => {
             if (source === 'scanner') setScannerOpen(true)
@@ -451,7 +469,7 @@ export function UploadControls() {
       <button
         onClick={() => setMenuOpen((open) => !open)}
         disabled={busy}
-        className="fixed bottom-20 right-4 z-30 grid size-14 place-items-center rounded-full bg-brand-800 text-white shadow-lg transition active:scale-95 disabled:opacity-70"
+        className={`fixed bottom-20 right-4 z-30 grid size-14 place-items-center rounded-full text-white shadow-lg transition active:scale-95 disabled:opacity-70 ${akzent}`}
         aria-label={busy ? 'Wird hochgeladen' : 'Dokument hinzufügen'}
         aria-expanded={menuOpen}
       >

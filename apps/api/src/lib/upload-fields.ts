@@ -13,9 +13,12 @@
  */
 import type { Multipart, MultipartFields } from '@fastify/multipart'
 import {
+  bereichSchema,
+  DEFAULT_BEREICH,
   DEFAULT_DOCUMENT_STATUS,
   documentStatusSchema,
   uploadTitleSchema,
+  type Bereich,
   type DocumentStatus,
 } from '@manager/shared'
 
@@ -57,6 +60,12 @@ function textField(fields: MultipartFields | undefined, name: string): string | 
  * unsortiert, für beide, pendent.
  */
 export interface UploadMetadata {
+  /**
+   * In welche Sammlung das Dokument gehört. Anders als der Rest kein
+   * Vorschlag, sondern die Entscheidung darüber, wo die Datei überhaupt
+   * landet – ohne Angabe der Haushalt.
+   */
+  bereich: Bereich
   /** Kennung der gewünschten Kategorie, oder null für „Unsortiert". */
   categoryId: string | null
   /** Kennung der zuständigen Person, oder null für „beide". */
@@ -74,8 +83,10 @@ export interface UploadMetadata {
  */
 export function metadataFromFields(fields: MultipartFields | undefined): UploadMetadata {
   const status = documentStatusSchema.safeParse(textField(fields, 'status'))
+  const bereich = bereichSchema.safeParse(textField(fields, 'bereich'))
 
   return {
+    bereich: bereich.success ? bereich.data : DEFAULT_BEREICH,
     categoryId: identifier(textField(fields, 'categoryId')),
     assignedTo: identifier(textField(fields, 'assignedTo')),
     status: status.success ? status.data : DEFAULT_DOCUMENT_STATUS,

@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_LABEL, type Category } from '@manager/shared'
+import { DEFAULT_BEREICH, UNCATEGORIZED_LABEL, type Bereich, type Category } from '@manager/shared'
 import { useState, type FormEvent } from 'react'
 
 import { Button } from './Button'
@@ -31,6 +31,7 @@ export function CategorySelect({
   onChange,
   label = 'Kategorie',
   disabled = false,
+  bereich = DEFAULT_BEREICH,
 }: {
   categories: readonly Category[]
   /** Leer heisst „Unsortiert" – das Fehlen einer Zuordnung, keine Kategorie. */
@@ -38,6 +39,8 @@ export function CategorySelect({
   onChange: (value: string) => void
   label?: string
   disabled?: boolean
+  /** In welcher Sammlung eine neu angelegte Kategorie entsteht. */
+  bereich?: Bereich
 }) {
   const [creating, setCreating] = useState(false)
 
@@ -68,6 +71,7 @@ export function CategorySelect({
 
       {creating ? (
         <NewCategoryDialog
+          bereich={bereich}
           onClose={() => setCreating(false)}
           onCreated={(category) => {
             // Direkt auswählen: Wer sie gerade angelegt hat, will sie auch
@@ -92,12 +96,14 @@ export function CategorySelect({
 export function NewCategoryDialog({
   onClose,
   onCreated,
+  bereich = DEFAULT_BEREICH,
 }: {
   onClose: () => void
   onCreated: (category: Category) => void
+  bereich?: Bereich
 }) {
   const [name, setName] = useState('')
-  const create = useCreateCategory()
+  const create = useCreateCategory(bereich)
   const error = create.error instanceof ApiRequestError ? create.error : null
 
   function handleSubmit(event: FormEvent) {

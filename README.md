@@ -34,12 +34,19 @@ und jederzeit sehen was noch offen ist – ohne dass Daten das eigene NAS verlas
 ## Projektstruktur
 
 ```
-apps/web        React-PWA (Vite, Tailwind, TanStack Query) → Netlify
+apps/web        React-PWAs (Vite, Tailwind, TanStack Query) → Netlify
+  src/            Manager – der Haushalt, unter /
+  src/docbase/    DocBase – die medizinische Sammlung, unter /docbase
 apps/api        Fastify + SQLite + OCR-Worker → Container
 packages/shared Typen, Zod-Schemas, Berechnungslogik für beide Seiten
 infra           Dockerfile, docker-compose für das QNAP
 docs            Konzept und Einrichtungsanleitung
 ```
+
+Zwei Apps, ein Server, eine Anmeldung. Sie werden getrennt gebaut (zwei
+Vite-Konfigurationen), haben je ein eigenes Manifest und einen eigenen Service
+Worker und lassen sich deshalb einzeln auf den Startbildschirm legen. Vom
+Manager führt bewusst kein Weg in die DocBase.
 
 ## Lokal entwickeln
 
@@ -50,6 +57,7 @@ cp .env.example apps/api/.env
 
 npm run dev:api                        # http://localhost:8080
 npm run dev:web                        # http://localhost:5173
+npm run dev:docbase -w @manager/web    # http://localhost:5174/docbase/
 ```
 
 Beim ersten Aufruf erscheint die Ersteinrichtung. Der dort verlangte Token

@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto'
 
 import {
   API_ERROR_CODES,
+  bereichSchema,
   createCategorySchema,
+  DEFAULT_BEREICH,
   updateCategorySchema,
 } from '@manager/shared'
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -30,7 +32,13 @@ import { apiError, notFound, unauthorized, validationError } from '../lib/errors
  * ein und betrifft die Dokumente der anderen Person mit.
  */
 const categoryRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.get('/api/categories', { preHandler: [fastify.requireAuth] }, async (_request, reply) => {
+  fastify.get('/api/categories', { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+    // Ohne Angabe der Haushalt: Eine Abfrage, die den Bereich vergisst, soll
+    // nichts aus der DocBase zeigen – nicht alles aus beiden.
+    const bereich = bereichSchema
+      .catch(DEFAULT_BEREICH)
+      .parse((request.query as { bereich?: string }).bereich)
+
     const rows = await db
       .select({
         id: categories.id,
@@ -39,6 +47,7 @@ const categoryRoutes: FastifyPluginAsync = async (fastify) => {
         sortOrder: categories.sortOrder,
       })
       .from(categories)
+      .where(eq(categories.bereich, bereich))
       .orderBy(asc(categories.sortOrder), asc(categories.name))
 
     return reply.send({ categories: rows })
@@ -48,8 +57,8 @@ const categoryRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = createCategorySchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { name } = parsed.data
-    const existing = await findCategoryByName(name)
+    const { name, bereich } = parsed.data
+    const existing = await findCategoryByName(bereich, name)
     if (existing) {
       // Kein Fehler im engeren Sinn, aber auch kein Erfolg: Wer „Kinder"
       // anlegen will und „Kinder" schon hat, soll den Namen sehen, den es
@@ -66,10 +75,14 @@ const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       name,
       icon: 'folder',
       sortOrder: DEFAULT_SORT_ORDER,
+      bereich,
     }
     await db.insert(categories).values(category)
 
-    request.log.info({ categoryId: category.id, by: request.user?.id }, 'Kategorie angelegt')
+    request.log.info(
+      { categoryId: category.id, bereich, by: request.user?.id },
+      'Kategorie angelegt',
+    )
     return reply.status(201).send({ category })
   })
 
@@ -90,7 +103,7 @@ const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
       const { name } = parsed.data
-      const clash = await findCategoryByName(name, id)
+      const clash = await findCategoryByName(before.bereich, name, id)
       if (clash) {
         return reply.status(409).send(
           apiError(API_ERROR_CODES.validationFailed, 'Diese Kategorie gibt es bereits.', {
@@ -129,7 +142,7 @@ const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       await db
         .update(documents)
         .set({ categoryId: null })
-        .where(eq(documents.categoryId, id))
+        .where(and(eq(documents.categoryId, id), eq(documents.bereich, category.bereich)))
       await db.delete(categories).where(eq(categories.id, id))
 
       await relocateDocuments(affected, null)

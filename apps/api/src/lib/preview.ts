@@ -17,6 +17,8 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { promisify } from 'node:util'
 
+import type { Bereich } from '@manager/shared'
+
 import { parsePageCount, PREVIEW_DIR, previewPagePath } from './preview-paths.js'
 import { resolveInStorage } from './storage.js'
 
@@ -75,11 +77,12 @@ async function isFile(absolutePath: string): Promise<boolean> {
  * Dateifreigabe nicht im Weg.
  */
 export async function renderPdfPage(
+  bereich: Bereich,
   documentId: string,
   absolutePdfPath: string,
   page: number,
 ): Promise<string> {
-  const cached = resolveInStorage(previewPagePath(documentId, page))
+  const cached = resolveInStorage(bereich, previewPagePath(documentId, page))
   if (await isFile(cached)) return cached
 
   await mkdir(dirname(cached), { recursive: true })
@@ -88,6 +91,7 @@ export async function renderPdfPage(
   // Geräte gleichzeitig dieselbe Seite an, sieht keines von beiden eine halb
   // geschriebene Datei.
   const stagingPrefix = resolveInStorage(
+    bereich,
     `${PREVIEW_DIR}/${documentId}/.s${page}-${randomUUID()}`,
   )
   const staged = `${stagingPrefix}.jpg`
@@ -133,6 +137,9 @@ export async function renderPdfPage(
  * Beim Löschen aufgerufen – sonst blieben Bilder eines Dokuments liegen, das
  * im Papierkorb längst nicht mehr sichtbar ist.
  */
-export async function removePreviews(documentId: string): Promise<void> {
-  await rm(resolveInStorage(`${PREVIEW_DIR}/${documentId}`), { recursive: true, force: true })
+export async function removePreviews(bereich: Bereich, documentId: string): Promise<void> {
+  await rm(resolveInStorage(bereich, `${PREVIEW_DIR}/${documentId}`), {
+    recursive: true,
+    force: true,
+  })
 }

@@ -1,4 +1,5 @@
 import type {
+  Bereich,
   Category,
   CreateCategoryInput,
   CreatePaymentInput,
@@ -58,6 +59,8 @@ export class ApiRequestError extends Error {
  */
 export interface UploadDetails {
   title?: string
+  /** In welche Sammlung das Dokument gehört. Ohne Angabe der Haushalt. */
+  bereich?: Bereich
   categoryId?: string | null
   assignedTo?: string | null
   status?: DocumentStatus
@@ -179,7 +182,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  listCategories: () => request<{ categories: Category[] }>('/api/categories'),
+  listCategories: (bereich: Bereich) =>
+    request<{ categories: Category[] }>(`/api/categories?bereich=${bereich}`),
 
   createCategory: (input: CreateCategoryInput) =>
     request<{ category: Category }>('/api/categories', {
@@ -206,7 +210,9 @@ export const api = {
     const body = new FormData()
     // Alle Felder müssen vor der Datei stehen: Der Server liest den Datenstrom
     // der Reihe nach und hat beim Empfang der Datei nur die Felder zur Hand,
-    // die vorher kamen.
+    // die vorher kamen. Der Bereich zuerst – er entscheidet, in welcher Ablage
+    // schon der Zwischenspeicher liegt.
+    if (details.bereich) body.append('bereich', details.bereich)
     if (details.title) body.append('title', details.title)
     if (details.categoryId) body.append('categoryId', details.categoryId)
     if (details.assignedTo) body.append('assignedTo', details.assignedTo)

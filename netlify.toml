@@ -13,7 +13,33 @@
   # VITE_API_URL wird in den Netlify-Einstellungen gesetzt (siehe SETUP-QNAP.md).
   # Absichtlich nicht hier: Änderungen sollen kein Commit brauchen.
 
-# Single-Page-App: Alle Pfade liefern index.html, das Routing macht der Browser.
+# ---------------------------------------------------------------------------
+# Zwei Apps auf einer Adresse
+#
+# Die DocBase liegt unter /docbase und ist eine eigene PWA: eigenes Manifest,
+# eigener Service Worker, eigener Geltungsbereich. Damit lassen sich beide
+# nebeneinander auf dem Startbildschirm installieren.
+#
+# Die Reihenfolge dieser Regeln ist entscheidend: Netlify nimmt die erste, die
+# passt. Stünde die Sammelregel für den Manager oben, bekäme /docbase dessen
+# index.html – und man tippt auf DocBase und landet im Haushalt.
+# ---------------------------------------------------------------------------
+
+# Ohne Schrägstrich am Ende liegt die Adresse ausserhalb des Geltungsbereichs
+# der App (`/docbase/`). Ein Browser, der sie so öffnet, hielte sie für eine
+# fremde Seite und böte die Installation nicht an.
+[[redirects]]
+  from = "/docbase"
+  to = "/docbase/"
+  status = 301
+
+[[redirects]]
+  from = "/docbase/*"
+  to = "/docbase/index.html"
+  status = 200
+
+# Single-Page-App: Alle übrigen Pfade liefern index.html, das Routing macht der
+# Browser.
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -62,8 +88,25 @@
     Cache-Control = "public, max-age=0, must-revalidate"
     Content-Type = "application/manifest+json"
 
+# Dasselbe für die DocBase: eigener Worker, eigenes Manifest, dieselbe Regel.
+[[headers]]
+  for = "/docbase/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/docbase/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Content-Type = "application/manifest+json"
+
 # Gehashte Dateinamen ändern sich bei jeder Änderung – die dürfen ewig cachen.
 [[headers]]
   for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/docbase/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
