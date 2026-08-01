@@ -6,6 +6,7 @@ import {
 } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
 
+import { MANAGER_SCOPE } from './lib/appScopes'
 import { SHARE_CACHE, SHARE_FILENAME_HEADER, SHARE_TARGET_PATH } from './lib/shareConstants'
 
 declare const self: ServiceWorkerGlobalScope
@@ -27,16 +28,16 @@ cleanupOutdatedCaches()
  * bedient. Ohne diese Regel zeigt ein Aufruf ohne Verbindung die
  * Dinosaurier-Seite des Browsers, obwohl die App längst installiert ist.
  *
- * Ausgenommen sind API-Aufrufe – die müssen immer echt zum Server –, der
- * Teilen-Endpunkt, der weiter unten eigens behandelt wird, und /docbase:
- * Dieser Worker hat den Geltungsbereich `/` und bekäme deshalb auch die
- * Navigation zur DocBase zu sehen, solange deren eigener Worker noch nicht
- * installiert ist. Er würde ihr die Hülle des Managers ausliefern – man
- * tippt auf DocBase und landet im Haushalt.
+ * Ausgenommen sind API-Aufrufe – die müssen immer echt zum Server – und der
+ * Teilen-Endpunkt, der weiter unten eigens behandelt wird.
+ *
+ * Die DocBase braucht hier keine Ausnahme mehr: Dieser Worker hat den
+ * Geltungsbereich `/app/` und bekommt Navigationen nach `/docbase/` gar nicht
+ * erst zu sehen.
  */
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'), {
-    denylist: [/^\/api\//, /^\/share-target/, /^\/docbase/],
+    denylist: [/^\/api\//, new RegExp(`^${SHARE_TARGET_PATH}`)],
   }),
 )
 
@@ -86,8 +87,8 @@ async function handleShare(request: Request): Promise<Response> {
 
     // 303 statt 302: Der Browser soll die Zieladresse mit GET laden, nicht
     // den POST wiederholen.
-    return Response.redirect(`/dokumente?geteilt=${files.length}`, 303)
+    return Response.redirect(`${MANAGER_SCOPE}dokumente?geteilt=${files.length}`, 303)
   } catch {
-    return Response.redirect('/dokumente?geteilt=fehler', 303)
+    return Response.redirect(`${MANAGER_SCOPE}dokumente?geteilt=fehler`, 303)
   }
 }

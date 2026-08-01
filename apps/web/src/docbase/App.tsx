@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Detail } from './screens/Detail'
 import { Library } from './screens/Library'
 import { Shell } from './Shell'
+import { DOCBASE_BASENAME } from '../lib/appScopes'
 import { useSession } from '../lib/session'
 import { BackendUnreachable } from '../screens/BackendUnreachable'
 import { Login } from '../screens/Login'
@@ -39,7 +40,7 @@ export function App() {
   return (
     // basename: Die App liegt unter /docbase, und alle Adressen darin sollen
     // ohne dieses Präfix geschrieben werden können.
-    <BrowserRouter basename="/docbase">
+    <BrowserRouter basename={DOCBASE_BASENAME}>
       <Routes>
         <Route element={<Shell user={user} />}>
           <Route index element={<Library />} />

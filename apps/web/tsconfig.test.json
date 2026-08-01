@@ -8,6 +8,6 @@
     "composite": false,
     "types": ["node"]
   },
-  "include": ["src/lib/scan"],
+  "include": ["src/lib/scan", "src/lib/appScopes.ts", "src/lib/appScopes.test.ts", "src/lib/shareConstants.ts"],
   "exclude": []
 }

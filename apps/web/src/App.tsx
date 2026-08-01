@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppShell } from './components/AppShell'
+import { MANAGER_BASENAME } from './lib/appScopes'
 import { useSession } from './lib/session'
 import { BackendUnreachable } from './screens/BackendUnreachable'
 import { Dashboard } from './screens/Dashboard'
@@ -22,7 +23,9 @@ export function App() {
   if (!user) return needsSetup ? <Setup /> : <Login />
 
   return (
-    <BrowserRouter>
+    // basename: Die App liegt unter /app, und alle Adressen darin sollen ohne
+    // dieses Präfix geschrieben werden können.
+    <BrowserRouter basename={MANAGER_BASENAME}>
       <Routes>
         <Route element={<AppShell user={user} />}>
           <Route index element={<Dashboard user={user} />} />
