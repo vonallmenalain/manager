@@ -240,8 +240,9 @@ Adresse und das Abmelden. Vorher stand daneben „Angemeldet" – eine Zeile, di
 was man nicht schon sieht – und ein Knopf zum Abmelden, den man täglich sah und selten
 brauchte.
 
-**Verwalter des Haushalts** ist genau ein Konto (`ADMIN_EMAIL` im geteilten Paket). Es
-gibt keine Rollentabelle: Es gibt einen, der die App betreibt, und er ändert sich nicht.
+**Verwalter des Haushalts** sind die Konten, die in `ADMIN_EMAILS` im geteilten Paket
+stehen. Es gibt keine Rollentabelle: Es sind die beiden, die die App betreiben, und das
+ändert sich nicht im Wochentakt – kommt jemand dazu, ist es eine Zeile in dieser Liste.
 Verwalter heisst nicht „sieht mehr" – Dokumente, Notizen und Finanzen gehören dem Haushalt
 gemeinsam. Es heisst: darf **Mitglieder anlegen**, darf **Kategorien umbenennen und
 löschen**, und sieht im Kontomenü, **ob der Server erreichbar ist** (ohne Versionsnummer –
@@ -791,8 +792,8 @@ sie bestimmt, welcher der beiden Wege in Etappe 2 gebaut wird (oder beide).
 
 ## 9. Sicherheit und Zugang
 
-* **Konten:** Zwei, manuell angelegt, keine offene Registrierung. Anlegen darf nur der
-  Verwalter des Haushalts (`ADMIN_EMAIL`), geprüft im Server über `requireAdmin` – ein neues
+* **Konten:** Zwei, manuell angelegt, keine offene Registrierung. Anlegen darf nur ein
+  Verwalter des Haushalts (`ADMIN_EMAILS`), geprüft im Server über `requireAdmin` – ein neues
   Konto ist der eine Vorgang, der Zugang schafft. Über dieselbe Prüfung läuft das
   Umbenennen und Löschen von Kategorien; angelegt werden dürfen sie von jedem angemeldeten
   Konto.
