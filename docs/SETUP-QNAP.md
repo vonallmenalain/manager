@@ -262,6 +262,26 @@ Prüfen: `https://manager.alae.app` zeigt den Einrichtungsbildschirm.
 6. In Chrome: **Menü → App installieren** – ab jetzt liegt Manager als
    eigenständige App auf dem Startbildschirm
 
+### Beide Apps installieren
+
+Manager und DocBase sind zwei getrennte Apps mit je eigenem Symbol. Damit
+Android sie auch als zwei Apps behandelt, liegen sie in getrennten Bereichen:
+
+| App | Adresse |
+| --- | --- |
+| Manager | `https://manager.alae.app/app/` (`https://manager.alae.app` leitet dorthin) |
+| DocBase | `https://manager.alae.app/docbase/` |
+
+Jede Adresse einzeln öffnen und über **Menü → App installieren** ablegen.
+
+> **Wenn der Manager schon vor dem Umzug installiert war**, zeigt Chrome beim
+> Installieren der DocBase „Diese App wurde bereits installiert". Die alte
+> Verknüpfung beansprucht noch die gesamte Adresse. Einmal aufräumen:
+> Manager-Symbol vom Startbildschirm entfernen (deinstallieren, nicht nur die
+> Verknüpfung löschen), dann `…/docbase/` installieren, danach `…/app/`.
+> Anmeldung und Daten bleiben dabei erhalten – beide Apps teilen sich
+> Konto und Server.
+
 **Danach aufräumen:** Die Zeile `SETUP_TOKEN=` in der `.env` löschen und
 `docker compose up -d` erneut ausführen. Der Endpunkt ist zwar ohnehin
 gesperrt, sobald ein Konto existiert – aber ein nicht vorhandenes Geheimnis

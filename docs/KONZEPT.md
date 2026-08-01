@@ -439,12 +439,36 @@ zwei OCR-Warteschlangen wären dieselbe Sache zweimal, und die zweite hinkte der
 dem ersten Tag hinterher.
 
 **Zwei installierbare Apps auf einer Adresse** brauchen zwei Manifeste, zwei Service
-Worker und zwei Geltungsbereiche (`/` und `/docbase/`). Der Browser wählt für eine Seite
-immer den längsten passenden Bereich, deshalb bleibt der Manager überall sonst zuständig.
-Gebaut wird zweimal (`vite.config.ts` und `vite.config.docbase.ts`, der zweite nach dem
-ersten und ohne den Ordner zu leeren); der Service Worker des Managers nimmt `/docbase`
-ausdrücklich aus seiner Navigationsregel aus, sonst lieferte er dort seine eigene Hülle
-aus – man tippt auf DocBase und landet im Haushalt.
+Worker und zwei Geltungsbereiche – und die beiden Bereiche dürfen sich nicht
+überschneiden. Deshalb liegt der Manager unter `/app/` und die DocBase unter `/docbase/`;
+die Wurzel `/` gehört keiner der beiden mehr und leitet nur noch auf den Manager weiter.
+
+**Warum nicht `/` und `/docbase/`?** So war es zuerst, und es funktionierte nicht: Ein
+Geltungsbereich `/` umfasst `/docbase/` gleich mit. Android registriert eine installierte
+PWA für ihren gesamten Bereich und hielt die DocBase deshalb für dieselbe, bereits
+installierte App – der Installationsdialog bot nur noch „Diese App wurde bereits
+installiert" und eine gewöhnliche Verknüpfung an. Verschachtelte Bereiche sind
+ausdrücklich nicht unterstützt ([web.dev](https://web.dev/articles/building-multiple-pwas-on-the-same-domain));
+zwei Apps auf einer Adresse gehen nur nebeneinander. Die Alternative wäre eine eigene
+Subdomain gewesen – sie kostet einen DNS-Eintrag, eine zweite Netlify-Site und eine
+zweite erlaubte Herkunft in der API, und sie zerschnitte die gemeinsame Anmeldung.
+
+Gebaut wird zweimal (`vite.config.ts` → `dist/app`, `vite.config.docbase.ts` →
+`dist/docbase`). Getrennte Ordner sind nicht nur Ordnung: Jeder Service Worker nimmt in
+seinen Zwischenspeicher auf, was in seinem Ordner liegt, und sieht die Dateien der
+anderen App dadurch gar nicht erst.
+
+**Der Umzug hinterlässt eine Altlast.** Auf jedem Gerät, das die alte Fassung einmal
+geöffnet hat, liegt ein Service Worker mit dem Geltungsbereich `/`. Der beantwortet
+weiterhin jede Navigation unterhalb der Wurzel aus seinem Zwischenspeicher – auch die zur
+neuen Adresse. Löschen lässt er sich nur, indem unter `/sw.js` eine andere Datei steht:
+`apps/web/legacy-root/sw.js` meldet sich beim Start selbst ab, räumt seine
+Zwischenspeicher weg (nur die eigenen, an der Adresse erkannt) und lädt die offenen
+Seiten neu. Eine Weiterleitung täte es nicht – auf eine Umleitung hin behält der Browser
+den alten Worker. Die Datei darf verschwinden, wenn absehbar kein Gerät mehr die alte
+Fassung kennt. **Eine bereits installierte Manager-App muss einmal neu installiert
+werden:** Ihre Verknüpfung zeigt auf den alten Bereich, und solange sie liegt, blockiert
+sie weiterhin die Installation der DocBase.
 
 ### 6.2 Einkaufsliste
 
@@ -726,11 +750,12 @@ Manifest mit `display: standalone`, Icons bis 512 px, Maskable-Icon, Theme-Color
 `orientation: portrait`. Auf Android über den Installations-Prompt, auf iOS über
 "Zum Home-Bildschirm". Ab iOS 26 öffnen Home-Screen-Sites standardmässig als Web-App.
 
-**Zwei Apps, zwei Symbole.** Manager (`/`) und DocBase (`/docbase/`) sind getrennt
+**Zwei Apps, zwei Symbole.** Manager (`/app/`) und DocBase (`/docbase/`) sind getrennt
 installierbar und liegen nebeneinander auf dem Startbildschirm – unterschiedliche Namen,
 unterschiedliche Farben (Marineblau gegen Petrol), unterschiedliche Geltungsbereiche.
-Möglich wird das durch je ein eigenes Manifest und einen eigenen Service Worker; für eine
-Adresse gilt immer der längste passende Bereich. Die DocBase hat bewusst kein Teilen-Ziel:
+Möglich wird das durch je ein eigenes Manifest und einen eigenen Service Worker – und
+dadurch, dass keiner der beiden Bereiche den anderen enthält (siehe 6.1a). Die Wurzel `/`
+leitet auf den Manager weiter. Die DocBase hat bewusst kein Teilen-Ziel:
 Das gehört zum Haushalt, wo täglich Post ankommt – in eine Sammlung legt man bewusst ab.
 
 **Offline:** App-Shell und zuletzt geladene Listen werden vorgehalten, ein Hinweisband
@@ -860,8 +885,9 @@ eigenes Skript, …), übernehmen wir stattdessen genau dieses Muster – bewäh
 manager/
 ├── apps/
 │   ├── web/          Zwei React-PWAs → Netlify
-│   │                   src/          Manager, unter /
-│   │                   src/docbase/  DocBase, unter /docbase
+│   │                   src/           Manager, unter /app
+│   │                   src/docbase/   DocBase, unter /docbase
+│   │                   legacy-root/   Abmelde-Worker für die alte Adresse /
 │   └── api/          Fastify + OCR-Worker → Container
 ├── packages/
 │   └── shared/       Typen, Zod-Schemas, Berechnungslogik (von beiden genutzt)

@@ -5,10 +5,22 @@
     "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // Wie in tsconfig.app.json: Die mitbenutzten Module aus src/ importieren
+    // einander mit .ts-Endung, damit `node --test` sie ohne Bündler ausführen
+    // kann. Vite und esbuild stört das nicht.
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vite.config.docbase.ts"]
+  // appScopes.ts steht unter src, wird aber auch von den Konfigurationen
+  // gebraucht: Die Geltungsbereiche der beiden Apps stehen im Manifest und in
+  // der App, und sie müssen dieselben sein.
+  "include": [
+    "vite.config.ts",
+    "vite.config.docbase.ts",
+    "src/lib/appScopes.ts",
+    "src/lib/shareConstants.ts"
+  ]
 }

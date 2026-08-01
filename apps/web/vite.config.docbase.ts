@@ -6,6 +6,8 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+import { DOCBASE_SCOPE } from './src/lib/appScopes'
+
 /**
  * Macht aus `docbase.html` die `index.html` des Ordners.
  *
@@ -34,14 +36,13 @@ function alsIndexAusliefern(): Plugin {
  * zwei Apps nebeneinander auf dem Startbildschirm installieren lassen. Ein
  * gemeinsamer Build könnte zwei Seiten ausliefern – aber nur eine App.
  *
- * Läuft nach dem Hauptbuild und schreibt in denselben Ordner (`emptyOutDir:
- * false`), sonst räumte er dessen Ergebnis weg. Die Reihenfolge hat noch einen
- * zweiten Nutzen: Der Service Worker des Managers sieht die Dateien der
- * DocBase gar nicht erst und nimmt sie deshalb auch nicht in seinen
- * Zwischenspeicher auf.
+ * Schreibt in einen eigenen Ordner neben dem des Managers (`dist/docbase`
+ * neben `dist/app`). Die Trennung ist nicht nur Ordnung: Jeder der beiden
+ * Service Worker nimmt in seinen Zwischenspeicher auf, was er in seinem Ordner
+ * findet – und sieht die Dateien der anderen App dadurch gar nicht erst.
  */
 export default defineConfig({
-  base: '/docbase/',
+  base: DOCBASE_SCOPE,
   publicDir: 'public-docbase',
 
   plugins: [
@@ -67,16 +68,18 @@ export default defineConfig({
         /**
          * Beides mit Schrägstrich am Ende und beides unterhalb von /docbase:
          * Daran erkennt der Browser zwei getrennte Apps auf derselben Adresse.
-         * Für eine Seite gilt immer der längste passende Geltungsbereich – der
-         * Manager (Bereich `/`) bleibt also überall sonst zuständig.
+         * Entscheidend ist, dass sich die Bereiche nicht überschneiden – der
+         * Manager liegt deshalb unter `/app/` und nicht mehr auf `/`. Läge er
+         * auf der Wurzel, umfasste sein Bereich diesen hier gleich mit, und
+         * Android liesse die DocBase nicht als eigene App installieren.
          */
-        start_url: '/docbase/',
-        scope: '/docbase/',
+        start_url: DOCBASE_SCOPE,
+        scope: DOCBASE_SCOPE,
         icons: [
-          { src: '/docbase/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/docbase/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: `${DOCBASE_SCOPE}icons/icon-192.png`, sizes: '192x192', type: 'image/png' },
+          { src: `${DOCBASE_SCOPE}icons/icon-512.png`, sizes: '512x512', type: 'image/png' },
           {
-            src: '/docbase/icons/icon-maskable-512.png',
+            src: `${DOCBASE_SCOPE}icons/icon-maskable-512.png`,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -110,7 +113,6 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
     outDir: 'dist/docbase',
-    emptyOutDir: false,
     rollupOptions: {
       input: 'docbase.html',
     },

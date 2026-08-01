@@ -16,17 +16,22 @@
 # ---------------------------------------------------------------------------
 # Zwei Apps auf einer Adresse
 #
-# Die DocBase liegt unter /docbase und ist eine eigene PWA: eigenes Manifest,
-# eigener Service Worker, eigener Geltungsbereich. Damit lassen sich beide
-# nebeneinander auf dem Startbildschirm installieren.
+# Manager (/app) und DocBase (/docbase) sind zwei eigenständige PWAs: je ein
+# Manifest, ein Service Worker, ein Geltungsbereich.
+#
+# Beide liegen bewusst in einem Unterordner, keine von beiden auf `/`. Solange
+# der Manager die Wurzel für sich beanspruchte, lag die DocBase innerhalb
+# seines Geltungsbereichs – Android hielt sie deshalb für dieselbe, bereits
+# installierte App und bot sie gar nicht erst zur Installation an. Verschachtelt
+# geht es nicht, nebeneinander schon.
 #
 # Die Reihenfolge dieser Regeln ist entscheidend: Netlify nimmt die erste, die
-# passt. Stünde die Sammelregel für den Manager oben, bekäme /docbase dessen
-# index.html – und man tippt auf DocBase und landet im Haushalt.
+# passt. Stünde die Sammelregel unten weiter oben, bekäme /docbase die Hülle
+# des Managers – und man tippt auf DocBase und landet im Haushalt.
 # ---------------------------------------------------------------------------
 
 # Ohne Schrägstrich am Ende liegt die Adresse ausserhalb des Geltungsbereichs
-# der App (`/docbase/`). Ein Browser, der sie so öffnet, hielte sie für eine
+# der jeweiligen App. Ein Browser, der sie so öffnet, hielte sie für eine
 # fremde Seite und böte die Installation nicht an.
 [[redirects]]
   from = "/docbase"
@@ -38,12 +43,35 @@
   to = "/docbase/index.html"
   status = 200
 
-# Single-Page-App: Alle übrigen Pfade liefern index.html, das Routing macht der
-# Browser.
+[[redirects]]
+  from = "/app"
+  to = "/app/"
+  status = 301
+
+[[redirects]]
+  from = "/app/*"
+  to = "/app/index.html"
+  status = 200
+
+# Die Wurzel gehört keiner App mehr und führt zum Manager – wer die Adresse
+# ohne Zusatz eintippt, landet dort, wo er vorher landete.
+[[redirects]]
+  from = "/"
+  to = "/app/"
+  status = 301
+
+# Alles Übrige stammt aus der Zeit, als der Manager auf `/` lag: alte
+# Lesezeichen, alte Verknüpfungen, der Startpunkt einer alten Installation.
+# Sie behalten ihren Pfad und bekommen nur das Präfix davor.
+#
+# Dateien, die es wirklich gibt, gehen vor: `/sw.js` liegt im Ausgabeordner und
+# wird weiterhin ausgeliefert, statt hier umgeleitet zu werden. Das ist
+# entscheidend – auf eine Umleitung hin behielte der Browser den alten Service
+# Worker für immer (siehe apps/web/legacy-root/sw.js).
 [[redirects]]
   from = "/*"
-  to = "/index.html"
-  status = 200
+  to = "/app/:splat"
+  status = 301
 
 [[headers]]
   for = "/*"
@@ -78,15 +106,22 @@
 # Der Service Worker darf nie aus dem Cache kommen – sonst bleibt eine alte
 # App-Version hängen, obwohl Netlify längst neu deployt hat.
 [[headers]]
-  for = "/sw.js"
+  for = "/app/sw.js"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
-  for = "/manifest.webmanifest"
+  for = "/app/manifest.webmanifest"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
     Content-Type = "application/manifest+json"
+
+# Der Abmelde-Worker an der alten Adresse. Dieselbe Regel und aus demselben
+# Grund: Ein zwischengespeicherter alter Worker meldete sich nie ab.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
 
 # Dasselbe für die DocBase: eigener Worker, eigenes Manifest, dieselbe Regel.
 [[headers]]
@@ -102,7 +137,7 @@
 
 # Gehashte Dateinamen ändern sich bei jeder Änderung – die dürfen ewig cachen.
 [[headers]]
-  for = "/assets/*"
+  for = "/app/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
