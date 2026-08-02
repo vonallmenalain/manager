@@ -271,7 +271,7 @@ Adresse ableitet; so kennt die Regel nur eine Stelle.
 
 | Weg | Plattform | Beschreibung |
 |---|---|---|
-| Teilen-Menü | Android | PDF aus Gmail/Outlook → Teilen → "Manager". Web Share Target. |
+| Teilen-Menü | Android | PDF aus Gmail/Outlook → Teilen → "Manager" → "Dokumente". Web Share Target. |
 | Kurzbefehl | iOS | Teilen → Kurzbefehl "An Manager", lädt direkt via API hoch (siehe 8.2) |
 | Dokument scannen | beide | In-App: Foto → automatischer Randbeschnitt, Entzerrung, Kontrast → PDF |
 | Foto aufnehmen | beide | Kamera-App des Systems, mit allen Modi die sie mitbringt |
@@ -774,9 +774,19 @@ statt nebenbei mitgebaut zu werden.
 Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
 
 * **Android:** Web Share Target funktioniert. `share_target` im Manifest mit
-  `method: POST`, `enctype: multipart/form-data`. Der Service Worker fängt den Request ab,
-  legt die Datei in der Cache Storage ab und leitet in die Erfassungsmaske um. Damit ist
+  `method: POST`, `enctype: multipart/form-data`. Der Service Worker fängt den Request ab
+  und legt in der Cache Storage ab, was ankommt. Damit ist
   "PDF aus Mail → Teilen → Manager" genau so schnell wie gewünscht.
+
+  **Nicht nur Dateien.** Wer aus dem Browser teilt, teilt keine Datei, sondern Titel,
+  Text und Adresse – dieselben Felder, die unter `share_target.params` angemeldet sind.
+  Solches Teilen lief früher in die Dokumente und verschwand dort wortlos, weil keine
+  Datei dabei war. Seither leitet der Worker auf `/app/teilen`, und dort wird das Ziel
+  gewählt: **Dokumente** für Dateien (Ablage samt Texterkennung), **Notizen** für Text
+  und Verweise (eine neue Notiz, die gleich zum Weiterschreiben aufgeht). Beide Ziele
+  stehen immer da; das für den geteilten Inhalt nicht mögliche ist blass und trägt den
+  Grund daneben – ein Menü, das je nach Inhalt anders aussieht, lässt einen jedes Mal
+  neu suchen.
 * **iOS/iPadOS:** Safari unterstützt Web Share Target **nicht** – auch 2026 nicht.
   Eine installierte PWA erscheint dort nicht im Teilen-Menü. Das lässt sich nicht
   umgehen, aber gleichwertig lösen:

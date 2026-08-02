@@ -7,7 +7,7 @@ import {
   MANAGER_SCOPE,
   scopesUeberschneidenSich,
 } from './appScopes.ts'
-import { SHARE_TARGET_PATH } from './shareConstants.ts'
+import { SHARE_LANDING_PATH, SHARE_LANDING_ROUTE, SHARE_TARGET_PATH } from './shareConstants.ts'
 
 /**
  * Diese Prüfungen sichern die Bedingung, an der die zweite App einmal
@@ -52,5 +52,16 @@ describe('Geltungsbereiche der beiden Apps', () => {
 
   it('geben dem Router dieselbe Adresse ohne Schrägstrich', () => {
     assert.equal(`${MANAGER_BASENAME}/`, MANAGER_SCOPE)
+  })
+
+  it('führen die Auswahlseite des Teilens in den Manager', () => {
+    // Der Service Worker leitet nach dem Teilen auf diese Adresse. Läge sie
+    // ausserhalb des Bereichs, verliesse das Teilen die App – und der Router
+    // muss dieselbe Seite unter seinem Basispfad kennen.
+    assert.ok(
+      SHARE_LANDING_PATH.startsWith(MANAGER_SCOPE),
+      `${SHARE_LANDING_PATH} liegt ausserhalb von ${MANAGER_SCOPE}`,
+    )
+    assert.equal(`${MANAGER_BASENAME}/${SHARE_LANDING_ROUTE}`, SHARE_LANDING_PATH)
   })
 })

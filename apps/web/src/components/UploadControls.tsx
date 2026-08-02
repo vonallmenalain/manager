@@ -21,7 +21,7 @@ import {
   rotatePage,
   type ScanPage,
 } from '../lib/scan/pages'
-import { collectSharedFiles } from '../lib/sharedFiles'
+import { collectSharedFiles } from '../lib/sharedContent'
 
 interface UploadState {
   running: number
@@ -49,7 +49,8 @@ const EMPTY_DETAILS: TrayDetails = {
  * Alle Wege, auf denen ein Dokument in die App kommt:
  *
  *  - Teilen aus einer anderen App (Android) – der Service Worker legt die
- *    Datei ab und leitet mit `?geteilt=n` hierher weiter
+ *    Datei ab, auf `/teilen` wird das Ziel gewählt, und von dort führt
+ *    `?geteilt=n` hierher
  *  - Dokument scannen – der eingebaute Scanner mit Randerkennung
  *  - Foto aufnehmen – die Kamera geht sofort auf, das Bild bleibt wie es ist
  *  - Datei wählen – PDFs und Screenshots
@@ -137,8 +138,9 @@ export function UploadControls({
     [upload, bereich],
   )
 
-  // Geteilte Dateien abholen. Läuft genau einmal pro Weiterleitung; der
-  // Parameter wird sofort entfernt, damit ein Neuladen nicht erneut auslöst.
+  // Geteilte Dateien abholen, nachdem auf `/teilen` „Dokumente" gewählt wurde.
+  // Läuft genau einmal pro Weiterleitung; der Parameter wird sofort entfernt,
+  // damit ein Neuladen nicht erneut auslöst.
   const shared = searchParams.get('geteilt')
   useEffect(() => {
     if (!shared) return
@@ -150,11 +152,6 @@ export function UploadControls({
       },
       { replace: true },
     )
-
-    if (shared === 'fehler') {
-      setState({ running: 0, message: 'Das geteilte Dokument konnte nicht gelesen werden.' })
-      return
-    }
 
     void collectSharedFiles().then((files) => {
       if (files.length === 0) {
