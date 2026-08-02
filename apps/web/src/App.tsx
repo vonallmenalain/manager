@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { MANAGER_BASENAME } from './lib/appScopes'
 import { useSession } from './lib/session'
+import { SHARE_LANDING_ROUTE } from './lib/shareConstants'
 import { BackendUnreachable } from './screens/BackendUnreachable'
 import { Dashboard } from './screens/Dashboard'
 import { DocumentDetail } from './screens/DocumentDetail'
@@ -11,6 +12,7 @@ import { Finance } from './screens/Finance'
 import { Login } from './screens/Login'
 import { Notes } from './screens/Notes'
 import { Setup } from './screens/Setup'
+import { Share } from './screens/Share'
 import { Shopping } from './screens/Shopping'
 
 export function App() {
@@ -34,6 +36,10 @@ export function App() {
           <Route path="einkauf" element={<Shopping />} />
           <Route path="notizen" element={<Notes />} />
           <Route path="finanzen" element={<Finance />} />
+          {/* Wo das Android-Teilen-Menü landet. Die Adresse steht in
+              shareConstants, weil der Service Worker hierher weiterleitet –
+              zwei Schreibweisen liessen das Teilen ins Leere laufen. */}
+          <Route path={SHARE_LANDING_ROUTE} element={<Share />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

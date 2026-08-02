@@ -8,6 +8,13 @@
     "composite": false,
     "types": ["node"]
   },
-  "include": ["src/lib/scan", "src/lib/appScopes.ts", "src/lib/appScopes.test.ts", "src/lib/shareConstants.ts"],
+  "include": [
+    "src/lib/scan",
+    "src/lib/appScopes.ts",
+    "src/lib/appScopes.test.ts",
+    "src/lib/shareConstants.ts",
+    "src/lib/shareNote.ts",
+    "src/lib/shareNote.test.ts"
+  ],
   "exclude": []
 }

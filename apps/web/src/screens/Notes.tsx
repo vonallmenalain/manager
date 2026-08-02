@@ -145,11 +145,17 @@ export function Notes() {
   useEffect(() => {
     // Erst suchen, wenn es etwas zu durchsuchen gibt: Wer den Wunsch vor dem
     // Eintreffen der Liste verwirft, öffnet nie etwas.
-    if (!gewuenscht || query.isLoading) return
+    //
+    // `isFetching` statt `isLoading`: Kommt man vom Teilen, ist die Notiz eben
+    // erst entstanden und die Liste im Zwischenspeicher noch die von vorhin.
+    // Die gilt zwar als geladen, kennt die neue Notiz aber nicht – der Wunsch
+    // wäre verworfen, bevor die Antwort da ist, und die frisch geteilte Notiz
+    // ginge nicht auf.
+    if (!gewuenscht || query.isFetching) return
     const treffer = notes.find((note) => note.id === gewuenscht)
     if (treffer) setEditing(treffer)
     setParams({}, { replace: true })
-  }, [gewuenscht, notes, query.isLoading, setParams])
+  }, [gewuenscht, notes, query.isFetching, setParams])
 
   return (
     <div className="space-y-4">
