@@ -2,14 +2,16 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
-  cornerPoint,
+  containsPoint,
   cropPixels,
+  fitInside,
   FULL_CROP,
+  handlePoint,
   isFullCrop,
   MIN_CROP_SIDE,
-  moveCorner,
   moveCrop,
-  nearestCropCorner,
+  moveHandle,
+  nearestCropHandle,
   type CropRect,
 } from './crop.ts'
 
@@ -28,11 +30,28 @@ function assertRect(actual: CropRect, expected: CropRect): void {
   }
 }
 
-describe('moveCorner', () => {
+describe('moveHandle', () => {
   it('zieht die angefasste Ecke und lässt die gegenüberliegende stehen', () => {
-    assertRect(moveCorner(FULL_CROP, 'nw', 0.2, 0.1), {
+    assertRect(moveHandle(FULL_CROP, 'nw', 0.2, 0.1), {
       left: 0.2,
       top: 0.1,
+      right: 1,
+      bottom: 1,
+    })
+  })
+
+  it('rührt bei einem Kantengriff nur diese eine Kante an', () => {
+    // „Unten die Fusszeile weg" darf die Breite nicht verändern – sonst muss
+    // man sie danach wieder geradeziehen.
+    assertRect(moveHandle(FULL_CROP, 's', 0.42, 0.8), {
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 0.8,
+    })
+    assertRect(moveHandle(FULL_CROP, 'w', 0.3, 0.42), {
+      left: 0.3,
+      top: 0,
       right: 1,
       bottom: 1,
     })
@@ -41,13 +60,13 @@ describe('moveCorner', () => {
   it('lässt das Rechteck nicht umstülpen', () => {
     // Die obere Kante über die untere hinaus wäre ein Bild mit negativer Höhe –
     // beim Zuschneiden käme nichts heraus, und zwar erst nach dem Speichern.
-    const rect = moveCorner(FULL_CROP, 'nw', 1.5, 1.5)
+    const rect = moveHandle(FULL_CROP, 'nw', 1.5, 1.5)
     assert.ok(Math.abs(rect.right - rect.left - MIN_CROP_SIDE) < 1e-9)
     assert.ok(Math.abs(rect.bottom - rect.top - MIN_CROP_SIDE) < 1e-9)
   })
 
-  it('hält die Ecke im Bild, auch wenn der Finger daneben liegt', () => {
-    const rect = moveCorner(FULL_CROP, 'se', -3, -3)
+  it('hält den Griff im Bild, auch wenn der Finger daneben liegt', () => {
+    const rect = moveHandle(FULL_CROP, 'se', -3, -3)
     assert.equal(rect.left, 0)
     assert.equal(rect.top, 0)
     assert.equal(rect.right, MIN_CROP_SIDE)
@@ -73,27 +92,66 @@ describe('moveCrop', () => {
   })
 })
 
-describe('nearestCropCorner', () => {
-  const rect = { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 }
+describe('handlePoint', () => {
+  const rect = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.9 }
 
-  it('findet die Ecke in Reichweite', () => {
-    assert.equal(nearestCropCorner(rect, 0.22, 0.21, 0.1), 'nw')
-    assert.equal(nearestCropCorner(rect, 0.79, 0.82, 0.1), 'se')
+  it('setzt die Ecken auf ihre Kanten', () => {
+    assert.deepEqual(handlePoint(rect, 'nw'), { x: 0.1, y: 0.2 })
+    assert.deepEqual(handlePoint(rect, 'ne'), { x: 0.7, y: 0.2 })
+    assert.deepEqual(handlePoint(rect, 'se'), { x: 0.7, y: 0.9 })
+    assert.deepEqual(handlePoint(rect, 'sw'), { x: 0.1, y: 0.9 })
   })
 
-  it('meldet nichts, wenn keine Ecke nah genug ist', () => {
-    // Eine Berührung in der Mitte ist ein Verschieben, kein Ziehen.
-    assert.equal(nearestCropCorner(rect, 0.5, 0.5, 0.1), null)
+  it('setzt die Kantengriffe in die Mitte ihrer Kante', () => {
+    const nah = (actual: { x: number; y: number }, x: number, y: number) => {
+      assert.ok(Math.abs(actual.x - x) < 1e-9, `x: ${actual.x} statt ${x}`)
+      assert.ok(Math.abs(actual.y - y) < 1e-9, `y: ${actual.y} statt ${y}`)
+    }
+
+    nah(handlePoint(rect, 'n'), 0.4, 0.2)
+    nah(handlePoint(rect, 's'), 0.4, 0.9)
+    nah(handlePoint(rect, 'w'), 0.1, 0.55)
+    nah(handlePoint(rect, 'e'), 0.7, 0.55)
   })
 })
 
-describe('cornerPoint', () => {
-  it('gibt jede Ecke an ihrer Kante zurück', () => {
-    const rect = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.9 }
-    assert.deepEqual(cornerPoint(rect, 'nw'), { x: 0.1, y: 0.2 })
-    assert.deepEqual(cornerPoint(rect, 'ne'), { x: 0.7, y: 0.2 })
-    assert.deepEqual(cornerPoint(rect, 'se'), { x: 0.7, y: 0.9 })
-    assert.deepEqual(cornerPoint(rect, 'sw'), { x: 0.1, y: 0.9 })
+describe('nearestCropHandle', () => {
+  const rect = { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 }
+  // Ein hochkantes Bild: derselbe Anteil bedeutet auf den beiden Achsen
+  // Verschiedenes. Genau daran scheiterte das Greifen vorher.
+  const hochkant = { width: 400, height: 1200 }
+
+  it('misst in Bildschirmpunkten und nicht in Anteilen', () => {
+    // 0.02 Anteil sind senkrecht 24 Punkte, waagrecht nur 8 – beides liegt
+    // innerhalb von 44 Punkten und muss die Ecke treffen.
+    assert.equal(nearestCropHandle(rect, { x: 0.22, y: 0.22 }, hochkant, 44), 'nw')
+
+    // 0.06 Anteil sind auf dieser Höhe 72 Punkte: zu weit weg. In Anteilen
+    // gerechnet wäre das fälschlich ein Treffer gewesen.
+    assert.equal(nearestCropHandle(rect, { x: 0.2, y: 0.26 }, hochkant, 44), null)
+  })
+
+  it('findet den Kantengriff zwischen den Ecken', () => {
+    assert.equal(nearestCropHandle(rect, { x: 0.5, y: 0.79 }, { width: 800, height: 800 }, 44), 's')
+  })
+
+  it('liefert mit unbegrenztem Radius immer einen Griff', () => {
+    // Der Fall „daneben getippt": Ein Tippen, das gar nichts bewirkt, fühlt
+    // sich kaputt an – ausserhalb des Ausschnitts gibt es nichts anderes zu
+    // tun, als die nächste Kante dorthin zu ziehen.
+    assert.equal(
+      nearestCropHandle(rect, { x: 0.02, y: 0.02 }, { width: 800, height: 800 }, Infinity),
+      'nw',
+    )
+  })
+})
+
+describe('containsPoint', () => {
+  const rect = { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 }
+
+  it('erkennt drinnen und draussen', () => {
+    assert.ok(containsPoint(rect, { x: 0.5, y: 0.5 }))
+    assert.ok(!containsPoint(rect, { x: 0.5, y: 0.9 }))
   })
 })
 
@@ -124,5 +182,38 @@ describe('cropPixels', () => {
     })
     assert.ok(isFullCrop(FULL_CROP))
     assert.ok(!isFullCrop({ ...FULL_CROP, left: 0.1 }))
+  })
+})
+
+describe('fitInside', () => {
+  it('legt ein hochauflösendes Bild vollständig in die Fläche', () => {
+    // Der eigentliche Fehler auf dem Desktop: Das Bild stand in voller Grösse
+    // da, ragte unten heraus und legte sich über die Knöpfe.
+    const box = fitInside({ width: 4000, height: 3000 }, { width: 800, height: 600 })
+    assert.equal(box.width, 800)
+    assert.equal(box.height, 600)
+    assert.equal(box.left, 0)
+    assert.equal(box.top, 0)
+  })
+
+  it('zentriert und hält den Rand für die Griffe frei', () => {
+    const box = fitInside({ width: 1000, height: 1000 }, { width: 800, height: 600 }, 20)
+    assert.equal(box.width, 560)
+    assert.equal(box.height, 560)
+    assert.equal(box.left, 120)
+    assert.equal(box.top, 20)
+  })
+
+  it('behält das Seitenverhältnis bei', () => {
+    const box = fitInside({ width: 1000, height: 2000 }, { width: 900, height: 900 })
+    assert.ok(Math.abs(box.width / box.height - 0.5) < 1e-9)
+    assert.ok(box.height <= 900)
+  })
+
+  it('kommt mit einer noch ungemessenen Fläche aus', () => {
+    // Beim ersten Bild steht die Grösse der Fläche noch nicht fest; eine
+    // Division durch null darf daraus keine NaN-Koordinaten machen.
+    const box = fitInside({ width: 1000, height: 1000 }, { width: 0, height: 0 })
+    assert.ok(Number.isFinite(box.width) && Number.isFinite(box.left))
   })
 })

@@ -423,6 +423,38 @@ Seiten. Das steht im Fenster auch so da. Reicht die Vorschau nicht bis zur letzt
 (bei mehr als 25), erscheint der Knopf gar nicht erst: Ein Beschnitt, der still die
 Seiten 26 bis 30 verlöre, wäre schlimmer als keiner.
 
+*Die Bildfläche wird ausgerechnet, nicht dem Browser überlassen.* Die erste Fassung gab
+dem Bild `max-height: 100%` – eine Angabe, die an der Höhe des Elternteils hängt, die
+dieses aber erst vom Bild bekommt. Diesen Zirkelschluss löst der Browser auf, indem er
+die Begrenzung fallen lässt: Ein hochauflösendes Foto stand danach in voller Grösse da,
+ragte unten aus dem Fenster heraus – ohne dass sich scrollen liess – und legte sich
+mitsamt seiner Bedienfläche über die Knöpfe darunter, die daraufhin nicht mehr
+anklickbar waren. Jetzt rechnet `fitInside` aus, wo das Bild zu liegen kommt; Anzeige,
+Bedienfläche und Beschnitt bekommen damit dieselben Masse. Kopf- und Fusszeile liegen
+zusätzlich in einer eigenen Ebene (`z-10`) mit eigenem Hintergrund: Absolut positionierte
+Kinder – und die Abdunklung ausserhalb des Ausschnitts ist eines – werden sonst über
+gewöhnlichen Geschwistern gezeichnet, ganz gleich in welcher Reihenfolge sie im Dokument
+stehen.
+
+*Angefasst wird in Bildschirmpunkten, gerechnet in Anteilen.* Wie nah ein Finger an einem
+Griff ist, ist eine Frage in Punkten: Ein hochkantes Bild ist doppelt so hoch wie breit,
+derselbe Anteil bedeutet auf den beiden Achsen also Verschiedenes. Solange in Anteilen
+gemessen wurde, liessen sich die Griffe „mal treffen und mal nicht". Dazu acht Griffe
+statt vier – die vier Kanten sind keine Zierde, „unten die Fusszeile weg" ist der
+häufigste Beschnitt überhaupt und mit blossen Ecken aus zwei Bewegungen
+zusammenzusetzen –, ein Greifradius von 44 Punkten, ein Rand von 28 Punkten um das Bild,
+auf dem die äussere Hälfte der Randgriffe liegt, und die Regel, dass jeder Griff auf die
+Fläche etwas bewirkt: nah an einem Griff dieser, innerhalb des Ausschnitts verschieben,
+sonst der nächstgelegene Griff. Ein Tippen, das gar nichts tut, fühlt sich kaputt an –
+und ein Knopf, der sich nicht drücken lässt, sagt nicht warum: „Speichern" ist deshalb
+immer anklickbar und erklärt gegebenenfalls, dass noch kein Ausschnitt gewählt ist.
+
+Geprüft wird das nicht nur in der Rechnung (`crop.test.ts`), sondern im Browser:
+`crop-harness.html` öffnet das Fenster mit einem im Canvas erzeugten Bild beliebiger
+Auflösung. Die drei Eigenschaften, an denen die erste Fassung scheiterte – passt das Bild
+ins Fenster, lassen sich die Griffe treffen, sind die Knöpfe das oberste Element an ihrer
+Stelle –, zeigen sich nur dort.
+
 **Ansichten:** Startbildschirm (Kachel „Pendent" mit den nächsten Fristen) · Liste/Suche ·
 Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).
 
