@@ -228,6 +228,14 @@ export const shoppingItemSchema = z.object({
   id: z.string(),
   text: z.string(),
   sectionId: z.string(),
+  /**
+   * Der Name der Abteilung, nur für eine App, die noch von vor den eigenen
+   * Abteilungen stammt und danach gruppiert – siehe
+   * `apps/api/src/lib/shopping-compat.ts`. Die heutige Oberfläche liest
+   * `sectionId`; wer hier etwas anzeigt, zeigt einen Namen an, der nach dem
+   * Umbenennen einer Abteilung nicht mehr stimmt.
+   */
+  section: storeSectionSchema.optional(),
   done: z.boolean(),
   createdBy: z.string(),
   doneBy: z.string().nullable(),
