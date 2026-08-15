@@ -215,6 +215,33 @@ export const activity = sqliteTable(
 export type ActivityRow = typeof activity.$inferSelect
 
 /**
+ * Die Abteilungen des Ladens, in der Reihenfolge des Rundgangs.
+ *
+ * Eine eigene Tabelle statt einer festen Liste im Programmtext: Jeder Laden
+ * ist anders angeordnet, und wer „Fertiggerichte" braucht oder die Molkerei
+ * zuletzt abläuft, soll das einstellen können, ohne dass jemand die App neu
+ * baut. Die Erstausstattung legt die Migration an – danach gehört die Liste
+ * dem Haushalt.
+ */
+export const shoppingSections = sqliteTable(
+  'shopping_sections',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /**
+     * Kleiner heisst weiter vorn. Die Erstausstattung belegt 10, 20, 30 … –
+     * die Lücken dazwischen sind Absicht, damit sich Umsortieren nicht auf
+     * jede Zeile auswirkt.
+     */
+    sortOrder: integer('sort_order').notNull().default(100),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [index('shopping_sections_sort_idx').on(table.sortOrder, table.name)],
+)
+
+export type ShoppingSectionRow = typeof shoppingSections.$inferSelect
+
+/**
  * Einkaufsliste – eine gemeinsame Liste für den ganzen Haushalt.
  *
  * Bewusst ohne Mengeneinheiten und ohne Rezeptverknüpfung: Was man im Laden
@@ -227,8 +254,17 @@ export const shoppingItems = sqliteTable(
     text: text('text').notNull(),
     /** Vereinheitlicht, um dasselbe Produkt beim nächsten Mal wiederzuerkennen. */
     normalizedText: text('normalized_text').notNull(),
-    /** Abteilung im Laden, damit die Liste der Wegführung folgt. */
-    section: text('section').notNull().default('Sonstiges'),
+    /**
+     * Abteilung im Laden, damit die Liste der Wegführung folgt. Verwiesen wird
+     * auf die Kennung und nicht auf den Namen: Eine umbenannte Abteilung
+     * bleibt dieselbe Abteilung, samt allem, was darin liegt.
+     *
+     * Ohne `cascade`: Eine Abteilung wird nie unter ihren Einträgen weggezogen
+     * – die Route räumt sie erst um und löscht dann.
+     */
+    sectionId: text('section_id')
+      .notNull()
+      .references(() => shoppingSections.id),
 
     done: integer('done', { mode: 'boolean' }).notNull().default(false),
     createdBy: text('created_by')
@@ -241,6 +277,7 @@ export const shoppingItems = sqliteTable(
   (table) => [
     index('shopping_done_idx').on(table.done),
     index('shopping_normalized_idx').on(table.normalizedText),
+    index('shopping_section_idx').on(table.sectionId),
   ],
 )
 
@@ -256,7 +293,14 @@ export type ShoppingItemRow = typeof shoppingItems.$inferSelect
  */
 export const shoppingMemory = sqliteTable('shopping_memory', {
   normalizedText: text('normalized_text').primaryKey(),
-  section: text('section').notNull(),
+  /**
+   * `cascade`: Verschwindet eine Abteilung doch einmal, ohne dass die Route
+   * aufgeräumt hat, ist das Gemerkte wertlos – ein Verweis auf ein Regal, das
+   * es nicht mehr gibt, wäre schlimmer als gar keine Erinnerung.
+   */
+  sectionId: text('section_id')
+    .notNull()
+    .references(() => shoppingSections.id, { onDelete: 'cascade' }),
   updatedAt: text('updated_at').notNull().default(now),
 })
 

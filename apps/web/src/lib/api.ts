@@ -4,6 +4,7 @@ import type {
   CreateCategoryInput,
   CreatePaymentInput,
   CreateShoppingItemInput,
+  CreateShoppingSectionInput,
   CreateUserInput,
   DocumentDetail,
   DocumentStatus,
@@ -19,9 +20,11 @@ import type {
   SaveMonthInput,
   SetupInput,
   ShoppingItem,
+  ShoppingSection,
   UpdateCategoryInput,
   UpdateDocumentInput,
   UpdateShoppingItemInput,
+  UpdateShoppingSectionInput,
   UpsertNoteInput,
   YearFigures,
 } from '@manager/shared'
@@ -287,6 +290,32 @@ export const api = {
 
   clearDoneShoppingItems: () =>
     request<{ removed: number }>('/api/shopping/erledigte-loeschen', { method: 'POST' }),
+
+  listShoppingSections: () =>
+    request<{ sections: ShoppingSection[] }>('/api/shopping/sections'),
+
+  addShoppingSection: (input: CreateShoppingSectionInput) =>
+    request<{ section: ShoppingSection }>('/api/shopping/sections', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  renameShoppingSection: (id: string, input: UpdateShoppingSectionInput) =>
+    request<{ section: ShoppingSection }>(`/api/shopping/sections/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  reorderShoppingSections: (ids: string[]) =>
+    request<{ sections: ShoppingSection[] }>('/api/shopping/sections/order', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
+
+  deleteShoppingSection: (id: string) =>
+    request<{ moved: number; into: string }>(`/api/shopping/sections/${id}`, {
+      method: 'DELETE',
+    }),
 
   listNotes: (search = '') =>
     request<{ notes: Note[] }>(`/api/notes${search ? `?q=${encodeURIComponent(search)}` : ''}`),

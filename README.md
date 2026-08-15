@@ -9,7 +9,8 @@ durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Der
 **Dokumentenmodus** schneidet ein abfotografiertes Blatt selbst zu, entzerrt es
 und rechnet den Schatten heraus; **mehrere Seiten** sammeln sich zu einem
 einzigen PDF, statt einzeln in der Ablage zu landen. Die
-**Einkaufsliste** sortiert nach Ladenabteilungen und merkt sich Korrekturen
+**Einkaufsliste** sortiert nach Ladenabteilungen – selbst angelegt und in die
+Reihenfolge des eigenen Rundgangs gebracht – und merkt sich Korrekturen
 dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
 mit Autospeichern, Anheften, Farben und Suche –, und die **Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet

@@ -3,9 +3,15 @@ import { z } from 'zod'
 import { normalizeForSearch } from './documents.js'
 
 /**
- * Abteilungen im Laden, in der Reihenfolge, in der man sie üblicherweise
- * abläuft. Die Einkaufsliste sortiert danach, damit man nicht zweimal durch
- * denselben Gang muss.
+ * Die Abteilungen, mit denen eine frische Einkaufsliste beginnt – in der
+ * Reihenfolge, in der man sie üblicherweise abläuft. Die Liste sortiert
+ * danach, damit man nicht zweimal durch denselben Gang muss.
+ *
+ * Seit sich Abteilungen in der App anlegen, umbenennen und umordnen lassen,
+ * ist diese Liste nicht mehr die Wahrheit, sondern nur noch der Anfang: Die
+ * Datenbank sagt, welche Abteilungen dieser Haushalt hat und in welcher
+ * Reihenfolge sie stehen. Hier steht, womit er startet – und woran die
+ * Stichwortliste unten ihre Erstzuordnung hängt.
  */
 export const STORE_SECTIONS = [
   'Früchte & Gemüse',
@@ -121,10 +127,107 @@ export function guessSection(text: string): StoreSection {
 
 export const storeSectionSchema = z.enum(STORE_SECTIONS)
 
+/**
+ * Eine Abteilung, wie sie in der Datenbank steht.
+ *
+ * Ein Eintrag zeigt mit `sectionId` darauf und nicht auf den Namen: Wer
+ * „Molkerei" in „Kühlregal" umbenennt, meint dieselbe Abteilung – und alles,
+ * was darin liegt, soll darin bleiben.
+ */
+export const shoppingSectionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Kleiner heisst weiter vorn im Laden. */
+  sortOrder: z.number(),
+})
+
+export type ShoppingSection = z.infer<typeof shoppingSectionSchema>
+
+const sectionNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Bitte einen Namen eingeben')
+  .max(40, 'Zu lang')
+
+export const createShoppingSectionSchema = z.object({ name: sectionNameSchema })
+
+export type CreateShoppingSectionInput = z.infer<typeof createShoppingSectionSchema>
+
+export const updateShoppingSectionSchema = z.object({ name: sectionNameSchema })
+
+export type UpdateShoppingSectionInput = z.infer<typeof updateShoppingSectionSchema>
+
+/**
+ * Die neue Reihenfolge, als ganze Liste von Kennungen.
+ *
+ * Bewusst nicht „schieb diese eine Abteilung um einen Platz": Wer zweimal
+ * schnell hintereinander tippt, schickt sonst zwei Anweisungen, die beide vom
+ * alten Stand ausgehen – und die Liste steht danach anders da, als sie auf dem
+ * Bildschirm aussah.
+ */
+export const reorderShoppingSectionsSchema = z.object({
+  ids: z.array(z.string()).min(1, 'Keine Abteilungen angegeben'),
+})
+
+export type ReorderShoppingSectionsInput = z.infer<typeof reorderShoppingSectionsSchema>
+
+/**
+ * Zwei Abteilungen gelten als dieselbe, wenn sie sich nur in Gross- und
+ * Kleinschreibung, Umlautschreibweise oder Leerzeichen unterscheiden.
+ *
+ * „Getränke" und „getraenke" wären zwei Zeilen in der Datenbank, in der
+ * Auswahl beim Einsortieren aber zweimal derselbe Knopf – und man träfe nie
+ * verlässlich denselben.
+ */
+export function sameSectionName(a: string, b: string): boolean {
+  return normalizeForSearch(a) === normalizeForSearch(b)
+}
+
+/**
+ * Die Abteilung, in der landet, was sich nicht zuordnen lässt – „Sonstiges"
+ * aus der Erstausstattung.
+ *
+ * Kein Merkmal an der Zeile, sondern eine feste Kennung: Ein Merkmal müsste
+ * beim Löschen weitergereicht werden, und dann gäbe es Zustände ohne
+ * Sammelposten.
+ */
+export const CATCH_ALL_SECTION_ID = 'sonstiges'
+
+/**
+ * Wohin ein Eintrag kommt, für den keine Abteilung feststeht – und wohin die
+ * Einträge einer gelöschten Abteilung wandern.
+ *
+ * `exclude` ist die Abteilung, die gerade verschwindet: Sie darf das Ziel
+ * nicht sein. Wurde der Sammelposten selbst gelöscht, ist es die letzte
+ * Abteilung – dort steht ein Sammelposten in einem Laden ohnehin. Gibt es
+ * überhaupt keine andere, ist die Antwort `undefined`; dann verhindert der
+ * Server das Löschen, statt Einträge ins Leere zu schieben.
+ */
+export function catchAllSection(
+  sections: readonly ShoppingSection[],
+  exclude?: string,
+): ShoppingSection | undefined {
+  const uebrig = sections.filter((section) => section.id !== exclude)
+  return uebrig.find((section) => section.id === CATCH_ALL_SECTION_ID) ?? uebrig[uebrig.length - 1]
+}
+
+/**
+ * Der Abstand zwischen zwei Abteilungen in der Sortierung. Die Lücken sind
+ * Absicht: Eine neue Abteilung hängt sich hinten an, ohne dass eine einzige
+ * bestehende Zeile angefasst werden muss.
+ */
+export const SECTION_SORT_STEP = 10
+
+/** Ganz hinten, mit Abstand zur letzten Abteilung. */
+export function nextSectionSortOrder(sections: readonly ShoppingSection[]): number {
+  const letzte = sections[sections.length - 1]
+  return letzte ? letzte.sortOrder + SECTION_SORT_STEP : SECTION_SORT_STEP
+}
+
 export const shoppingItemSchema = z.object({
   id: z.string(),
   text: z.string(),
-  section: storeSectionSchema,
+  sectionId: z.string(),
   done: z.boolean(),
   createdBy: z.string(),
   doneBy: z.string().nullable(),
@@ -136,14 +239,14 @@ export type ShoppingItem = z.infer<typeof shoppingItemSchema>
 
 export const createShoppingItemSchema = z.object({
   text: z.string().trim().min(1, 'Bitte etwas eingeben').max(120, 'Zu lang'),
-  section: storeSectionSchema.optional(),
+  sectionId: z.string().optional(),
 })
 
 export type CreateShoppingItemInput = z.infer<typeof createShoppingItemSchema>
 
 export const updateShoppingItemSchema = z.object({
   text: z.string().trim().min(1).max(120).optional(),
-  section: storeSectionSchema.optional(),
+  sectionId: z.string().optional(),
   done: z.boolean().optional(),
 })
 
