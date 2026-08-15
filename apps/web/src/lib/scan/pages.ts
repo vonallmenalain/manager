@@ -407,15 +407,20 @@ export async function cropToJpeg(source: Blob, rect: CropRect): Promise<Blob> {
 export { nearestCorner } from './geometry.ts'
 export type { Point, Quad } from './geometry.ts'
 export {
-  cornerPoint,
-  CROP_CORNERS,
+  containsPoint,
+  CROP_HANDLES,
+  cropPixels,
+  fitInside,
   FULL_CROP,
+  handlePoint,
   isFullCrop,
-  moveCorner,
   moveCrop,
-  nearestCropCorner,
-  type CropCorner,
+  moveHandle,
+  nearestCropHandle,
+  type Box,
+  type CropHandle,
   type CropRect,
+  type Size,
 } from './crop.ts'
 export {
   DEFAULT_SCAN_FILTER,
