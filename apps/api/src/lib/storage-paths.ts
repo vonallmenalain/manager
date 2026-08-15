@@ -62,6 +62,12 @@ export function extensionFor(mimeType: string, originalName: string): string {
 export interface StoragePathParts {
   docDate: string
   categoryName: string | null
+  /**
+   * Die Hauptkategorie, falls `categoryName` eine Unterkategorie ist. Sie wird
+   * zu einem eigenen Ordner davor – die Ordnerstruktur bildet damit dieselbe
+   * Schachtelung ab wie die App.
+   */
+  parentCategoryName?: string | null
   title: string
   documentId: string
   extension: string
@@ -72,13 +78,35 @@ export interface StoragePathParts {
  * verständlich bleibt: Jahr, Kategorie, Datum und Titel stehen im Klartext.
  * Die kurze ID am Ende hält den Namen eindeutig, wenn zwei Dokumente gleich
  * heissen – etwa zwölf Monatsrechnungen desselben Anbieters.
+ *
+ * Bei einer Unterkategorie kommt ein Ordner dazu: `2026/Notfall/Medikamente/…`.
+ * Ohne ihn lägen „Notfall › Medikamente" und „Alltag › Medikamente" auf dem
+ * NAS im selben Ordner – zwei Schubladen der App, ein Haufen in der Freigabe.
  */
 export function buildStoragePath(parts: StoragePathParts): string {
   const year = parts.docDate.slice(0, 4)
   const category = slugify(parts.categoryName ?? 'Unsortiert')
+  // Ohne Kategorie gibt es auch keine Hauptkategorie darüber – „Unsortiert"
+  // bleibt eine einzige Ebene.
+  const parent = parts.categoryName && parts.parentCategoryName
+    ? [slugify(parts.parentCategoryName)]
+    : []
   const shortId = parts.documentId.replace(/-/g, '').slice(0, 8)
   const name = `${parts.docDate}__${slugify(parts.title)}__${shortId}.${parts.extension}`
-  return join(year, category, name)
+  return join(year, ...parent, category, name)
+}
+
+/**
+ * Der Pfad der .txt-Datei, die neben dem Original den erkannten Text trägt.
+ *
+ * Sie hängt am Dateinamen und nicht an der Kennung: In der Freigabe soll neben
+ * `2026-03-14__Rechnung__a3f9c1d2.pdf` die `…__a3f9c1d2.txt` liegen und nicht
+ * irgendwo eine Datei, die man dem Dokument nicht ansieht. Der Preis ist, dass
+ * sie bei einem Wechsel der Endung ihren Namen verliert – wer die Datei
+ * ersetzt, räumt die alte deshalb weg.
+ */
+export function textSidecarPath(storagePath: string): string {
+  return storagePath.replace(/\.[^./\\]+$/, '.txt')
 }
 
 /**

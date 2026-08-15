@@ -1,14 +1,50 @@
-import { UNCATEGORIZED, UNCATEGORIZED_LABEL, type ManagedDocument } from '@manager/shared'
+import {
+  categoryLabel,
+  groupCategories,
+  UNCATEGORIZED,
+  UNCATEGORIZED_LABEL,
+  type Category,
+  type ManagedDocument,
+} from '@manager/shared'
 import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { NewCategoryDialog } from '../../components/CategoryPicker'
+import { DocumentTile } from '../../components/DocumentTile'
 import { DocumentIcon } from '../../components/icons'
 import { SearchSnippet } from '../../components/SearchSnippet'
 import { UploadControls } from '../../components/UploadControls'
-import { useLocalJson } from '../../lib/einstellungen'
+import { useLocalJson, useLocalSetting } from '../../lib/einstellungen'
 import { useCategories, useDocuments } from '../../lib/documents'
 import { useEscape } from '../../lib/overlay'
+
+/**
+ * Wie die Sammlung angezeigt wird.
+ *
+ * Die Liste beantwortet „wie heisst es", die Kacheln „wie sieht es aus". Beides
+ * ist berechtigt und hängt davon ab, wonach man gerade sucht – deshalb eine
+ * Einstellung und keine Entscheidung. Sie hängt am Gerät und nicht am Konto:
+ * Auf dem Handy will man anderes sehen als am grossen Bildschirm.
+ */
+const ANSICHTEN = ['liste', 'kacheln'] as const
+type Ansicht = (typeof ANSICHTEN)[number]
+
+/**
+ * Wie viele Kacheln nebeneinander stehen.
+ *
+ * Eins ist keine Kachelansicht mehr, sondern eine Liste mit grossen Bildern –
+ * und genau das will man auf dem Handy manchmal. Vier ist die Grenze, ab der
+ * auf einem Telefon nichts mehr zu erkennen wäre.
+ */
+const SPALTEN = ['1', '2', '3', '4'] as const
+type Spalten = (typeof SPALTEN)[number]
+
+const SPALTEN_KLASSE: Record<Spalten, string> = {
+  '1': 'grid-cols-1',
+  '2': 'grid-cols-2',
+  '3': 'grid-cols-3',
+  '4': 'grid-cols-4',
+}
 
 /**
  * Die Sammlung.
@@ -27,6 +63,8 @@ export function Library() {
     [],
     (raw) => (Array.isArray(raw) ? raw.filter((e): e is string => typeof e === 'string') : []),
   )
+  const [ansicht, setAnsicht] = useLocalSetting<Ansicht>('docbase.ansicht', ANSICHTEN, 'liste')
+  const [spalten, setSpalten] = useLocalSetting<Spalten>('docbase.spalten', SPALTEN, '2')
 
   const categories = useCategories('docbase')
   const query = useDocuments({
@@ -36,16 +74,30 @@ export function Library() {
   })
 
   const documents = query.data?.documents ?? []
+  const alleKategorien = categories.data?.categories ?? []
+
+  /** „Notfall › Medikamente" – ohne die Hauptkategorie fehlt die Hälfte. */
+  function kategorieName(document: ManagedDocument): string | undefined {
+    return document.categoryId ? categoryLabel(alleKategorien, document.categoryId) : undefined
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Sammlung</h1>
-        <CategoryFilter
-          categories={categories.data?.categories ?? []}
-          gewaehlt={kategorien}
-          onChange={setKategorien}
-        />
+        <div className="flex items-center gap-2">
+          <CategoryFilter
+            categories={alleKategorien}
+            gewaehlt={kategorien}
+            onChange={setKategorien}
+          />
+          <ViewMenu
+            ansicht={ansicht}
+            onAnsichtChange={setAnsicht}
+            spalten={spalten}
+            onSpaltenChange={setSpalten}
+          />
+        </div>
       </div>
 
       <SearchField value={search} onChange={setSearch} />
@@ -54,16 +106,20 @@ export function Library() {
         <ListSkeleton />
       ) : documents.length === 0 ? (
         <EmptyState gefiltert={Boolean(search) || kategorien.length > 0} />
+      ) : ansicht === 'kacheln' ? (
+        <ul className={`grid gap-2 ${SPALTEN_KLASSE[spalten]}`}>
+          {documents.map((document) => (
+            <DocumentTile
+              key={document.id}
+              document={document}
+              categoryName={kategorieName(document)}
+            />
+          ))}
+        </ul>
       ) : (
         <ul className="space-y-2">
           {documents.map((document) => (
-            <Row
-              key={document.id}
-              document={document}
-              categoryName={
-                categories.data?.categories.find((c) => c.id === document.categoryId)?.name
-              }
-            />
+            <Row key={document.id} document={document} categoryName={kategorieName(document)} />
           ))}
         </ul>
       )}
@@ -106,13 +162,17 @@ function SearchField({ value, onChange }: { value: string; onChange: (value: str
  * Im Manager stehen dahinter Status, Zuständigkeit, Zeitraum und Papierkorb –
  * lauter Fragen an ein Stück Post. An eine Studie stellt man nur eine: in
  * welche Schublade sie gehört.
+ *
+ * Eine Hauptkategorie steht für alles, was darunter liegt: Wer „Notfall"
+ * anhakt, sieht auch die Dokumente aus „Notfall › Medikamente". Das erledigt
+ * der Server – hier steht nur, was angehakt ist.
  */
 function CategoryFilter({
   categories,
   gewaehlt,
   onChange,
 }: {
-  categories: readonly { id: string; name: string }[]
+  categories: readonly Category[]
   gewaehlt: readonly string[]
   onChange: (value: string[]) => void
 }) {
@@ -125,77 +185,72 @@ function CategoryFilter({
     onChange(gewaehlt.includes(id) ? gewaehlt.filter((e) => e !== id) : [...gewaehlt, id])
   }
 
+  const gruppen = groupCategories(categories)
+
   return (
     <div className="relative">
-      <button
+      <FilterButton
+        label="Kategorie"
+        open={open}
+        anzahl={gewaehlt.length}
         onClick={() => setOpen((value) => !value)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300"
       >
-        <svg className="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M4 6h16M7 12h10M10 18h4"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
-        Kategorie
-        {gewaehlt.length > 0 ? (
-          <span className="grid size-5 place-items-center rounded-full bg-teal-700 text-xs font-bold text-white">
-            {gewaehlt.length}
-          </span>
-        ) : null}
-      </button>
+        <path
+          d="M4 6h16M7 12h10M10 18h4"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </FilterButton>
 
       {open ? (
-        <>
-          <button
-            className="fixed inset-0 z-20 cursor-default"
-            onClick={() => setOpen(false)}
-            aria-label="Auswahl schliessen"
-          />
-          <div
-            role="dialog"
-            aria-label="Nach Kategorie filtern"
-            className="absolute right-0 top-12 z-30 max-h-[70dvh] w-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
-          >
-            <Haken checked={gewaehlt.includes(UNCATEGORIZED)} onChange={() => toggle(UNCATEGORIZED)}>
-              {UNCATEGORIZED_LABEL}
-            </Haken>
-            {categories.map((category) => (
+        <Panel label="Nach Kategorie filtern" onClose={() => setOpen(false)}>
+          <Haken checked={gewaehlt.includes(UNCATEGORIZED)} onChange={() => toggle(UNCATEGORIZED)}>
+            {UNCATEGORIZED_LABEL}
+          </Haken>
+          {gruppen.map((gruppe) => (
+            <div key={gruppe.category.id}>
               <Haken
-                key={category.id}
-                checked={gewaehlt.includes(category.id)}
-                onChange={() => toggle(category.id)}
+                checked={gewaehlt.includes(gruppe.category.id)}
+                onChange={() => toggle(gruppe.category.id)}
               >
-                {category.name}
+                {gruppe.category.name}
               </Haken>
-            ))}
+              {gruppe.children.map((child) => (
+                <Haken
+                  key={child.id}
+                  eingerueckt
+                  checked={gewaehlt.includes(child.id)}
+                  onChange={() => toggle(child.id)}
+                >
+                  {child.name}
+                </Haken>
+              ))}
+            </div>
+          ))}
 
-            <button
-              onClick={() => setCreating(true)}
-              className="flex min-h-10 items-center gap-2 text-sm font-medium text-teal-700 dark:text-teal-300"
-            >
-              <span aria-hidden="true">+</span>
-              Neue Kategorie
-            </button>
+          <button
+            onClick={() => setCreating(true)}
+            className="flex min-h-10 items-center gap-2 text-sm font-medium text-teal-700 dark:text-teal-300"
+          >
+            <span aria-hidden="true">+</span>
+            Neue Kategorie
+          </button>
 
-            <button
-              onClick={() => onChange([])}
-              disabled={gewaehlt.length === 0}
-              className="mt-2 min-h-10 w-full rounded-xl border-t border-slate-200 pt-2 text-sm font-medium text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:text-slate-300"
-            >
-              Auswahl zurücksetzen
-            </button>
-          </div>
-        </>
+          <button
+            onClick={() => onChange([])}
+            disabled={gewaehlt.length === 0}
+            className="mt-2 min-h-10 w-full rounded-xl border-t border-slate-200 pt-2 text-sm font-medium text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:text-slate-300"
+          >
+            Auswahl zurücksetzen
+          </button>
+        </Panel>
       ) : null}
 
       {creating ? (
         <NewCategoryDialog
           bereich="docbase"
+          categories={categories}
           onClose={() => setCreating(false)}
           onCreated={(category) => {
             toggle(category.id)
@@ -207,11 +262,184 @@ function CategoryFilter({
   )
 }
 
+/**
+ * Wie angezeigt wird – nicht was.
+ *
+ * Bewusst neben und nicht in den Kategorienfilter: Das eine bestimmt, welche
+ * Dokumente man sieht, das andere, wie sie aussehen. In einem Menü
+ * zusammengelegt stünde die Frage „welche Kategorie" neben „wie viele Kacheln
+ * pro Reihe", und beim Zurücksetzen wäre nie klar, was zurückgesetzt wird.
+ */
+function ViewMenu({
+  ansicht,
+  onAnsichtChange,
+  spalten,
+  onSpaltenChange,
+}: {
+  ansicht: Ansicht
+  onAnsichtChange: (value: Ansicht) => void
+  spalten: Spalten
+  onSpaltenChange: (value: Spalten) => void
+}) {
+  const [open, setOpen] = useState(false)
+  useEscape(open, useCallback(() => setOpen(false), []))
+
+  return (
+    <div className="relative">
+      <FilterButton label="Ansicht" open={open} onClick={() => setOpen((value) => !value)}>
+        <path
+          d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+      </FilterButton>
+
+      {open ? (
+        <Panel label="Ansicht wählen" onClose={() => setOpen(false)}>
+          <fieldset>
+            <legend className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+              Darstellung
+            </legend>
+            <Radio
+              name="docbase-ansicht"
+              checked={ansicht === 'liste'}
+              onChange={() => onAnsichtChange('liste')}
+            >
+              Liste
+            </Radio>
+            <Radio
+              name="docbase-ansicht"
+              checked={ansicht === 'kacheln'}
+              onChange={() => onAnsichtChange('kacheln')}
+            >
+              Kacheln
+            </Radio>
+          </fieldset>
+
+          {/* Nur bei Kacheln sichtbar: Bei einer Liste gibt es keine Reihen,
+              und eine Einstellung ohne Wirkung ist eine Falle. */}
+          {ansicht === 'kacheln' ? (
+            <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+              <p className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Kacheln pro Reihe
+              </p>
+              <div className="flex gap-1" role="group" aria-label="Kacheln pro Reihe">
+                {SPALTEN.map((wert) => (
+                  <button
+                    key={wert}
+                    onClick={() => onSpaltenChange(wert)}
+                    aria-pressed={spalten === wert}
+                    className={`min-h-10 flex-1 rounded-lg text-sm font-semibold tabular-nums transition ${
+                      spalten === wert
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    {wert}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </Panel>
+      ) : null}
+    </div>
+  )
+}
+
+function FilterButton({
+  label,
+  open,
+  anzahl = 0,
+  onClick,
+  children,
+}: {
+  label: string
+  open: boolean
+  anzahl?: number
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300"
+    >
+      <svg className="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        {children}
+      </svg>
+      {label}
+      {anzahl > 0 ? (
+        <span className="grid size-5 place-items-center rounded-full bg-teal-700 text-xs font-bold text-white">
+          {anzahl}
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+/** Das aufgeklappte Feld unter einem der beiden Knöpfe. */
+function Panel({
+  label,
+  onClose,
+  children,
+}: {
+  label: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <>
+      <button
+        className="fixed inset-0 z-20 cursor-default"
+        onClick={onClose}
+        aria-label="Auswahl schliessen"
+      />
+      <div
+        role="dialog"
+        aria-label={label}
+        className="absolute right-0 top-12 z-30 max-h-[70dvh] w-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+      >
+        {children}
+      </div>
+    </>
+  )
+}
+
 function Haken({
+  checked,
+  onChange,
+  eingerueckt = false,
+  children,
+}: {
+  checked: boolean
+  onChange: () => void
+  eingerueckt?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <label className={`flex min-h-10 items-center gap-3 text-sm ${eingerueckt ? 'pl-5' : ''}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="size-4 shrink-0 accent-teal-700"
+      />
+      <span className="min-w-0 truncate">{children}</span>
+    </label>
+  )
+}
+
+function Radio({
+  name,
   checked,
   onChange,
   children,
 }: {
+  name: string
   checked: boolean
   onChange: () => void
   children: React.ReactNode
@@ -219,7 +447,8 @@ function Haken({
   return (
     <label className="flex min-h-10 items-center gap-3 text-sm">
       <input
-        type="checkbox"
+        type="radio"
+        name={name}
         checked={checked}
         onChange={onChange}
         className="size-4 shrink-0 accent-teal-700"

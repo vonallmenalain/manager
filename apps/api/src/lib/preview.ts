@@ -19,14 +19,24 @@ import { promisify } from 'node:util'
 
 import type { Bereich } from '@manager/shared'
 
-import { parsePageCount, PREVIEW_DIR, previewPagePath } from './preview-paths.js'
+import {
+  parsePageCount,
+  PREVIEW_DIR,
+  previewPagePath,
+  previewThumbnailPath,
+} from './preview-paths.js'
 import { resolveInStorage } from './storage.js'
 
 const run = promisify(execFile)
 
 // Die reine Logik liegt in preview-paths.ts und wird hier weitergereicht,
 // damit Aufrufer nur ein Modul kennen muessen.
-export { PREVIEW_MAX_PAGES, parsePageCount, previewPagePath } from './preview-paths.js'
+export {
+  PREVIEW_MAX_PAGES,
+  parsePageCount,
+  previewPagePath,
+  previewThumbnailPath,
+} from './preview-paths.js'
 
 /**
  * Längste Kante der gerasterten Seite.
@@ -36,6 +46,16 @@ export { PREVIEW_MAX_PAGES, parsePageCount, previewPagePath } from './preview-pa
  * PDF selbst, das sonst über die Mobilfunkverbindung müsste.
  */
 const PREVIEW_LONGEST_EDGE = 1400
+
+/**
+ * Längste Kante des Vorschaubildes für die Kachelansicht.
+ *
+ * 520 Punkte reichen für eine Kachel auch auf einem Bildschirm mit doppelter
+ * Punktdichte – bei vier Kacheln pro Reihe ist eine keine 200 Punkte breit.
+ * Als JPEG bleiben davon rund 40 KB, und erst das macht eine Ansicht, die
+ * zwanzig Dokumente auf einmal zeigt, über Mobilfunk erträglich.
+ */
+const THUMBNAIL_LONGEST_EDGE = 520
 
 const PDFINFO_TIMEOUT_MS = 10_000
 const PDFTOPPM_TIMEOUT_MS = 30_000
@@ -82,7 +102,55 @@ export async function renderPdfPage(
   absolutePdfPath: string,
   page: number,
 ): Promise<string> {
-  const cached = resolveInStorage(bereich, previewPagePath(documentId, page))
+  return rasterize({
+    bereich,
+    documentId,
+    absolutePdfPath,
+    page,
+    longestEdge: PREVIEW_LONGEST_EDGE,
+    targetPath: previewPagePath(documentId, page),
+  })
+}
+
+/**
+ * Rastert die erste Seite klein – das Bild für eine Kachel.
+ *
+ * Bewusst dieselbe Zwischenablage wie die Seitenvorschau: Beim Löschen und
+ * beim Ersetzen der Datei verschwindet mit dem Ordner des Dokuments beides
+ * zugleich, und niemand muss daran denken, ein zweites Verzeichnis mit
+ * aufzuräumen.
+ */
+export async function renderPdfThumbnail(
+  bereich: Bereich,
+  documentId: string,
+  absolutePdfPath: string,
+): Promise<string> {
+  return rasterize({
+    bereich,
+    documentId,
+    absolutePdfPath,
+    page: 1,
+    longestEdge: THUMBNAIL_LONGEST_EDGE,
+    targetPath: previewThumbnailPath(documentId),
+  })
+}
+
+async function rasterize({
+  bereich,
+  documentId,
+  absolutePdfPath,
+  page,
+  longestEdge,
+  targetPath,
+}: {
+  bereich: Bereich
+  documentId: string
+  absolutePdfPath: string
+  page: number
+  longestEdge: number
+  targetPath: string
+}): Promise<string> {
+  const cached = resolveInStorage(bereich, targetPath)
   if (await isFile(cached)) return cached
 
   await mkdir(dirname(cached), { recursive: true })
@@ -104,7 +172,7 @@ export async function renderPdfPage(
         '-jpegopt',
         'quality=80',
         '-scale-to',
-        String(PREVIEW_LONGEST_EDGE),
+        String(longestEdge),
         '-f',
         String(page),
         '-l',

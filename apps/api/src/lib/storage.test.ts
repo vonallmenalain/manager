@@ -8,6 +8,7 @@ import {
   extensionFor,
   resolveWithin,
   slugify,
+  textSidecarPath,
 } from './storage-paths.ts'
 
 const STORAGE_ROOT = join(tmpdir(), 'manager-storage-test')
@@ -67,6 +68,48 @@ describe('buildStoragePath', () => {
     assert.equal(path, '2026/Unsortiert/2026-01-05__Post__b1c2d3e4.pdf')
   })
 
+  it('stellt der Unterkategorie ihre Hauptkategorie als Ordner voran', () => {
+    const path = buildStoragePath({
+      docDate: '2026-07-02',
+      categoryName: 'Medikamente',
+      parentCategoryName: 'Notfall',
+      title: 'Adrenalin Dosierung',
+      documentId: 'c4d5e6f7-0000-4000-8000-000000000000',
+      extension: 'pdf',
+    })
+    assert.equal(path, '2026/Notfall/Medikamente/2026-07-02__Adrenalin-Dosierung__c4d5e6f7.pdf')
+  })
+
+  it('trennt gleichnamige Unterkategorien über ihre Hauptkategorie', () => {
+    // „Notfall › Rezepte" und „Alltag › Rezepte" sind zwei Schubladen und
+    // gehören deshalb auch auf dem NAS in zwei Ordner.
+    const common = {
+      docDate: '2026-07-02',
+      categoryName: 'Rezepte',
+      title: 'Merkblatt',
+      documentId: 'c4d5e6f7-0000-4000-8000-000000000000',
+      extension: 'pdf',
+    }
+    assert.notEqual(
+      buildStoragePath({ ...common, parentCategoryName: 'Notfall' }),
+      buildStoragePath({ ...common, parentCategoryName: 'Alltag' }),
+    )
+  })
+
+  it('bleibt bei „Unsortiert" einstufig, auch wenn eine Hauptkategorie mitkommt', () => {
+    // Ohne Kategorie gibt es keine Hauptkategorie darüber – ein Ordner
+    // „Notfall/Unsortiert" wäre eine Schublade, die es in der App nicht gibt.
+    const path = buildStoragePath({
+      docDate: '2026-01-05',
+      categoryName: null,
+      parentCategoryName: 'Notfall',
+      title: 'Post',
+      documentId: 'b1c2d3e4-0000-4000-8000-000000000000',
+      extension: 'pdf',
+    })
+    assert.equal(path, '2026/Unsortiert/2026-01-05__Post__b1c2d3e4.pdf')
+  })
+
   it('trennt zwei gleichnamige Dokumente über die Kurz-ID', () => {
     const common = { docDate: '2026-05-01', categoryName: 'Wohnen', title: 'Nebenkosten', extension: 'pdf' }
     const first = buildStoragePath({ ...common, documentId: '11111111-0000-4000-8000-000000000000' })
@@ -92,6 +135,21 @@ describe('resolveInStorage', () => {
     ]) {
       assert.throws(() => resolveInStorage(evil), /ausserhalb der Ablage/, `nicht blockiert: ${evil}`)
     }
+  })
+})
+
+describe('textSidecarPath', () => {
+  it('tauscht die Endung gegen .txt', () => {
+    assert.equal(
+      textSidecarPath('2026/Notfall/2026-03-14__Rechnung__a3f9c1d2.pdf'),
+      '2026/Notfall/2026-03-14__Rechnung__a3f9c1d2.txt',
+    )
+  })
+
+  it('lässt einen Namen ohne Endung in Ruhe', () => {
+    // Sonst entstünde aus '2026/Notfall/datei' der Pfad '2026.txt' – und
+    // gelöscht würde beim Ersetzen etwas ganz anderes.
+    assert.equal(textSidecarPath('2026/Notfall/datei'), '2026/Notfall/datei')
   })
 })
 

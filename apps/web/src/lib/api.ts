@@ -243,7 +243,24 @@ export const api = {
   retryOcr: (id: string) =>
     request<{ ocrStatus: string }>(`/api/documents/${id}/ocr`, { method: 'POST' }),
 
+  /**
+   * Ersetzt die Datei eines Dokuments – gebraucht vom nachträglichen
+   * Zuschneiden. Titel, Datum und Kategorie bleiben, was sie waren.
+   */
+  replaceDocumentFile: (id: string, file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<{ document: DocumentDetail }>(`/api/documents/${id}/datei`, {
+      method: 'PUT',
+      body,
+    })
+  },
+
   documentPreview: (id: string) => request<PreviewInfo>(`/api/documents/${id}/preview`),
+
+  /** Das kleine Bild für eine Kachel – bei PDFs die erste Seite. */
+  documentThumbnail: (id: string, signal?: AbortSignal) =>
+    requestBlob(`/api/documents/${id}/vorschaubild`, signal),
 
   documentPreviewPage: (id: string, page: number, signal?: AbortSignal) =>
     requestBlob(`/api/documents/${id}/preview/${page}`, signal),

@@ -16,6 +16,7 @@ export {
   buildStoragePath,
   extensionFor,
   slugify,
+  textSidecarPath,
   type StoragePathParts,
 } from './storage-paths.js'
 
@@ -146,6 +147,21 @@ export async function moveToTrash(bereich: Bereich, relativePath: string): Promi
   await mkdir(dirname(target), { recursive: true })
   await rename(resolveInStorage(bereich, relativePath), target)
   return trashRelative
+}
+
+/**
+ * Löscht eine Datei in der Ablage, ohne sich daran zu stören, dass es sie
+ * womöglich gar nicht gibt.
+ *
+ * Gebraucht beim Ersetzen einer Datei: Das alte Original und die .txt-Datei
+ * daneben tragen die alte Endung im Namen und blieben sonst als Karteileichen
+ * liegen, auf die nichts mehr zeigt.
+ */
+export async function removeFromStorage(
+  bereich: Bereich,
+  relativePath: string,
+): Promise<void> {
+  await rm(resolveInStorage(bereich, relativePath), { force: true })
 }
 
 export async function fileExists(bereich: Bereich, relativePath: string): Promise<boolean> {

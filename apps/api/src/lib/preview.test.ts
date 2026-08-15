@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { parsePageCount, PREVIEW_MAX_PAGES, previewPagePath } from './preview-paths.ts'
+import {
+  parsePageCount,
+  PREVIEW_MAX_PAGES,
+  previewPagePath,
+  previewThumbnailPath,
+} from './preview-paths.ts'
 
 describe('parsePageCount', () => {
   it('liest die Seitenzahl aus einer gewöhnlichen pdfinfo-Ausgabe', () => {
@@ -48,6 +53,15 @@ describe('previewPagePath', () => {
     assert.equal(
       previewPagePath('7f1c2e8a-0000-4000-8000-000000000001', 3),
       '.previews/7f1c2e8a-0000-4000-8000-000000000001/s3.jpg',
+    )
+  })
+
+  it('legt das Vorschaubild neben die Seiten desselben Dokuments', () => {
+    // Derselbe Ordner wie die Seiten: Beim Löschen und beim Ersetzen der Datei
+    // verschwindet damit beides zugleich.
+    assert.equal(
+      previewThumbnailPath('7f1c2e8a-0000-4000-8000-000000000001'),
+      '.previews/7f1c2e8a-0000-4000-8000-000000000001/vorschau.jpg',
     )
   })
 

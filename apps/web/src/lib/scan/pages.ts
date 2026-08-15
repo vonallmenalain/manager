@@ -5,6 +5,7 @@
  * liegt bewusst daneben in reinen Modulen, damit sie ohne Browser prüfbar
  * bleibt.
  */
+import { cropPixels, type CropRect } from './crop.ts'
 import { DETECT_EDGE, detectPageQuad } from './detect.ts'
 import { enhance, type ScanFilter } from './enhance.ts'
 import {
@@ -334,6 +335,25 @@ export function defaultScanTitle(now = new Date()): string {
  * kein Weg an einem PDF vorbei – und genau darum geht es beim Sammeln.
  */
 export async function buildUpload(pages: readonly ScanPage[], title: string): Promise<File> {
+  return fileFromJpegs(
+    pages.map((page) => page.blob),
+    title,
+  )
+}
+
+/**
+ * Eine Datei aus fertigen JPEG-Seiten – eine Seite bleibt ein Bild, mehrere
+ * werden ein PDF.
+ *
+ * Getrennt von buildUpload, weil auch das nachträgliche Zuschneiden hier
+ * herauskommt: Dort liegen die Seiten nicht als Stapel vor, sondern als das,
+ * was gerade zugeschnitten wurde. Die Regel, wann ein PDF entsteht, soll
+ * trotzdem an einer Stelle stehen.
+ */
+export async function fileFromJpegs(
+  pages: readonly Blob[],
+  title: string,
+): Promise<File> {
   const first = pages[0]
   if (!first) throw new Error('Es sind keine Seiten vorhanden.')
 
@@ -342,17 +362,61 @@ export async function buildUpload(pages: readonly ScanPage[], title: string): Pr
   const name = title.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Scan'
 
   if (pages.length === 1) {
-    return new File([first.blob], `${name}.jpg`, { type: 'image/jpeg' })
+    return new File([first], `${name}.jpg`, { type: 'image/jpeg' })
   }
 
   const jpegs = await Promise.all(
-    pages.map(async (page) => new Uint8Array(await page.blob.arrayBuffer())),
+    pages.map(async (page) => new Uint8Array(await page.arrayBuffer())),
   )
   return new File([buildPdfFromJpegs(jpegs)], `${name}.pdf`, { type: 'application/pdf' })
 }
 
+/**
+ * Schneidet ein Bild auf den gewählten Ausschnitt zu.
+ *
+ * Gerechnet wird in der Auflösung, in der das Bild ankommt: Bei einem Foto ist
+ * das das Original, bei einer PDF-Seite die gerasterte Vorschau. Der Ausschnitt
+ * selbst ist in Anteilen angegeben und passt deshalb auf beides.
+ */
+export async function cropToJpeg(source: Blob, rect: CropRect): Promise<Blob> {
+  return withImage(source, (image) => {
+    const cut = cropPixels(rect, image.naturalWidth, image.naturalHeight)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = cut.width
+    canvas.height = cut.height
+
+    const context = context2d(canvas)
+    context.imageSmoothingQuality = 'high'
+    context.drawImage(
+      image,
+      cut.x,
+      cut.y,
+      cut.width,
+      cut.height,
+      0,
+      0,
+      cut.width,
+      cut.height,
+    )
+
+    return canvasToJpeg(canvas)
+  })
+}
+
 export { nearestCorner } from './geometry.ts'
 export type { Point, Quad } from './geometry.ts'
+export {
+  cornerPoint,
+  CROP_CORNERS,
+  FULL_CROP,
+  isFullCrop,
+  moveCorner,
+  moveCrop,
+  nearestCropCorner,
+  type CropCorner,
+  type CropRect,
+} from './crop.ts'
 export {
   DEFAULT_SCAN_FILTER,
   SCAN_FILTERS,

@@ -141,7 +141,10 @@ export function useCategories(bereich: Bereich = DEFAULT_BEREICH) {
 export function useCreateCategory(bereich: Bereich = DEFAULT_BEREICH) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (name: string) => api.createCategory({ name, bereich }),
+    // Ein Objekt statt zweier Parameter: `mutate` reicht genau einen Wert
+    // durch, und die Hauptkategorie ist hier so freiwillig wie häufig.
+    mutationFn: ({ name, parentId }: { name: string; parentId?: string | null }) =>
+      api.createCategory({ name, bereich, parentId: parentId ?? null }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['categories'] })
     },
@@ -210,6 +213,28 @@ export function useUpdateDocument(id: string) {
     onSuccess: (data) => {
       queryClient.setQueryData(['document', id], data)
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+}
+
+/**
+ * Ersetzt die Datei eines Dokuments – der Weg des nachträglichen Zuschneidens.
+ *
+ * Danach wird alles neu geholt, was die Datei zeigt: Vorschau, Kachelbild und
+ * die Liste. Der erkannte Text wird serverseitig verworfen und neu gelesen,
+ * deshalb hängt auch die Detailansicht davon ab.
+ */
+export function useReplaceDocumentFile(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => api.replaceDocumentFile(id, file),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['document', id], data)
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['preview', id] })
+      void queryClient.invalidateQueries({ queryKey: ['preview-page', id] })
+      void queryClient.invalidateQueries({ queryKey: ['file-blob', id] })
+      void queryClient.invalidateQueries({ queryKey: ['thumbnail', id] })
     },
   })
 }
@@ -313,6 +338,31 @@ export function useFileBlobUrl(id: string | undefined, enabled: boolean): BlobUr
   const query = useQuery({
     queryKey: ['file-blob', id],
     queryFn: ({ signal }) => api.documentFile(id as string, signal),
+    enabled: Boolean(id) && enabled,
+    staleTime: Infinity,
+    gcTime: BLOB_CACHE_MS,
+    retry: false,
+  })
+
+  return {
+    url: useObjectUrl(query.data),
+    isLoading: query.isPending && enabled,
+    isError: query.isError,
+  }
+}
+
+/**
+ * Das Bild einer Kachel, als blob:-Adresse.
+ *
+ * `enabled` ist hier keine Formsache, sondern der Kern: In der Kachelansicht
+ * stehen schnell dreissig Dokumente untereinander, von denen vier zu sehen
+ * sind. Geladen wird deshalb erst, was in die Nähe des Bildschirms kommt –
+ * siehe useInView.
+ */
+export function useThumbnailUrl(id: string | undefined, enabled: boolean): BlobUrlResult {
+  const query = useQuery({
+    queryKey: ['thumbnail', id],
+    queryFn: ({ signal }) => api.documentThumbnail(id as string, signal),
     enabled: Boolean(id) && enabled,
     staleTime: Infinity,
     gcTime: BLOB_CACHE_MS,

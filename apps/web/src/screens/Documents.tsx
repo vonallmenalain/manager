@@ -1,11 +1,14 @@
 import {
+  categoryLabel,
   DOCUMENT_STATUS_LABELS,
   DOCUMENT_STATUSES,
   formatAmount,
+  groupCategories,
   UNASSIGNED,
   UNASSIGNED_LABEL,
   UNCATEGORIZED,
   UNCATEGORIZED_LABEL,
+  type Category,
   type ManagedDocument,
 } from '@manager/shared'
 import { useCallback, useState } from 'react'
@@ -70,7 +73,9 @@ export function Documents() {
               key={document.id}
               document={document}
               categoryName={
-                categories.data?.categories.find((c) => c.id === document.categoryId)?.name
+                document.categoryId
+                  ? categoryLabel(categories.data?.categories ?? [], document.categoryId)
+                  : undefined
               }
               assigneeName={users.data?.users.find((u) => u.id === document.assignedTo)?.name}
             />
@@ -117,7 +122,7 @@ const PAPIERKORB = [
 interface FilterMenuProps {
   filters: DocumentFilters
   onChange: (filters: DocumentFilters) => void
-  categories: { id: string; name: string }[]
+  categories: Category[]
   users: { id: string; name: string }[]
 }
 
@@ -241,14 +246,28 @@ function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
               >
                 {UNCATEGORIZED_LABEL}
               </Haken>
-              {categories.map((category) => (
-                <Haken
-                  key={category.id}
-                  checked={(filters.categoryId ?? []).includes(category.id)}
-                  onChange={() => toggle('categoryId', category.id)}
-                >
-                  {category.name}
-                </Haken>
+              {/* Unterkategorien stehen eingerückt unter ihrer Hauptkategorie.
+                  Wer die Hauptkategorie anhakt, bekommt alles darunter mit –
+                  das erledigt der Server. */}
+              {groupCategories(categories).map((gruppe) => (
+                <div key={gruppe.category.id}>
+                  <Haken
+                    checked={(filters.categoryId ?? []).includes(gruppe.category.id)}
+                    onChange={() => toggle('categoryId', gruppe.category.id)}
+                  >
+                    {gruppe.category.name}
+                  </Haken>
+                  {gruppe.children.map((child) => (
+                    <Haken
+                      key={child.id}
+                      eingerueckt
+                      checked={(filters.categoryId ?? []).includes(child.id)}
+                      onChange={() => toggle('categoryId', child.id)}
+                    >
+                      {child.name}
+                    </Haken>
+                  ))}
+                </div>
               ))}
               {/* Auch hier anlegen zu können, klingt zunächst verkehrt – man
                   filtert ja, man legt nicht ab. Es ist aber die Liste, in der
@@ -321,6 +340,7 @@ function FilterMenu({ filters, onChange, categories, users }: FilterMenuProps) {
 
       {creating ? (
         <NewCategoryDialog
+          categories={categories}
           onClose={() => setCreating(false)}
           onCreated={(category) => {
             toggle('categoryId', category.id)
@@ -352,14 +372,16 @@ function Gruppe({
 function Haken({
   checked,
   onChange,
+  eingerueckt = false,
   children,
 }: {
   checked: boolean
   onChange: () => void
+  eingerueckt?: boolean
   children: React.ReactNode
 }) {
   return (
-    <label className="flex min-h-10 items-center gap-3 text-sm">
+    <label className={`flex min-h-10 items-center gap-3 text-sm ${eingerueckt ? 'pl-5' : ''}`}>
       <input
         type="checkbox"
         checked={checked}

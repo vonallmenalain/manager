@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { CropDialog } from './CropDialog'
 import {
   fileUrl,
   useFileBlobUrl,
@@ -23,15 +24,25 @@ import {
  *             Android hat keinen eingebauten Betrachter, in einer
  *             installierten PWA erst recht nicht. Deshalb rastert der Server
  *             die Seiten zu Bildern, und die Vorschau blättert durch sie.
+ *
+ * Hier hängt auch das nachträgliche Zuschneiden: Was gezeigt wird, ist genau
+ * das, was zugeschnitten werden soll – und es ist bereits geladen. Ein eigener
+ * Weg dorthin müsste dasselbe Bild ein zweites Mal holen.
  */
 export function DocumentPreview({
   id,
   mimeType,
   title,
+  zuschneidbar = false,
+  akzent = 'bg-brand-500',
 }: {
   id: string
   mimeType: string
   title: string
+  /** Zeigt den Knopf „Zuschneiden" – im Bearbeitungsmodus. */
+  zuschneidbar?: boolean
+  /** Farbe des bestätigenden Knopfes beim Zuschneiden. */
+  akzent?: string
 }) {
   const info = usePreviewInfo(id)
 
@@ -41,12 +52,48 @@ export function DocumentPreview({
   // ein Bild versuchen wir trotzdem, alles andere nicht.
   const kind = info.data?.kind ?? (mimeType.startsWith('image/') ? 'image' : 'none')
 
-  if (kind === 'image') return <ImagePreview id={id} title={title} />
-  if (kind === 'pdf') return <PdfPreview id={id} pages={info.data?.pages ?? 1} title={title} />
+  if (kind === 'image') {
+    return (
+      <ImagePreview
+        id={id}
+        title={title}
+        mimeType={mimeType}
+        zuschneidbar={zuschneidbar}
+        akzent={akzent}
+      />
+    )
+  }
+  if (kind === 'pdf') {
+    const pages = info.data?.pages ?? 1
+    return (
+      <PdfPreview
+        id={id}
+        pages={pages}
+        // Ohne Angabe wird angenommen, dass alles gerastert ist – dann bleibt
+        // das Zuschneiden erlaubt, wie vor dieser Unterscheidung auch.
+        totalPages={info.data?.totalPages ?? pages}
+        title={title}
+        zuschneidbar={zuschneidbar}
+        akzent={akzent}
+      />
+    )
+  }
   return <NoPreview id={id} />
 }
 
-function ImagePreview({ id, title }: { id: string; title: string }) {
+function ImagePreview({
+  id,
+  title,
+  mimeType,
+  zuschneidbar,
+  akzent,
+}: {
+  id: string
+  title: string
+  mimeType: string
+  zuschneidbar: boolean
+  akzent: string
+}) {
   const { url, isLoading, isError } = useFileBlobUrl(id, true)
   // HEIC von einem iPhone oder ein TIFF vom Scanner: Der Server liefert die
   // Datei anstandslos, nur kann sie nicht jeder Browser zeichnen. Das merkt
@@ -64,18 +111,45 @@ function ImagePreview({ id, title }: { id: string; title: string }) {
   // Eine gewöhnliche Navigation darf dorthin, und das Bild landet damit im
   // Betrachter des Systems statt in einem Tab, der nach dem Neuladen leer ist.
   return (
-    <a href={fileUrl(id)} target="_blank" rel="noreferrer" className="block">
-      <img
-        src={url}
-        alt={title}
-        onError={() => setUndecodable(true)}
-        className="max-h-96 w-full rounded-2xl border border-slate-200 bg-slate-50 object-contain dark:border-slate-800 dark:bg-slate-900"
-      />
-    </a>
+    <div className="space-y-2">
+      <a href={fileUrl(id)} target="_blank" rel="noreferrer" className="block">
+        <img
+          src={url}
+          alt={title}
+          onError={() => setUndecodable(true)}
+          className="max-h-96 w-full rounded-2xl border border-slate-200 bg-slate-50 object-contain dark:border-slate-800 dark:bg-slate-900"
+        />
+      </a>
+      {zuschneidbar ? (
+        <CropButton
+          documentId={id}
+          title={title}
+          mimeType={mimeType}
+          pages={1}
+          sourceUrl={url}
+          akzent={akzent}
+        />
+      ) : null}
+    </div>
   )
 }
 
-function PdfPreview({ id, pages, title }: { id: string; pages: number; title: string }) {
+function PdfPreview({
+  id,
+  pages,
+  totalPages,
+  title,
+  zuschneidbar,
+  akzent,
+}: {
+  id: string
+  pages: number
+  /** Die wahre Seitenzahl; `pages` ist bei sehr langen PDFs gedeckelt. */
+  totalPages: number
+  title: string
+  zuschneidbar: boolean
+  akzent: string
+}) {
   const [page, setPage] = useState(1)
   const { url, isLoading, isError } = usePreviewPageUrl(id, page, true)
 
@@ -122,7 +196,89 @@ function PdfPreview({ id, pages, title }: { id: string; pages: number; title: st
           </PageButton>
         </div>
       ) : null}
+
+      {/* Zuschneiden setzt voraus, dass jede Seite als Bild vorliegt. Bei
+          einem sehr langen PDF ist die Vorschau gedeckelt – dann fielen die
+          übrigen Seiten still unter den Tisch, und das wäre schlimmer als
+          ein fehlender Knopf. */}
+      {zuschneidbar && totalPages > pages ? (
+        <p className="rounded-xl border border-slate-200 px-3 py-2 text-center text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          Zuschneiden ist hier nicht möglich: Das Dokument hat {totalPages} Seiten, die Vorschau
+          reicht bis Seite {pages}.
+        </p>
+      ) : zuschneidbar && url ? (
+        <CropButton
+          documentId={id}
+          title={title}
+          mimeType="application/pdf"
+          pages={pages}
+          sourceUrl={url}
+          akzent={akzent}
+        />
+      ) : null}
     </div>
+  )
+}
+
+/**
+ * Der Weg ins Zuschneiden – samt der Rückfrage davor.
+ *
+ * Die Rückfrage steht hier und nicht im Fenster selbst: Wer sie liest, hat
+ * noch nichts gezogen und verliert durch ein „Abbrechen" keine Arbeit.
+ */
+function CropButton({
+  documentId,
+  title,
+  mimeType,
+  pages,
+  sourceUrl,
+  akzent,
+}: {
+  documentId: string
+  title: string
+  mimeType: string
+  pages: number
+  sourceUrl: string
+  akzent: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          if (
+            window.confirm(
+              'Zuschneiden ersetzt die gespeicherte Datei – das Original ist danach weg. Fortfahren?',
+            )
+          ) {
+            setOpen(true)
+          }
+        }}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-600 transition active:bg-black/5 dark:border-slate-700 dark:text-slate-300 dark:active:bg-white/10"
+      >
+        <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+            <path d="M2 6h14a2 2 0 0 1 2 2v14" />
+          </g>
+        </svg>
+        Zuschneiden
+      </button>
+
+      {open ? (
+        <CropDialog
+          documentId={documentId}
+          title={title}
+          mimeType={mimeType}
+          pages={pages}
+          sourceUrl={sourceUrl}
+          akzent={akzent}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
   )
 }
 

@@ -127,7 +127,14 @@ export function DocumentDetail() {
         </div>
       ) : null}
 
-      <DocumentPreview id={document.id} mimeType={document.mimeType} title={document.title} />
+      {/* Zuschneiden erscheint erst im Bearbeitungsmodus – und nie im
+          Papierkorb: Was gelöscht ist, wird nicht bearbeitet. */}
+      <DocumentPreview
+        id={document.id}
+        mimeType={document.mimeType}
+        title={document.title}
+        zuschneidbar={editing && !document.deletedAt}
+      />
 
       {/* Die drei Angaben, die sich im Alltag ändern – direkt hier, ohne den
           Umweg über „Bearbeiten". Gespeichert wird beim Loslassen der Auswahl;

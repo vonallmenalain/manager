@@ -1,5 +1,12 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import {
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+  type AnySQLiteColumn,
+} from 'drizzle-orm/sqlite-core'
 
 /**
  * Zeitstempel werden als ISO-8601-Text gespeichert, nicht als Unix-Zahl.
@@ -61,12 +68,37 @@ export const categories = sqliteTable(
      * Der Haushalt und die medizinische Sammlung führen getrennte Listen.
      */
     bereich: text('bereich').notNull().default('manager'),
+    /**
+     * Die Hauptkategorie, unter der diese steht – null bei einer
+     * Hauptkategorie. Genau zwei Ebenen: Eine Unterkategorie darf selbst keine
+     * Kinder haben, das prüft die Route beim Anlegen.
+     *
+     * `cascade`: Verschwindet die Hauptkategorie, verschwinden ihre
+     * Unterkategorien mit. Alles andere hinterliesse Kategorien, die auf eine
+     * Zeile zeigen, die es nicht mehr gibt – und die Dokumente darin lägen in
+     * einer Schublade ohne Schrank.
+     */
+    parentId: text('parent_id').references((): AnySQLiteColumn => categories.id, {
+      onDelete: 'cascade',
+    }),
     createdAt: text('created_at').notNull().default(now),
   },
   (table) => [
-    // Eindeutig je Bereich und nicht mehr global: „Sonstiges" gibt es im
-    // Haushalt und in der DocBase, und das sind zwei verschiedene Schubladen.
-    uniqueIndex('categories_bereich_name_idx').on(table.bereich, table.name),
+    // Eindeutig je Bereich und Hauptkategorie: „Sonstiges" gibt es im Haushalt
+    // und in der DocBase, und „Medikamente" darf unter „Notfall" wie unter
+    // „Alltag" stehen – das sind verschiedene Schubladen.
+    //
+    // Auf oberster Ebene ist parent_id NULL, und SQLite hält zwei NULL für
+    // verschieden – dort greift dieser Index also nicht. Die Prüfung, die
+    // wirklich zählt, steht ohnehin in findCategoryByName: Sie vergleicht
+    // vereinheitlicht und fängt damit auch „Kinder" gegen „kinder" ab, was ein
+    // Datenbankindex nie täte.
+    uniqueIndex('categories_bereich_parent_name_idx').on(
+      table.bereich,
+      table.parentId,
+      table.name,
+    ),
+    index('categories_parent_idx').on(table.parentId),
   ],
 )
 
