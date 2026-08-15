@@ -107,9 +107,92 @@ export const categorySchema = z.object({
   name: z.string(),
   icon: z.string(),
   sortOrder: z.number(),
+  /**
+   * Die Hauptkategorie, zu der diese gehört – null bei einer Hauptkategorie
+   * selbst. Siehe CATEGORY_MAX_DEPTH.
+   */
+  parentId: z.string().nullable(),
 })
 
 export type Category = z.infer<typeof categorySchema>
+
+/**
+ * Wie tief die Kategorien geschachtelt sein dürfen: zwei Ebenen, nicht mehr.
+ *
+ * „Notfall" mit „Medikamente" und „Kontakte" darunter beantwortet die Frage,
+ * die eine Sammlung wirklich stellt. Eine dritte Ebene beantwortet keine
+ * weitere, kostet aber überall etwas: in der Auswahl auf dem Handy, im
+ * Filter, im Ordnernamen auf dem NAS und in jeder Überlegung „wo lege ich das
+ * jetzt ab". Beliebige Tiefe wäre einfacher zu programmieren als zu benutzen.
+ */
+export const CATEGORY_MAX_DEPTH = 2
+
+export interface CategoryGroup {
+  /** Die Hauptkategorie. */
+  category: Category
+  /** Ihre Unterkategorien, bereits sortiert. Leer, wenn sie keine hat. */
+  children: Category[]
+}
+
+function byOrderAndName(a: Category, b: Category): number {
+  return a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'de-CH')
+}
+
+/**
+ * Ordnet eine flache Kategorienliste zu Haupt- und Unterkategorien.
+ *
+ * Eine Unterkategorie, deren Hauptkategorie fehlt, wird wie eine
+ * Hauptkategorie behandelt statt weggelassen: Der Fall entsteht, wenn zwei
+ * Geräte gleichzeitig arbeiten und eines eine veraltete Liste im
+ * Zwischenspeicher hat. Sie unsichtbar zu machen wäre die schlechtere Antwort –
+ * dann wären auch die Dokumente darin nicht mehr zu finden.
+ */
+export function groupCategories(categories: readonly Category[]): CategoryGroup[] {
+  const known = new Set(categories.map((category) => category.id))
+  const tops = categories
+    .filter((category) => !category.parentId || !known.has(category.parentId))
+    .sort(byOrderAndName)
+
+  return tops.map((category) => ({
+    category,
+    children: categories
+      .filter((child) => child.parentId === category.id)
+      .sort(byOrderAndName),
+  }))
+}
+
+/** Die Kennungen der Unterkategorien einer Kategorie. */
+export function subcategoryIds(
+  categories: readonly Category[],
+  parentId: string,
+): string[] {
+  return categories
+    .filter((category) => category.parentId === parentId)
+    .map((category) => category.id)
+}
+
+/**
+ * Wie eine Kategorie in einer Zeile heisst: „Notfall › Medikamente".
+ *
+ * Die Hauptkategorie steht mit davor, weil „Medikamente" allein in einer Liste
+ * nicht sagt, wo es herkommt – und es „Medikamente" unter mehreren
+ * Hauptkategorien geben darf.
+ */
+export function categoryLabel(
+  categories: readonly Category[],
+  categoryId: string | null,
+): string {
+  if (!categoryId) return UNCATEGORIZED_LABEL
+
+  const category = categories.find((entry) => entry.id === categoryId)
+  if (!category) return UNCATEGORIZED_LABEL
+
+  const parent = category.parentId
+    ? categories.find((entry) => entry.id === category.parentId)
+    : undefined
+
+  return parent ? `${parent.name} › ${category.name}` : category.name
+}
 
 /**
  * Der Name einer Kategorie.
@@ -127,6 +210,11 @@ export const categoryNameSchema = z
 export const createCategorySchema = z.object({
   name: categoryNameSchema,
   bereich: bereichSchema.default(DEFAULT_BEREICH),
+  /**
+   * Unter welcher Hauptkategorie die neue steht. Ohne Angabe entsteht eine
+   * Hauptkategorie – der Normalfall, und deshalb der Standard.
+   */
+  parentId: z.string().max(60).nullable().optional(),
 })
 export type CreateCategoryInput = z.input<typeof createCategorySchema>
 
@@ -221,6 +309,14 @@ export const previewInfoSchema = z.object({
   kind: z.enum(PREVIEW_KINDS),
   /** Anzahl anzeigbarer Seiten. 0, wenn keine Vorschau möglich ist. */
   pages: z.number().int().nonnegative(),
+  /**
+   * Wie viele Seiten das Dokument wirklich hat – `pages` ist bei sehr langen
+   * PDFs gedeckelt. Der Unterschied ist beim Blättern gleichgültig, beim
+   * nachträglichen Zuschneiden aber entscheidend: Was nicht gerastert wird,
+   * kann auch nicht zugeschnitten werden, und ein Beschnitt, der still die
+   * Seiten 26 bis 30 verlöre, wäre schlimmer als gar keiner.
+   */
+  totalPages: z.number().int().nonnegative(),
 })
 
 export type PreviewInfo = z.infer<typeof previewInfoSchema>

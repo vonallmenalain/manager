@@ -102,7 +102,15 @@ export function Detail() {
         </button>
       </div>
 
-      <DocumentPreview id={document.id} mimeType={document.mimeType} title={document.title} />
+      {/* Zuschneiden erscheint erst im Bearbeitungsmodus: Es ersetzt die Datei,
+          und das ist nichts, was man beim blossen Nachschlagen antippt. */}
+      <DocumentPreview
+        id={document.id}
+        mimeType={document.mimeType}
+        title={document.title}
+        zuschneidbar={editing}
+        akzent="bg-teal-700"
+      />
 
       {/* Die einzige Angabe, die sich im Alltag ändert – und sie speichert
           beim Loslassen, ohne Umweg über „Bearbeiten". */}

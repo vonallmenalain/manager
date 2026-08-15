@@ -6,9 +6,12 @@
  * Ablagepfad jedes Dokuments, das ihr zugeordnet ist. Jede Änderung an der
  * Liste ist deshalb auch eine Änderung an der Freigabe – und genau das steht
  * hier, an einer Stelle, statt in jeder Route noch einmal.
+ *
+ * Seit es Unterkategorien gibt, betrifft das zwei Ebenen: Wer „Notfall"
+ * umbenennt, verschiebt auch die Dokumente aus „Notfall › Medikamente".
  */
 import { normalizeForSearch, type Bereich } from '@manager/shared'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 import { dirname } from 'node:path'
 
@@ -26,6 +29,8 @@ export interface CategoryView {
   icon: string
   sortOrder: number
   bereich: Bereich
+  /** null bei einer Hauptkategorie. */
+  parentId: string | null
 }
 
 /**
@@ -58,20 +63,35 @@ const CATEGORY_COLUMNS = {
   icon: categories.icon,
   sortOrder: categories.sortOrder,
   bereich: categories.bereich,
+  parentId: categories.parentId,
+}
+
+function toView(row: Omit<CategoryView, 'bereich'> & { bereich: string }): CategoryView {
+  return { ...row, bereich: row.bereich as Bereich }
 }
 
 /**
- * Die Kategorie mit diesem Namen im selben Bereich, `exceptId` ausgenommen
- * (fürs Umbenennen). Der Haushalt und die DocBase dürfen beide „Sonstiges"
- * haben – das sind zwei verschiedene Schubladen.
+ * Die Kategorie mit diesem Namen unter derselben Hauptkategorie, `exceptId`
+ * ausgenommen (fürs Umbenennen).
+ *
+ * Verglichen wird innerhalb einer Ebene: Der Haushalt und die DocBase dürfen
+ * beide „Sonstiges" haben, und „Medikamente" darf unter „Notfall" wie unter
+ * „Alltag" stehen – das sind verschiedene Schubladen. Zwei gleichnamige
+ * Geschwister wären dagegen in jeder Auswahl derselbe Eintrag.
  */
 export async function findCategoryByName(
   bereich: Bereich,
   name: string,
+  parentId: string | null,
   exceptId?: string,
 ): Promise<CategoryView | undefined> {
   const rows = await listCategories(bereich)
-  return rows.find((row) => row.id !== exceptId && sameCategoryName(row.name, name))
+  return rows.find(
+    (row) =>
+      row.id !== exceptId &&
+      (row.parentId ?? null) === parentId &&
+      sameCategoryName(row.name, name),
+  )
 }
 
 export async function listCategories(bereich: Bereich): Promise<CategoryView[]> {
@@ -79,7 +99,7 @@ export async function listCategories(bereich: Bereich): Promise<CategoryView[]> 
     .select(CATEGORY_COLUMNS)
     .from(categories)
     .where(eq(categories.bereich, bereich))
-  return rows.map((row) => ({ ...row, bereich: row.bereich as Bereich }))
+  return rows.map(toView)
 }
 
 export async function findCategory(id: string): Promise<CategoryView | undefined> {
@@ -90,7 +110,42 @@ export async function findCategory(id: string): Promise<CategoryView | undefined
     .limit(1)
 
   const row = rows[0]
-  return row ? { ...row, bereich: row.bereich as Bereich } : undefined
+  return row ? toView(row) : undefined
+}
+
+/** Die Unterkategorien einer Hauptkategorie. */
+export async function childCategories(parentId: string): Promise<CategoryView[]> {
+  const rows = await db
+    .select(CATEGORY_COLUMNS)
+    .from(categories)
+    .where(eq(categories.parentId, parentId))
+  return rows.map(toView)
+}
+
+/**
+ * Die Kategorie und ihre Hauptkategorie – genau das, was der Ablagepfad
+ * braucht.
+ *
+ * Der Bereich wird mitgeprüft und ist keine Förmlichkeit: Eine Kennung aus der
+ * DocBase in einem Haushaltsdokument würde dessen Datei in einen Ordner legen,
+ * den der Haushalt gar nicht kennt.
+ */
+export async function categoryFolderNames(
+  bereich: Bereich,
+  categoryId: string | null,
+): Promise<{ categoryName: string | null; parentCategoryName: string | null }> {
+  if (!categoryId) return { categoryName: null, parentCategoryName: null }
+
+  const category = await findCategory(categoryId)
+  if (!category || category.bereich !== bereich) {
+    return { categoryName: null, parentCategoryName: null }
+  }
+
+  const parent = category.parentId ? await findCategory(category.parentId) : undefined
+  return {
+    categoryName: category.name,
+    parentCategoryName: parent?.name ?? null,
+  }
 }
 
 interface RelocatableDocument {
@@ -99,28 +154,46 @@ interface RelocatableDocument {
   docDate: string
   storagePath: string
   deletedAt: string | null
+  categoryId: string | null
   /** Bestimmt, in welcher Ablage die Datei liegt. */
   bereich: string
 }
 
-/** Die Dokumente einer Kategorie – samt allem, was der Pfad braucht. */
-export async function documentsOfCategory(categoryId: string): Promise<RelocatableDocument[]> {
-  return db
-    .select({
-      id: documents.id,
-      title: documents.title,
-      docDate: documents.docDate,
-      storagePath: documents.storagePath,
-      deletedAt: documents.deletedAt,
-      bereich: documents.bereich,
-    })
-    .from(documents)
-    .where(eq(documents.categoryId, categoryId))
+const DOCUMENT_COLUMNS = {
+  id: documents.id,
+  title: documents.title,
+  docDate: documents.docDate,
+  storagePath: documents.storagePath,
+  deletedAt: documents.deletedAt,
+  categoryId: documents.categoryId,
+  bereich: documents.bereich,
 }
 
 /**
- * Zieht die Dateien nach, nachdem sich der Kategoriename geändert hat oder
- * weggefallen ist (`categoryName === null` heisst „Unsortiert").
+ * Die Dokumente dieser Kategorien – samt allem, was der Pfad braucht.
+ *
+ * Mehrere Kennungen auf einmal, weil eine Hauptkategorie nie allein betroffen
+ * ist: Wer sie umbenennt oder löscht, meint immer auch die Dokumente in ihren
+ * Unterkategorien.
+ */
+export async function documentsOfCategories(
+  categoryIds: readonly string[],
+): Promise<RelocatableDocument[]> {
+  if (categoryIds.length === 0) return []
+  return db
+    .select(DOCUMENT_COLUMNS)
+    .from(documents)
+    .where(inArray(documents.categoryId, [...categoryIds]))
+}
+
+/**
+ * Zieht die Dateien an den Ort nach, an den ihre heutige Kategorie gehört.
+ *
+ * Bewusst ohne den Namen als Parameter: Aufgerufen wird nach der Änderung, und
+ * gefragt wird die Datenbank. Beim Umbenennen einer Hauptkategorie hat jedes
+ * Dokument sonst einen anderen Zielordner – eines liegt in „Notfall", das
+ * nächste in „Notfall/Medikamente" –, und der Aufrufer müsste dieselbe
+ * Auflösung nochmals von Hand nachbauen.
  *
  * Schlägt das Verschieben fehl, bleibt die Datei liegen und der Pfad in der
  * Datenbank zeigt weiterhin auf sie: falsch einsortiert ist besser als
@@ -129,28 +202,43 @@ export async function documentsOfCategory(categoryId: string): Promise<Relocatab
  */
 export async function relocateDocuments(
   rows: readonly RelocatableDocument[],
-  categoryName: string | null,
 ): Promise<void> {
+  // Ein Umbenennen betrifft schnell dreissig Dokumente derselben Kategorie –
+  // ohne diesen Zwischenspeicher wären das dreissig gleiche Abfragen.
+  const folders = new Map<string, { categoryName: string | null; parentCategoryName: string | null }>()
+
   for (const document of rows) {
     if (document.deletedAt) continue
 
+    const bereich = document.bereich as Bereich
+    const key = `${bereich}:${document.categoryId ?? ''}`
+    let names = folders.get(key)
+    if (!names) {
+      names = await categoryFolderNames(bereich, document.categoryId)
+      folders.set(key, names)
+    }
+
     const nextPath = buildStoragePath({
       docDate: document.docDate,
-      categoryName,
+      categoryName: names.categoryName,
+      parentCategoryName: names.parentCategoryName,
       title: document.title,
       documentId: document.id,
       extension: document.storagePath.split('.').pop() ?? 'bin',
     })
 
-    const bereich = document.bereich as Bereich
     try {
       if (await moveWithinStorage(bereich, document.storagePath, nextPath)) {
         await db
           .update(documents)
           .set({ storagePath: nextPath })
           .where(eq(documents.id, document.id))
-        // War es das letzte Dokument im alten Ordner, verschwindet auch er.
-        await removeEmptyDirectory(bereich, dirname(document.storagePath))
+        // War es das letzte Dokument im alten Ordner, verschwindet auch er –
+        // und danach womöglich der Ordner der Hauptkategorie darüber.
+        const alt = dirname(document.storagePath)
+        if (await removeEmptyDirectory(bereich, alt)) {
+          await removeEmptyDirectory(bereich, dirname(alt))
+        }
       }
     } catch {
       // Absicht: siehe oben.

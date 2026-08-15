@@ -1,4 +1,9 @@
-import { DEFAULT_BEREICH, type Bereich, type Category } from '@manager/shared'
+import {
+  DEFAULT_BEREICH,
+  groupCategories,
+  type Bereich,
+  type Category,
+} from '@manager/shared'
 import { useState, type FormEvent } from 'react'
 
 import { Button } from './Button'
@@ -20,6 +25,9 @@ import {
  * greift in die Ordnerstruktur auf dem NAS ein und betrifft die Dokumente der
  * anderen Person mit. Der Server prüft dasselbe noch einmal; ein
  * ausgeblendeter Knopf ist keine Sperre.
+ *
+ * Unterkategorien stehen eingerückt unter ihrer Hauptkategorie – dieselbe
+ * Ordnung wie in der Auswahl und dieselbe wie in der Freigabe.
  */
 export function CategorySheet({
   isAdmin,
@@ -32,6 +40,8 @@ export function CategorySheet({
 }) {
   const categories = useCategories(bereich)
   const [notice, setNotice] = useState<string | null>(null)
+
+  const gruppen = groupCategories(categories.data?.categories ?? [])
 
   return (
     <Modal
@@ -51,14 +61,25 @@ export function CategorySheet({
       ) : null}
 
       <ul className="divide-y divide-slate-200 dark:divide-slate-800">
-        {(categories.data?.categories ?? []).map((category) => (
+        {gruppen.flatMap((gruppe) => [
           <CategoryRow
-            key={category.id}
-            category={category}
+            key={gruppe.category.id}
+            category={gruppe.category}
+            subcategories={gruppe.children.length}
             isAdmin={isAdmin}
             onNotice={setNotice}
-          />
-        ))}
+          />,
+          ...gruppe.children.map((child) => (
+            <CategoryRow
+              key={child.id}
+              category={child}
+              subcategories={0}
+              eingerueckt
+              isAdmin={isAdmin}
+              onNotice={setNotice}
+            />
+          )),
+        ])}
       </ul>
 
       {categories.isSuccess && categories.data.categories.length === 0 ? (
@@ -67,17 +88,25 @@ export function CategorySheet({
         </p>
       ) : null}
 
-      <AddCategoryForm bereich={bereich} />
+      <AddCategoryForm
+        bereich={bereich}
+        hauptkategorien={gruppen.map((gruppe) => gruppe.category)}
+      />
     </Modal>
   )
 }
 
 function CategoryRow({
   category,
+  subcategories,
+  eingerueckt = false,
   isAdmin,
   onNotice,
 }: {
   category: Category
+  /** Wie viele Unterkategorien daran hängen – nur für die Rückfrage beim Löschen. */
+  subcategories: number
+  eingerueckt?: boolean
   isAdmin: boolean
   onNotice: (message: string) => void
 }) {
@@ -99,10 +128,19 @@ function CategoryRow({
 
   function handleDelete() {
     // Harte Rückfrage: Betroffen ist nicht nur die Zeile in der Liste, sondern
-    // jedes Dokument darin – und auf dem NAS ein ganzer Ordner.
+    // jedes Dokument darin – und auf dem NAS ein ganzer Ordner. Bei einer
+    // Hauptkategorie stehen die Unterkategorien ausdrücklich dabei; sie
+    // verschwinden mit, und das soll niemand erst hinterher merken.
+    const mitUnterkategorien =
+      subcategories > 0
+        ? ` Die ${subcategories} ${
+            subcategories === 1 ? 'Unterkategorie verschwindet' : 'Unterkategorien verschwinden'
+          } mit.`
+        : ''
+
     if (
       !window.confirm(
-        `Kategorie „${category.name}" löschen? Die Dokumente darin bleiben erhalten und werden unsortiert.`,
+        `Kategorie „${category.name}" löschen?${mitUnterkategorien} Die Dokumente darin bleiben erhalten und werden unsortiert.`,
       )
     ) {
       return
@@ -148,7 +186,16 @@ function CategoryRow({
 
   return (
     <li className="flex min-h-12 items-center gap-2 py-1">
-      <span className="min-w-0 flex-1 truncate text-sm">{category.name}</span>
+      <span
+        className={`min-w-0 flex-1 truncate text-sm ${
+          eingerueckt ? 'pl-5 text-slate-600 dark:text-slate-400' : 'font-medium'
+        }`}
+      >
+        {/* Ein Strich statt einer Einrückung allein: Auf schmalen Bildschirmen
+            sieht man sonst nicht, wo die Hauptkategorie aufhört. */}
+        {eingerueckt ? <span aria-hidden="true">└ </span> : null}
+        {category.name}
+      </span>
       {isAdmin ? (
         <>
           <RowButton label={`„${category.name}" umbenennen`} onClick={() => setName(category.name)}>
@@ -200,15 +247,31 @@ function RowButton({
 }
 
 /** Anlegen darf jeder – deshalb steht dieses Feld ohne Bedingung darunter. */
-function AddCategoryForm({ bereich }: { bereich: Bereich }) {
+function AddCategoryForm({
+  bereich,
+  hauptkategorien,
+}: {
+  bereich: Bereich
+  hauptkategorien: readonly Category[]
+}) {
   const [name, setName] = useState('')
+  const [parentId, setParentId] = useState('')
   const create = useCreateCategory(bereich)
   const error = create.error instanceof ApiRequestError ? create.error : null
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (!name.trim()) return
-    create.mutate(name, { onSuccess: () => setName('') })
+    create.mutate(
+      { name, parentId: parentId || null },
+      {
+        onSuccess: () => {
+          setName('')
+          // Die Hauptkategorie bleibt stehen: Wer eine Unterkategorie anlegt,
+          // legt meistens gleich die nächste an.
+        },
+      },
+    )
   }
 
   return (
@@ -227,6 +290,27 @@ function AddCategoryForm({ bereich }: { bereich: Bereich }) {
         placeholder="z. B. Versicherungen"
         error={error?.fields.name}
       />
+
+      {hauptkategorien.length > 0 ? (
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Gehört zu
+          </span>
+          <select
+            value={parentId}
+            onChange={(event) => setParentId(event.target.value)}
+            className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900"
+          >
+            <option value="">Eigene Hauptkategorie</option>
+            {hauptkategorien.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
       {error && Object.keys(error.fields).length === 0 ? (
         <p className="text-sm text-red-600 dark:text-red-400">{error.message}</p>
       ) : null}

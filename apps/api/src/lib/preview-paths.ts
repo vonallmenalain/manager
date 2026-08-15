@@ -45,3 +45,15 @@ export function previewPagePath(documentId: string, page: number): string {
   }
   return `${PREVIEW_DIR}/${documentId}/s${page}.jpg`
 }
+
+/**
+ * Ablageort des Vorschaubildes – der ersten Seite, klein gerechnet.
+ *
+ * Eigene Datei neben den Seiten und nicht die verkleinerte Seite 1: In der
+ * Kachelansicht stehen zwei Dutzend davon nebeneinander. Mit den 1400 Punkten
+ * der Seitenvorschau wären das mehrere Megabyte für eine Bildschirmseite, die
+ * ohnehin nur zeigen soll, um welches Dokument es sich handelt.
+ */
+export function previewThumbnailPath(documentId: string): string {
+  return `${PREVIEW_DIR}/${documentId}/vorschau.jpg`
+}

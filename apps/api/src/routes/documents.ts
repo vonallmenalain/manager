@@ -37,11 +37,13 @@ import { db } from '../db/index.js'
 import { ocrWorker } from '../ocr/index.js'
 import { categories, documents, users, type DocumentRow } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
+import { categoryFolderNames } from '../lib/categories.js'
 import {
   countPdfPages,
   PREVIEW_MAX_PAGES,
   removePreviews,
   renderPdfPage,
+  renderPdfThumbnail,
 } from '../lib/preview.js'
 import {
   describeChanges,
@@ -59,8 +61,10 @@ import {
   extensionFor,
   moveToTrash,
   moveWithinStorage,
+  removeFromStorage,
   resolveInStorage,
   storeTemporarily,
+  textSidecarPath,
 } from '../lib/storage.js'
 import {
   metadataFromFields,
@@ -98,23 +102,20 @@ function today(): string {
 }
 
 /**
- * Der Name der Kategorie – aber nur, wenn sie zum selben Bereich gehört.
+ * Erweitert eine Kategorienauswahl um die Unterkategorien darin.
  *
- * Die Prüfung auf den Bereich ist keine Förmlichkeit: Eine Kennung aus der
- * DocBase in einem Haushaltsdokument würde dessen Datei in einen Ordner
- * legen, den der Haushalt gar nicht kennt.
+ * Wer „Notfall" anhakt, meint alles, was darunter liegt – „Notfall ohne seine
+ * Unterschubladen" ist keine Frage, die im Alltag jemand stellt. Umgekehrt
+ * bleibt die Auswahl einer einzelnen Unterkategorie genau diese eine.
  */
-async function categoryNameFor(
-  bereich: Bereich,
-  categoryId: string | null,
-): Promise<string | null> {
-  if (!categoryId) return null
-  const rows = await db
-    .select({ name: categories.name })
+async function withSubcategories(ids: readonly string[]): Promise<string[]> {
+  if (ids.length === 0) return []
+  const children = await db
+    .select({ id: categories.id })
     .from(categories)
-    .where(and(eq(categories.id, categoryId), eq(categories.bereich, bereich)))
-    .limit(1)
-  return rows[0]?.name ?? null
+    .where(inArray(categories.parentId, [...ids]))
+
+  return [...new Set([...ids, ...children.map((child) => child.id)])]
 }
 
 /**
@@ -129,10 +130,14 @@ async function categoryNameFor(
 async function verifyUploadMetadata(wanted: UploadMetadata): Promise<{
   categoryId: string | null
   categoryName: string | null
+  parentCategoryName: string | null
   assignedTo: string | null
   status: DocumentStatus
 }> {
-  const categoryName = await categoryNameFor(wanted.bereich, wanted.categoryId)
+  const { categoryName, parentCategoryName } = await categoryFolderNames(
+    wanted.bereich,
+    wanted.categoryId,
+  )
 
   let assignedTo: string | null = null
   if (wanted.assignedTo) {
@@ -147,6 +152,7 @@ async function verifyUploadMetadata(wanted: UploadMetadata): Promise<{
   return {
     categoryId: categoryName === null ? null : wanted.categoryId,
     categoryName,
+    parentCategoryName,
     assignedTo,
     status: wanted.status,
   }
@@ -245,6 +251,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     const storagePath = buildStoragePath({
       docDate,
       categoryName: metadata.categoryName,
+      parentCategoryName: metadata.parentCategoryName,
       title,
       documentId,
       extension: extensionFor(upload.mimetype, upload.filename),
@@ -322,10 +329,14 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     const kategorien = auswahl(categoryId, UNCATEGORIZED)
     if (kategorien) {
+      // Eine Hauptkategorie steht für alles, was darunter liegt – sonst wäre
+      // ein Dokument in „Notfall › Medikamente" beim Filtern auf „Notfall"
+      // nicht dabei, obwohl es genau dort einsortiert wurde.
+      const ids = await withSubcategories(kategorien.ids)
       conditions.push(
         oderNichts(
           kategorien.ohne ? isNull(documents.categoryId) : undefined,
-          kategorien.ids.length > 0 ? inArray(documents.categoryId, kategorien.ids) : undefined,
+          ids.length > 0 ? inArray(documents.categoryId, ids) : undefined,
         ),
       )
     }
@@ -436,19 +447,70 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
 
     if (row.mimeType.startsWith('image/')) {
-      return reply.send({ kind: 'image', pages: 1 } satisfies PreviewInfo)
+      return reply.send({ kind: 'image', pages: 1, totalPages: 1 } satisfies PreviewInfo)
     }
 
     if (row.mimeType === 'application/pdf') {
       const pages = await countPdfPages(resolveInStorage(row.bereich as Bereich, row.storagePath))
-      if (pages === 0) return reply.send({ kind: 'none', pages: 0 } satisfies PreviewInfo)
+      if (pages === 0) {
+        return reply.send({ kind: 'none', pages: 0, totalPages: 0 } satisfies PreviewInfo)
+      }
       return reply.send({
         kind: 'pdf',
         pages: Math.min(pages, PREVIEW_MAX_PAGES),
+        totalPages: pages,
       } satisfies PreviewInfo)
     }
 
-    return reply.send({ kind: 'none', pages: 0 } satisfies PreviewInfo)
+    return reply.send({ kind: 'none', pages: 0, totalPages: 0 } satisfies PreviewInfo)
+  })
+
+  /**
+   * Das Vorschaubild für eine Kachel.
+   *
+   * Ein Endpunkt für beide Dateiarten, damit die Kachelansicht nicht wissen
+   * muss, was sie da anzeigt: Bei einem PDF ist es die klein gerechnete erste
+   * Seite, bei einem Bild die Datei selbst. Dass ein Bild ungeschrumpft
+   * herauskommt, ist eine bewusste Grenze – im Image liegt mit poppler ein
+   * Werkzeug für PDFs, aber keines, das JPEGs verkleinert, und eine
+   * Bildbibliothek nur für Kacheln wäre ein hoher Preis. Das Frontend holt
+   * deshalb nur die Kacheln, die tatsächlich sichtbar werden.
+   */
+  fastify.get('/api/documents/:id/vorschaubild', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const row = await findAnyDocument(id)
+    if (!row) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    reply.header('cross-origin-resource-policy', 'cross-origin')
+
+    if (row.mimeType.startsWith('image/')) {
+      reply.header('cache-control', 'private, max-age=300')
+      return reply
+        .type(row.mimeType)
+        .send(createReadStream(resolveInStorage(row.bereich as Bereich, row.storagePath)))
+    }
+
+    if (row.mimeType !== 'application/pdf') {
+      return reply.status(404).send(notFound('Für diese Datei gibt es kein Vorschaubild.'))
+    }
+
+    let imagePath: string
+    try {
+      imagePath = await renderPdfThumbnail(
+        row.bereich as Bereich,
+        id,
+        resolveInStorage(row.bereich as Bereich, row.storagePath),
+      )
+    } catch (error) {
+      request.log.warn({ err: error, documentId: id }, 'Vorschaubild fehlgeschlagen')
+      return reply
+        .status(422)
+        .send(apiError('preview_failed', 'Für dieses Dokument gibt es kein Vorschaubild.'))
+    }
+
+    // Ein gerastertes Bild ändert sich nie – der Browser darf es behalten.
+    reply.header('cache-control', 'private, max-age=86400')
+    return reply.type('image/jpeg').send(createReadStream(imagePath))
   })
 
   fastify.get('/api/documents/:id/preview/:page', async (request, reply) => {
@@ -522,9 +584,11 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (affectsPath) {
       const extension = before.storagePath.split('.').pop() ?? 'bin'
+      const ordner = await categoryFolderNames(before.bereich as Bereich, merged.categoryId)
       const nextPath = buildStoragePath({
         docDate: merged.docDate,
-        categoryName: await categoryNameFor(before.bereich as Bereich, merged.categoryId),
+        categoryName: ordner.categoryName,
+        parentCategoryName: ordner.parentCategoryName,
         title: merged.title,
         documentId: before.id,
         extension,
@@ -562,6 +626,141 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       await logActivity(id, user.id, entry.action, entry.summary)
     }
 
+    return reply.send({
+      document: {
+        ...toApiDocument(row),
+        activity: await getActivity(id),
+        ocrText: row.ocrText,
+        ocrMethod: row.ocrMethod,
+        ocrError: row.ocrError,
+      },
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Datei ersetzen
+  //
+  // Gedacht fürs nachträgliche Zuschneiden: Der Beschnitt passiert im Browser,
+  // wo das Bild ohnehin schon liegt und sich mit dem Finger ziehen lässt.
+  // Hierher kommt nur das Ergebnis.
+  //
+  // Bewusst ein Ersetzen und kein zweites Dokument: Ein zugeschnittenes Blatt
+  // ist dasselbe Blatt. Zwei Zeilen in der Liste – einmal schief, einmal
+  // gerade – wären genau die Unordnung, die das Zuschneiden beseitigen soll.
+  // Der Preis ist, dass das Original weg ist; deshalb fragt die App vorher.
+  // -------------------------------------------------------------------------
+  fastify.put('/api/documents/:id/datei', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const { id } = request.params as { id: string }
+    // findDocument und nicht findAnyDocument: Was im Papierkorb liegt, wird
+    // nicht bearbeitet – erst zurückholen.
+    const before = await findDocument(id)
+    if (!before) return reply.status(404).send(notFound('Dokument nicht gefunden.'))
+
+    const upload = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } })
+    if (!upload) {
+      return reply
+        .status(400)
+        .send(apiError(API_ERROR_CODES.validationFailed, 'Keine Datei empfangen.'))
+    }
+
+    if (!allowedMimeTypes.has(upload.mimetype)) {
+      upload.file.resume()
+      return reply
+        .status(415)
+        .send(
+          apiError(
+            'unsupported_type',
+            `Dateityp ${upload.mimetype} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+          ),
+        )
+    }
+
+    const bereich = before.bereich as Bereich
+    const stored = await storeTemporarily(bereich, upload.file, `${id}-ersatz`)
+
+    if (upload.file.truncated) {
+      await discardUpload(stored.tempPath)
+      return reply
+        .status(413)
+        .send(
+          apiError(
+            'file_too_large',
+            `Die Datei ist grösser als ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`,
+          ),
+        )
+    }
+
+    // Titel, Datum und Kategorie bleiben – nur die Endung kann sich ändern,
+    // etwa wenn aus einem PNG ein zugeschnittenes JPEG wird.
+    const ordner = await categoryFolderNames(bereich, before.categoryId)
+    const nextPath = buildStoragePath({
+      docDate: before.docDate,
+      categoryName: ordner.categoryName,
+      parentCategoryName: ordner.parentCategoryName,
+      title: before.title,
+      documentId: id,
+      extension: extensionFor(upload.mimetype, upload.filename),
+    })
+
+    try {
+      await commitUpload(bereich, stored.tempPath, nextPath)
+    } catch (error) {
+      await discardUpload(stored.tempPath)
+      request.log.error({ err: error, documentId: id }, 'Datei konnte nicht ersetzt werden')
+      return reply
+        .status(500)
+        .send(apiError('storage_failed', 'Die Datei liess sich nicht speichern.'))
+    }
+
+    // Erst nach dem geglückten Schreiben aufräumen: Ginge es davor schief,
+    // wäre das Dokument ohne Datei.
+    if (nextPath !== before.storagePath) {
+      await removeFromStorage(bereich, before.storagePath).catch(() => undefined)
+    }
+    // Die .txt neben dem Original beschreibt den alten Inhalt; die
+    // Texterkennung schreibt sie gleich neu.
+    await removeFromStorage(bereich, textSidecarPath(before.storagePath)).catch(() => undefined)
+    await removePreviews(bereich, id).catch((error: unknown) => {
+      request.log.warn({ err: error, documentId: id }, 'Vorschau-Bilder nicht entfernt')
+    })
+
+    const updated = await db
+      .update(documents)
+      .set({
+        storagePath: nextPath,
+        mimeType: upload.mimetype,
+        sizeBytes: stored.sizeBytes,
+        sha256: stored.sha256,
+        // Der erkannte Text gehörte zum alten Bild. Nach einem Beschnitt kann
+        // er sogar falsch sein – abgeschnittene Zeilen stünden weiter in der
+        // Suche. Also von vorn, mit vollen drei Versuchen.
+        ocrStatus: 'pending',
+        ocrText: null,
+        ocrMethod: null,
+        ocrAttempts: 0,
+        ocrError: null,
+        ocrFinishedAt: null,
+        // Ohne ocrText: Der gehörte zum alten Bild und wird gerade neu gelesen.
+        searchText: buildSearchText({
+          title: before.title,
+          vendor: before.vendor,
+          notes: before.notes,
+        }),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(documents.id, id))
+      .returning()
+
+    const row = updated[0]
+    if (!row) throw new Error('Dokument konnte nicht aktualisiert werden')
+
+    await logActivity(id, user.id, 'edit', `Datei von „${before.title}" ersetzt`)
+    ocrWorker?.notify()
+
+    request.log.info({ documentId: id, sizeBytes: stored.sizeBytes }, 'Datei ersetzt')
     return reply.send({
       document: {
         ...toApiDocument(row),

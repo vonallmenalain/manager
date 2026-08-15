@@ -125,6 +125,9 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
 ├── DocBase/                             ← die medizinische Sammlung, gleich aufgebaut
 │   ├── 2026/
 │   │   ├── Studien/
+│   │   ├── Notfall/                     ← Hauptkategorie
+│   │   │   ├── Medikamente/             ← Unterkategorie: ein Ordner tiefer
+│   │   │   └── 2026-07-02__Ablauf__b2c1.pdf   ← direkt in der Hauptkategorie
 │   │   └── Unsortiert/
 │   ├── .previews/
 │   └── .trash/
@@ -134,6 +137,11 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
 
 * Dateiname = `Datum__Titel__kurz-ID`. Die 4-stellige ID am Ende macht ihn eindeutig,
   auch wenn zwei Dokumente gleich heissen.
+* **Unterkategorien sind ein Ordner tiefer, mehr nicht.** Die Ablage bildet damit
+  dieselbe Schachtelung ab wie die App. Ohne diesen Ordner lägen „Notfall › Rezepte" und
+  „Alltag › Rezepte" in der Freigabe im selben Haufen, obwohl es in der App zwei
+  Schubladen sind. „Unsortiert" bleibt einstufig – ohne Kategorie gibt es auch keine
+  Hauptkategorie darüber.
 * **`DocBase/` ist ein Unterordner und kein zweites Volume.** Beides wäre möglich; ein
   Unterordner ist beim Backup, beim Zugriff über SMB und in der Rechtevergabe aber schon
   dabei, statt ein zweites Mal eingerichtet werden zu müssen. Innerhalb davon gilt exakt
@@ -187,6 +195,17 @@ erDiagram
   käme zurück. Der Bereich (`manager` / `docbase`) gehört zum Namen: Eindeutig ist er je
   Bereich, nicht global – „Sonstiges" gibt es in beiden Sammlungen, und das sind zwei
   verschiedene Schubladen.
+* `categories.parent_id` – die Hauptkategorie, unter der eine Kategorie steht; `NULL`
+  bei einer Hauptkategorie selbst. **Genau zwei Ebenen.** Eine dritte beantwortet keine
+  Frage mehr, die sich beim Ablegen stellt, kostet aber überall etwas: in der Auswahl auf
+  dem Handy, im Filter und in der Überlegung „wo lege ich das jetzt ab". Eine
+  Unterkategorie ist keine eigene Art von Zeile, sondern eine gewöhnliche Kategorie mit
+  Elternteil – Dokumente hängen deshalb an Haupt- wie Unterkategorien gleichermassen:
+  „gehört zu Notfall, aber in keine der Unterschubladen" muss es geben. Beim Filtern
+  steht eine Hauptkategorie für alles darunter; beim Löschen nimmt sie ihre
+  Unterkategorien mit (`on delete cascade`), und die Dokumente werden unsortiert.
+  Eindeutig ist ein Name je Bereich **und** Elternteil: „Medikamente" darf unter
+  „Notfall" wie unter „Alltag" stehen.
 * `tags`, `document_tags` – freie Verschlagwortung neben den Kategorien
 * `documents.search_text` – Titel, Absender, Notiz und OCR-Text in einer vereinheitlichten
   Spalte; dieselbe Aufbereitung nutzen auch `notes.search_text` und die Einkaufsliste
@@ -380,6 +399,30 @@ gibt, fliegt weg, statt eine leere Liste ohne erkennbaren Grund zu erzeugen. Die
 bleibt bewusst nicht stehen: Ein Suchbegriff von gestern beantwortet die Frage von heute
 nicht.
 
+**Nachträglich zuschneiden.** Im Bearbeitungsmodus – hinter dem Bleistift – steht unter
+der Vorschau „Zuschneiden": Ecken ziehen, Ausschnitt verschieben, speichern. Gedacht für
+alles, was nicht über den Scanner kam und deshalb keinen Beschnitt hatte: ein Foto vom
+Zeugnis an der Wand, ein weitergeleitetes Bild, ein Blatt, bei dem man den Rand erst in
+der Vorschau bemerkt. Bisher blieb dafür nur „nochmals aufnehmen" – und bei einem Bild,
+das man nicht mehr hat, gar nichts.
+
+*Geschnitten wird im Browser*, nicht auf dem Server: Das Bild liegt dort ohnehin schon,
+das Ziehen mit dem Finger braucht keine Verbindung, und erst das Ergebnis geht zurück
+(`PUT /api/documents/:id/datei`). Ein Server, der schneidet, bräuchte eine Bildbibliothek
+im Image – für eine Handbewegung, die der Browser seit jeher kann.
+
+*Ersetzt wird die Datei*, es entsteht kein zweites Dokument: Ein zugeschnittenes Blatt ist
+dasselbe Blatt, und zwei Zeilen in der Liste – einmal schief, einmal gerade – wären genau
+die Unordnung, die das Zuschneiden beseitigen soll. Der Preis ist, dass das Original weg
+ist; deshalb die Rückfrage davor. Der erkannte Text wird verworfen und neu gelesen: Er
+gehörte zum alten Bild, und abgeschnittene Zeilen stünden sonst weiter in der Suche.
+
+*Bei einem PDF* gilt derselbe Ausschnitt für alle Seiten, und das Ergebnis ist ein PDF aus
+Bildern – zugeschnitten werden kann nur, was als Bild vorliegt, also die gerasterten
+Seiten. Das steht im Fenster auch so da. Reicht die Vorschau nicht bis zur letzten Seite
+(bei mehr als 25), erscheint der Knopf gar nicht erst: Ein Beschnitt, der still die
+Seiten 26 bis 30 verlöre, wäre schlimmer als keiner.
+
 **Ansichten:** Startbildschirm (Kachel „Pendent" mit den nächsten Fristen) · Liste/Suche ·
 Dokument-Detail (Vorschau, Metadaten, Verlauf, Teilen, Download).
 
@@ -431,6 +474,30 @@ Dokument, sondern der Grund für die ganze Seite.
 Fachsammlung braucht, zeigt sich am ersten Dutzend Dokumente; vorgegebene Kategorien
 wären Rateversuche, an denen man sich beim Einsortieren dann entlanghangelt. Angelegt
 werden sie wie im Manager aus jeder Auswahl heraus.
+
+**Zwei Ebenen, weil eine Fachsammlung sie braucht.** „Notfall" mit „Medikamente",
+„Kontakte" und „Abläufe" darunter ist die Ordnung, die man beim Nachschlagen im Kopf hat.
+Ein Dokument kann in einer Unterkategorie liegen oder direkt in der Hauptkategorie –
+letzteres ist kein Übergangszustand, sondern der richtige Platz für alles, was zum Thema
+gehört, aber in keine der Unterschubladen passt. Wer nach der Hauptkategorie filtert,
+sieht beides. Eine dritte Ebene gibt es bewusst nicht: siehe `categories.parent_id` in
+Abschnitt 5.
+
+**Liste oder Kacheln.** Neben dem Kategorienfilter steht „Ansicht". Die Liste bleibt der
+Standard und beantwortet „wie heisst es und wann war es"; die Kachelansicht zeigt
+stattdessen ein Vorschaubild und beantwortet „wie sieht es aus" – in einer Sammlung, die
+man durchblättert, oft die schnellere Frage: Ein Kursskript, einen EKG-Ausdruck und ein
+Merkblatt unterscheidet man auf einen Blick, lange bevor man drei Titel gelesen hat. Wie
+viele Kacheln nebeneinander stehen, ist einstellbar (1 bis 4); eine Kachel pro Reihe ist
+keine Kachelansicht mehr, sondern eine Liste mit grossen Bildern – und genau das will man
+auf dem Handy manchmal.
+
+Die Einstellung liegt im `localStorage` und nicht in der Datenbank: Wie eine Liste
+angezeigt wird, ist keine Angabe über den Haushalt, sondern über den Bildschirm, auf den
+man gerade schaut. Die Vorschaubilder holt der Server als eigenes, kleines JPEG
+(`/api/documents/:id/vorschaubild`, längste Kante 520 statt 1400) – und das Frontend holt
+nur die, die tatsächlich in die Nähe des Bildschirms geraten. Ohne beides lüde eine
+Sammlung mit fünfzig Einträgen fünfzig grosse Bilder, von denen man vier sieht.
 
 **Geteilt wird alles darunter:** dieselbe Anmeldung (ein Haushalt, ein Passwort, ein
 Cookie), derselbe Server, dieselbe Texterkennung, derselbe Scanner samt Randerkennung und

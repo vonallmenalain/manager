@@ -7,7 +7,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import { db } from '../db/index.js'
 import { documents, type DocumentRow } from '../db/schema.js'
 import { env } from '../env.js'
-import { resolveInStorage } from '../lib/storage.js'
+import { resolveInStorage, textSidecarPath } from '../lib/storage.js'
 import { extractText, resolveLanguages, tidyText } from './extract.js'
 
 /** Nach drei erfolglosen Anläufen bringt ein vierter erfahrungsgemäss nichts. */
@@ -138,7 +138,7 @@ export class OcrWorker {
         // Der erkannte Text landet zusätzlich als .txt neben dem Original.
         // Damit ist er auch dann noch lesbar und durchsuchbar, wenn man die
         // Ablage direkt über die Dateifreigabe durchsieht.
-        const sidecar = document.storagePath.replace(/\.[^./\\]+$/, '.txt')
+        const sidecar = textSidecarPath(document.storagePath)
         try {
           await writeFile(
             resolveInStorage(document.bereich as Bereich, sidecar),
