@@ -215,6 +215,9 @@ erDiagram
 * `jobs` – OCR-Warteschlange: id, document_id, type, state, attempts, error, timestamps
 * `shopping_items` – Einkaufsliste; `shopping_memory` – die gelernte Zuordnung
   Artikel → Abteilung, bewusst getrennt, damit „Aufräumen" sie nicht mitlöscht
+* `shopping_sections` – die Abteilungen des Ladens mit ihrer Reihenfolge (`sort_order`).
+  Eintrag und Gedächtnis zeigen mit `section_id` darauf: Eine umbenannte Abteilung
+  bleibt dieselbe, samt allem, was darin liegt
 * `notes` – Notizen mit Art (Text oder Checkliste), Sichtbarkeit (`shared`), Farbe,
   Anheftung und eigener Suchspalte
 * `finance_years` – Steuerbetrag je Jahr. Mehr wird zu einem Jahr nicht eingestellt
@@ -585,13 +588,36 @@ sie weiterhin die Installation der DocBase.
 Eine gemeinsame Liste. Neuer Eintrag über ein einzeiliges Feld am unteren Rand (immer
 erreichbar, der Fokus bleibt nach dem Absenden darin – man trägt selten nur eine Sache
 ein). Die ganze Zeile ist die Trefferfläche zum Abhaken; im Laden trifft man kein kleines
-Kästchen. Erledigtes rutscht in einen eigenen Block, „Aufräumen" leert ihn.
+Kästchen. Erledigtes rutscht in einen eigenen Block, „Aufräumen" leert ihn. Dort steht
+auch, **wer wann abgehakt hat** („von Annina · gestern 18:40") – heute mit der Uhrzeit,
+älteres mit dem Datum. Im Laden ist das die Auskunft, auf die es ankommt: Hat der andere
+den Posten schon geholt, und wie lange ist das her?
 
 **Nach Abteilungen sortiert**, in der Reihenfolge des Ladenrundgangs (Früchte & Gemüse →
 … → Haushalt). Ein neuer Eintrag bekommt seine Abteilung aus einer schlichten
 Stichwortliste (`Vollmilch` → Molkerei, `Ruchbrot` → Brot & Backwaren). Liegt sie falsch,
 korrigiert man sie einmal – **die Korrektur wird dauerhaft gemerkt** und gilt beim
 nächsten Mal von selbst.
+
+**Die Abteilungen gehören dem Haushalt**, nicht dem Programm: Hinter „Abteilungen" oben
+rechts lassen sie sich anlegen, umbenennen, umordnen und löschen. Jeder Laden ist anders
+angeordnet, und wer „Fertiggerichte" braucht oder die Molkerei zuletzt abläuft, soll das
+einstellen können, ohne dass jemand die App neu baut. Umgeordnet wird mit zwei Pfeilen –
+dieselbe Überlegung wie beim Startbildschirm, denn eine Ziehgeste kollidiert auf dem Handy
+mit dem Blättern der Seite. Eine neue Abteilung hängt sich hinten an; nach vorn schiebt
+man sie mit den Pfeilen. Die vorgegebene Liste ist damit nur noch der Anfang, nicht mehr
+die Wahrheit – die steht in der Datenbank.
+
+Beim **Löschen** geht nichts verloren: Die Einträge wandern in den Sammelposten
+(„Sonstiges", und falls der selbst gelöscht wird, in die letzte Abteilung) – die Rückfrage
+nennt den Ort vorher. Das Gelernte zieht mit um, damit derselbe Artikel beim nächsten Mal
+dort landet, wo seine Nachbarn liegen. Die letzte Abteilung lässt sich nicht löschen: Ohne
+sie hätte kein Eintrag mehr einen Platz.
+
+Fehlt beim Einsortieren eine Abteilung, legt man sie im selben Griff an – „+ Neue
+Abteilung" steht bei den Abteilungsknöpfen hinter dem „⋯" der Zeile, und der Eintrag
+landet gleich darin. Sonst suchte man erst ein anderes Fenster und hätte vergessen, was
+man eigentlich einsortieren wollte.
 
 Das Gelernte steht bewusst in einer eigenen Tabelle (`shopping_memory`), nicht am Eintrag:
 „Aufräumen" läuft nach jedem Einkauf und würde das Gelernte sonst jedes Mal mitlöschen.

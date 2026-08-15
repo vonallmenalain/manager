@@ -2,6 +2,7 @@ import type {
   CreateShoppingItemInput,
   Note,
   ShoppingItem,
+  ShoppingSection,
   UpdateShoppingItemInput,
   UpsertNoteInput,
 } from '@manager/shared'
@@ -10,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 
 const SHOPPING_KEY = ['shopping'] as const
+const SECTIONS_KEY = ['shopping-sections'] as const
 
 export function useShoppingList() {
   return useQuery({
@@ -63,11 +65,12 @@ export function useAddShoppingItem() {
     (items, input) => [
       ...items,
       {
-        // Vorläufiger Eintrag, bis der Server antwortet. Die Abteilung kennt
-        // nur er – bis dahin steht der Eintrag unter 'Sonstiges'.
+        // Vorläufiger Eintrag, bis der Server antwortet. Welche Abteilung es
+        // wird, weiss nur er – er kennt das Gedächtnis der Liste. Bis dahin
+        // steht der Eintrag ohne Abteilung, und die Liste zeigt ihn zuunterst.
         id: `vorlaeufig-${Date.now()}`,
         text: input.text,
-        section: input.section ?? 'Sonstiges',
+        sectionId: input.sectionId ?? '',
         done: false,
         createdBy: '',
         doneBy: null,
@@ -101,6 +104,89 @@ export function useClearDoneShoppingItems() {
   )
 }
 
+/**
+ * Die Abteilungen des Ladens.
+ *
+ * Ohne wiederkehrendes Nachfragen: Einträge kommen im Minutentakt dazu,
+ * Abteilungen ein paarmal im Jahr. Nach jeder eigenen Änderung wird die Liste
+ * ohnehin frisch geholt; die Minute Schonfrist deckt den Fall ab, dass die
+ * andere Person gerade eine angelegt hat – beim nächsten Öffnen der App ist
+ * sie da.
+ */
+export function useShoppingSections() {
+  return useQuery({
+    queryKey: SECTIONS_KEY,
+    queryFn: api.listShoppingSections,
+    staleTime: 60_000,
+  })
+}
+
+/**
+ * Änderungen an den Abteilungen.
+ *
+ * Auch die Einkaufsliste wird neu geholt: Wer eine Abteilung löscht,
+ * verschiebt damit die Einträge, die darin lagen.
+ */
+function useSectionMutation<TVariables, TResult>(
+  mutationFn: (variables: TVariables) => Promise<TResult>,
+) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: SECTIONS_KEY })
+      void queryClient.invalidateQueries({ queryKey: SHOPPING_KEY })
+    },
+  })
+}
+
+export function useAddShoppingSection() {
+  return useSectionMutation((name: string) => api.addShoppingSection({ name }))
+}
+
+export function useRenameShoppingSection() {
+  return useSectionMutation(({ id, name }: { id: string; name: string }) =>
+    api.renameShoppingSection(id, { name }),
+  )
+}
+
+export function useDeleteShoppingSection() {
+  return useSectionMutation((id: string) => api.deleteShoppingSection(id))
+}
+
+/**
+ * Die neue Reihenfolge – sofort sichtbar, auch bevor der Server geantwortet
+ * hat. Wer zweimal auf denselben Pfeil tippt, soll die Abteilung zwei Plätze
+ * weiter oben sehen und nicht auf zwei Antworten warten.
+ */
+export function useReorderShoppingSections() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (ids: string[]) => api.reorderShoppingSections(ids),
+    onMutate: async (ids: string[]) => {
+      await queryClient.cancelQueries({ queryKey: SECTIONS_KEY })
+      const previous = queryClient.getQueryData<{ sections: ShoppingSection[] }>(SECTIONS_KEY)
+
+      if (previous) {
+        const nach = new Map(previous.sections.map((section) => [section.id, section]))
+        const sortiert = ids
+          .map((id) => nach.get(id))
+          .filter((section): section is ShoppingSection => section !== undefined)
+        queryClient.setQueryData(SECTIONS_KEY, { sections: sortiert })
+      }
+      return { previous }
+    },
+    onError: (_error, _ids, context) => {
+      if (context?.previous) queryClient.setQueryData(SECTIONS_KEY, context.previous)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: SECTIONS_KEY })
+    },
+  })
+}
+
 const NOTES_KEY = 'notes'
 
 export function useNotes(search: string) {
@@ -132,4 +218,4 @@ export function useDeleteNote() {
   })
 }
 
-export type { Note, ShoppingItem }
+export type { Note, ShoppingItem, ShoppingSection }
