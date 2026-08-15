@@ -28,12 +28,19 @@ import {
 } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
 import { findSection, findSectionByName, listSections } from '../lib/sections.js'
+import { legacySectionId, legacySectionInput, legacySectionName } from '../lib/shopping-compat.js'
 
-function toApi(row: ShoppingItemRow): ShoppingItem {
+/**
+ * Ein Eintrag, wie ihn die App bekommt – mit `section` als Beigabe für eine
+ * App, die noch von vor den eigenen Abteilungen stammt. Warum das dabeisteht,
+ * erklärt `lib/shopping-compat.ts`; die heutige Oberfläche liest es nicht.
+ */
+function toApi(row: ShoppingItemRow, sections: readonly ShoppingSection[]): ShoppingItem {
   return {
     id: row.id,
     text: row.text,
     sectionId: row.sectionId,
+    section: legacySectionName(sections, row.sectionId),
     done: row.done,
     createdBy: row.createdBy,
     doneBy: row.doneBy,
@@ -94,7 +101,8 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
       // Abteilung macht die Oberfläche, weil sie die Reihenfolge kennt.
       .orderBy(shoppingItems.done, shoppingItems.createdAt)
 
-    return reply.send({ items: rows.map(toApi) })
+    const sections = await listSections()
+    return reply.send({ items: rows.map((row) => toApi(row, sections)) })
   })
 
   /**
@@ -249,7 +257,9 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const sections = await listSections()
-    const gewuenscht = parsed.data.sectionId
+    // Eine alte App nennt die Abteilung beim Namen statt bei der Kennung.
+    const alt = legacySectionInput(request.body)
+    const gewuenscht = parsed.data.sectionId ?? (alt ? legacySectionId(sections, alt) : undefined)
     if (gewuenscht && !sections.some((section) => section.id === gewuenscht)) {
       return reply.status(400).send(
         apiError(API_ERROR_CODES.validationFailed, 'Diese Abteilung gibt es nicht.', {
@@ -284,7 +294,7 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
 
     const row = inserted[0]
     if (!row) throw new Error('Eintrag konnte nicht gespeichert werden')
-    return reply.status(201).send({ item: toApi(row) })
+    return reply.status(201).send({ item: toApi(row, sections) })
   })
 
   fastify.patch('/api/shopping/:id', async (request, reply) => {
@@ -295,7 +305,15 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = updateShoppingItemSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const changes = parsed.data
+    // Eine alte App schickt den Namen der Abteilung, keine Kennung. Kennt der
+    // Server den Namen nicht mehr, bleibt der Eintrag lieber stehen, als dass
+    // die Anfrage mit einer Meldung endet, die dort niemand anzeigen kann.
+    const sections = await listSections()
+    const alt = parsed.data.sectionId === undefined ? legacySectionInput(request.body) : null
+    const changes = {
+      ...parsed.data,
+      ...(alt ? { sectionId: legacySectionId(sections, alt) } : {}),
+    }
     const update: Partial<ShoppingItemRow> = {}
 
     if (changes.text !== undefined) {
@@ -335,6 +353,16 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
       update.doneAt = changes.done ? new Date().toISOString() : null
     }
 
+    // Eine Änderung ohne Inhalt gibt es: Eine alte App schickt eine Abteilung,
+    // die es nicht mehr gibt. Ein leeres `set` wäre kein SQL mehr – dann steht
+    // der Eintrag unverändert da, und das ist auch die richtige Antwort.
+    if (Object.keys(update).length === 0) {
+      const rows = await db.select().from(shoppingItems).where(eq(shoppingItems.id, id)).limit(1)
+      const row = rows[0]
+      if (!row) return reply.status(404).send(notFound('Eintrag nicht gefunden.'))
+      return reply.send({ item: toApi(row, sections) })
+    }
+
     const updated = await db
       .update(shoppingItems)
       .set(update)
@@ -343,7 +371,7 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
 
     const row = updated[0]
     if (!row) return reply.status(404).send(notFound('Eintrag nicht gefunden.'))
-    return reply.send({ item: toApi(row) })
+    return reply.send({ item: toApi(row, sections) })
   })
 
   fastify.delete('/api/shopping/:id', async (request, reply) => {
