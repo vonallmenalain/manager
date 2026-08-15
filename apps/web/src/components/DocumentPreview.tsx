@@ -94,7 +94,7 @@ function ImagePreview({
   zuschneidbar: boolean
   akzent: string
 }) {
-  const { url, isLoading, isError } = useFileBlobUrl(id, true)
+  const { url, blob, isLoading, isError } = useFileBlobUrl(id, true)
   // HEIC von einem iPhone oder ein TIFF vom Scanner: Der Server liefert die
   // Datei anstandslos, nur kann sie nicht jeder Browser zeichnen. Das merkt
   // man erst, wenn das <img> aufgibt.
@@ -127,6 +127,10 @@ function ImagePreview({
           mimeType={mimeType}
           pages={1}
           sourceUrl={url}
+          // Die Datei selbst und nicht nur ihre Adresse: Aus einer
+          // blob:-Adresse darf die Seite nichts lesen, das verbietet
+          // `connect-src`. Sie ist zum Anzeigen da.
+          sourceBlob={blob}
           akzent={akzent}
         />
       ) : null}
@@ -232,6 +236,7 @@ function CropButton({
   mimeType,
   pages,
   sourceUrl,
+  sourceBlob,
   akzent,
 }: {
   documentId: string
@@ -239,6 +244,8 @@ function CropButton({
   mimeType: string
   pages: number
   sourceUrl: string
+  /** Nur bei einem Bild: die Datei selbst, aus der zugeschnitten wird. */
+  sourceBlob?: Blob
   akzent: string
 }) {
   const [open, setOpen] = useState(false)
@@ -274,6 +281,7 @@ function CropButton({
           mimeType={mimeType}
           pages={pages}
           sourceUrl={sourceUrl}
+          sourceBlob={sourceBlob}
           akzent={akzent}
           onClose={() => setOpen(false)}
         />

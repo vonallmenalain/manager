@@ -49,6 +49,7 @@ export function CropDialog({
   mimeType,
   pages,
   sourceUrl,
+  sourceBlob,
   onClose,
   akzent = 'bg-brand-500',
 }: {
@@ -64,6 +65,17 @@ export function CropDialog({
    * dasselbe Bild.
    */
   sourceUrl: string
+  /**
+   * Dieselben Daten als Blob – zum Rechnen, nicht zum Anzeigen.
+   *
+   * Getrennt, weil die Adresse für den zweiten Zweck untauglich ist: Die
+   * Sicherheitsrichtlinie der Seite erlaubt unter `connect-src` nur die eigene
+   * Herkunft und die API, ein `fetch()` auf eine blob:-Adresse wird verworfen.
+   * Genau daran ist das Speichern gescheitert, mit der wortkargen Meldung
+   * „Failed to fetch". Die Bytes liegen ohnehin im Speicher – sie noch einmal
+   * zu holen war von Anfang an ein Umweg.
+   */
+  sourceBlob?: Blob
   onClose: () => void
   /** Farbe des bestätigenden Knopfes – marineblau im Manager, petrol in der DocBase. */
   akzent?: string
@@ -100,9 +112,11 @@ export function CropDialog({
       const jpegs: Blob[] = []
 
       if (istBild) {
-        // Die blob:-Adresse liegt im Browser – das ist kein Netzzugriff,
-        // sondern der Weg zurück zu den Bytes, die schon da sind.
-        const original = await (await fetch(sourceUrl)).blob()
+        // Die angezeigte Datei liegt schon im Speicher. Fehlt sie doch einmal –
+        // etwa weil der Zwischenspeicher sie inzwischen weggeräumt hat –, wird
+        // sie über die API geholt und nicht über ihre blob:-Adresse: Letztere
+        // verbietet die Sicherheitsrichtlinie der Seite.
+        const original = sourceBlob ?? (await api.documentFile(documentId))
         jpegs.push(await cropToJpeg(original, rect))
       } else {
         // Bei einem PDF wird jede Seite gleich beschnitten. Zugeschnitten wird
@@ -124,7 +138,7 @@ export function CropDialog({
       setFortschritt(null)
       setWorking(false)
     }
-  }, [documentId, istBild, onClose, pages, rect, replace, sourceUrl, title])
+  }, [documentId, istBild, onClose, pages, rect, replace, sourceBlob, title])
 
   // Was am Ende herauskommt – in Bildpunkten des angezeigten Bildes. Bei einem
   // PDF ist das die gerasterte Seite und damit genau die Auflösung, die
