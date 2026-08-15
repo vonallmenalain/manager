@@ -65,14 +65,16 @@ function testbild(width: number, height: number): Promise<Blob> {
 }
 
 function Harness() {
-  const [url, setUrl] = useState<string | null>(null)
+  const [bild, setBild] = useState<{ url: string; blob: Blob } | null>(null)
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
     let adresse: string | null = null
     void testbild(BREITE, HOEHE).then((blob) => {
       adresse = URL.createObjectURL(blob)
-      setUrl(adresse)
+      // Adresse und Datei, wie in der App: Die eine zeigt an, die andere wird
+      // gelesen – aus einer blob:-Adresse darf die Seite nichts holen.
+      setBild({ url: adresse, blob })
     })
     return () => {
       if (adresse) URL.revokeObjectURL(adresse)
@@ -91,13 +93,14 @@ function Harness() {
         Zuschneiden öffnen
       </button>
 
-      {open && url ? (
+      {open && bild ? (
         <CropDialog
           documentId="pruefstand"
           title="Prüfbild"
           mimeType="image/jpeg"
           pages={1}
-          sourceUrl={url}
+          sourceUrl={bild.url}
+          sourceBlob={bild.blob}
           onClose={() => setOpen(false)}
         />
       ) : null}

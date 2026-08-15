@@ -449,6 +449,16 @@ sonst der nächstgelegene Griff. Ein Tippen, das gar nichts tut, fühlt sich kap
 und ein Knopf, der sich nicht drücken lässt, sagt nicht warum: „Speichern" ist deshalb
 immer anklickbar und erklärt gegebenenfalls, dass noch kein Ausschnitt gewählt ist.
 
+*Gelesen wird der Blob, nicht seine Adresse.* Das Bild liegt zum Anzeigen als
+blob:-Adresse vor – die Bytes daraus per `fetch()` zurückzuholen scheitert aber an der
+Sicherheitsrichtlinie der Seite: `connect-src` erlaubt nur die eigene Herkunft und die
+API, und der Browser meldet dazu bloss „Failed to fetch". Angezeigt werden darf die
+Adresse trotzdem, dafür steht `blob:` unter `img-src` – deshalb sah man das Bild und
+scheiterte erst beim Speichern. Die Richtlinie dafür zu öffnen wäre die falsche Richtung
+gewesen: Die Daten lagen längst im Speicher, geholt wurden sie ein zweites Mal. Die Hooks
+in `lib/documents.ts` geben deshalb neben der Adresse auch den Blob heraus, und das
+Zuschneiden nimmt diesen.
+
 Geprüft wird das nicht nur in der Rechnung (`crop.test.ts`), sondern im Browser:
 `crop-harness.html` öffnet das Fenster mit einem im Canvas erzeugten Bild beliebiger
 Auflösung. Die drei Eigenschaften, an denen die erste Fassung scheiterte – passt das Bild

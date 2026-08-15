@@ -329,6 +329,17 @@ const BLOB_CACHE_MS = 5 * 60 * 1000
 
 export interface BlobUrlResult {
   url: string | null
+  /**
+   * Die Datei selbst. Die blob:-Adresse daneben ist zum Anzeigen da – wer die
+   * Bytes braucht, nimmt diese hier.
+   *
+   * Das ist keine Bequemlichkeit, sondern nötig: Die Sicherheitsrichtlinie der
+   * Seite erlaubt unter `connect-src` nur die eigene Herkunft und die API. Ein
+   * `fetch()` auf eine blob:-Adresse wird davon verworfen – im Browser mit der
+   * denkbar wortkargen Meldung „Failed to fetch". Angezeigt werden darf sie
+   * trotzdem, dafür steht `blob:` unter `img-src`.
+   */
+  blob: Blob | undefined
   isLoading: boolean
   isError: boolean
 }
@@ -346,6 +357,7 @@ export function useFileBlobUrl(id: string | undefined, enabled: boolean): BlobUr
 
   return {
     url: useObjectUrl(query.data),
+    blob: query.data,
     isLoading: query.isPending && enabled,
     isError: query.isError,
   }
@@ -371,6 +383,7 @@ export function useThumbnailUrl(id: string | undefined, enabled: boolean): BlobU
 
   return {
     url: useObjectUrl(query.data),
+    blob: query.data,
     isLoading: query.isPending && enabled,
     isError: query.isError,
   }
@@ -402,6 +415,7 @@ export function usePreviewPageUrl(
 
   return {
     url: useObjectUrl(query.data),
+    blob: query.data,
     isLoading: query.isPending && enabled,
     isError: query.isError,
   }

@@ -91,6 +91,14 @@
     # auf die API-Adresse wäre hier verworfen worden, und genau das war die
     # Ursache der leeren Vorschau. object-src 'none', weil kein <object> und
     # kein <embed> mehr vorkommt; PDFs werden als Bild dargestellt.
+    #
+    # connect-src kennt bewusst kein blob:. Wer die Bytes eines angezeigten
+    # Bildes braucht – etwa das Zuschneiden –, nimmt den Blob, den die App
+    # ohnehin im Speicher hält, und nicht seine Adresse: Ein fetch() darauf
+    # wird hier verworfen, und der Browser meldet dazu nur „Failed to fetch".
+    # Das war genau der Fehler beim Speichern eines Zuschnitts. Die Richtlinie
+    # dafür zu öffnen wäre die falsche Richtung gewesen – die Daten lagen
+    # bereits vor, geholt wurden sie ein zweites Mal.
     Content-Security-Policy = """
       default-src 'self'; \
       script-src 'self'; \
