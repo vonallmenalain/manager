@@ -71,6 +71,31 @@ export async function resolveLanguages(requested: string): Promise<string> {
   )
 }
 
+/**
+ * Wie viel einer Textebene aus dem privaten Unicode-Bereich stammen darf,
+ * bevor sie als unbrauchbar gilt.
+ *
+ * Manche Rechnungen – die der Energie- und Wasserversorgung etwa – betten
+ * Schriften ein, die ihre Zeichen auf U+E000 aufwärts abbilden. `pdftotext`
+ * gibt das brav so aus: seitenweise Zeichen, die kein Mensch und keine Suche
+ * lesen kann. Ohne diese Prüfung sähe das nach „genug Text" aus, die
+ * Texterkennung liefe nie an, und im Suchindex stünde Buchstabensalat.
+ */
+const MAX_PRIVATE_USE_SHARE = 0.2
+
+/** Zeichen aus dem privaten Bereich – dort steht nie echter Text. */
+export function privateUseShare(text: string): number {
+  let privat = 0
+  let gesamt = 0
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 32) continue
+    gesamt += 1
+    if (code >= 0xe000 && code <= 0xf8ff) privat += 1
+  }
+  return gesamt === 0 ? 0 : privat / gesamt
+}
+
 /** Liest eine bereits vorhandene Textebene aus einem PDF. */
 async function readTextLayer(file: string): Promise<string> {
   const { stdout } = await run(
@@ -145,7 +170,10 @@ export async function extractText(
       void error
     }
 
-    if (layer.trim().length >= MIN_TEXT_LAYER_CHARS) {
+    if (
+      layer.trim().length >= MIN_TEXT_LAYER_CHARS &&
+      privateUseShare(layer) <= MAX_PRIVATE_USE_SHARE
+    ) {
       return { text: layer, method: 'textebene' }
     }
 

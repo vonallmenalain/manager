@@ -1,7 +1,7 @@
 # Manager
 
 Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen,
-Finanzen (Zehnten / Fastopfer) und Stromverbrauch für zwei Personen.
+Finanzen (Zehnten / Fastopfer) und die Nebenkosten des Hauses für zwei Personen.
 
 **Stand: Etappe 6 abgeschlossen** – alle geplanten Bereiche sind gebaut.
 Dokumente lassen sich teilen, aufnehmen, verwalten und **über ihren Inhalt
@@ -15,10 +15,10 @@ dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
 mit Autospeichern, Anheften, Farben und Suche –, und die **Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet
 sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Der
-Bereich **Strom** liest die Rechnungen des Energieversorgers direkt aus dem
-PDF – Verbrauch nach Tarif, Ø Preis je Kilowattstunde, die drei Kostenblöcke
-und der Vergleich mit dem Vorjahr, dargestellt in Diagrammen, deren Reihen sich
-ein- und ausblenden lassen.
+Bereich **Haus** liest die Rechnungen der Energie- und Wasserversorgung direkt
+aus dem PDF – Strom, Wasser, Abwasser und Kehricht, mit Verbrauch, Ø Preis je
+Einheit und dem Vergleich mit dem Vorjahr, alles zusammen oder je Sparte
+einzeln. Das PDF wandert dabei zugleich in die Dokumente.
 Offen ist nur noch der Feinschliff, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz

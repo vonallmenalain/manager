@@ -10,7 +10,6 @@ import type {
   DocumentDetail,
   DocumentStatus,
   Donation,
-  ElectricityBill,
   FinanceSettings,
   Health,
   ImportResult,
@@ -29,6 +28,7 @@ import type {
   UpdateShoppingItemInput,
   UpdateShoppingSectionInput,
   UpsertNoteInput,
+  UtilityBill,
   YearFigures,
 } from '@manager/shared'
 
@@ -354,38 +354,56 @@ export const api = {
   deleteDonation: (year: number, id: string) =>
     request<FinanceYear>(`/api/finanzen/${year}/zahlungen/${id}`, { method: 'DELETE' }),
 
-  listStromBills: () => request<StromBills>('/api/strom'),
+  listHausBills: () => request<HausBills>('/api/haus'),
 
   /**
    * Liest ein PDF aus, ohne etwas zu speichern. Was zurückkommt, füllt das
-   * Formular der Vorschau – gespeichert wird erst mit `addStromBill`.
+   * Formular der Vorschau – gespeichert wird erst mit `addHausBill`.
    */
-  importStromBill: (file: File) => {
+  importHausBill: (file: File) => {
     const body = new FormData()
     body.append('file', file)
     // Kein content-type setzen: Der Browser muss die multipart-Grenze selbst
     // bestimmen, sonst kann der Server den Datenstrom nicht zerlegen.
-    return request<ImportResult>('/api/strom/import', { method: 'POST', body })
+    return request<ImportResult>('/api/haus/import', { method: 'POST', body })
   },
 
-  addStromBill: (bill: BillInput) =>
-    request<StromBills>('/api/strom/rechnungen', {
-      method: 'POST',
-      body: JSON.stringify(bill),
-    }),
+  /**
+   * Übernimmt eine Rechnung – mit dem PDF, wenn eines dahintersteht.
+   *
+   * Die Datei geht im selben Aufruf mit, damit sie in derselben Bewegung in den
+   * Dokumenten landet. Zwei getrennte Aufrufe hinterliessen bei einem Abbruch
+   * entweder eine Rechnung ohne Beleg oder einen Beleg ohne Rechnung.
+   */
+  addHausBill: (bill: BillInput, file?: File | null, categoryId?: string | null) => {
+    if (!file) {
+      return request<HausBills>('/api/haus/rechnungen', {
+        method: 'POST',
+        body: JSON.stringify(bill),
+      })
+    }
 
-  updateStromBill: (id: string, bill: BillInput) =>
-    request<StromBills>(`/api/strom/rechnungen/${id}`, {
+    const body = new FormData()
+    // Die Felder müssen vor der Datei stehen: Der Server liest den Datenstrom
+    // der Reihe nach und hat beim Empfang der Datei nur, was vorher kam.
+    body.append('bill', JSON.stringify(bill))
+    if (categoryId) body.append('categoryId', categoryId)
+    body.append('file', file)
+    return request<HausBills>('/api/haus/rechnungen', { method: 'POST', body })
+  },
+
+  updateHausBill: (id: string, bill: BillInput) =>
+    request<HausBills>(`/api/haus/rechnungen/${id}`, {
       method: 'PUT',
       body: JSON.stringify(bill),
     }),
 
-  deleteStromBill: (id: string) =>
-    request<StromBills>(`/api/strom/rechnungen/${id}`, { method: 'DELETE' }),
+  deleteHausBill: (id: string) =>
+    request<HausBills>(`/api/haus/rechnungen/${id}`, { method: 'DELETE' }),
 }
 
-export interface StromBills {
-  bills: ElectricityBill[]
+export interface HausBills {
+  bills: UtilityBill[]
 }
 
 export interface FinanceYear {

@@ -1,92 +1,48 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 /**
- * Die Entwicklung des Stromverbrauchs als Diagramm.
+ * Die Entwicklung der Hauskosten als Diagramm.
  *
- * Bewusst mehrere Felder untereinander statt eines Diagramms mit zwei
- * Achsen: Kilowattstunden, Franken und Rappen je Kilowattstunde haben nichts
+ * Bewusst mehrere Felder untereinander statt eines Diagramms mit zwei Achsen:
+ * Kilowattstunden, Kubikmeter, Franken und Rappen je Einheit haben nichts
  * gemeinsam, und zwei Skalen auf einer Fläche erfinden einen Zusammenhang, den
  * die Zahlen nicht hergeben – die Linie schneidet die Balken dort, wo jemand
  * die Achsen aneinander ausgerichtet hat. Die Felder teilen sich stattdessen
  * die Zeitachse: Was untereinander steht, gehört zur selben Periode, und jede
  * Skala bleibt ehrlich.
  *
- * Welche Reihen sichtbar sind, entscheidet die Legende darunter. Ein Feld, in
- * dem nichts mehr angezeigt wird, verschwindet – sonst bliebe ein leerer
- * Kasten stehen und nähme den anderen den Platz weg.
+ * Welche Felder es überhaupt gibt, entscheidet der Bildschirm darüber: Bei
+ * „Alle Sparten" braucht es je ein Feld für Kilowattstunden und Kubikmeter,
+ * bei „nur Kehricht" gar keines. Welche Reihen sichtbar sind, entscheidet die
+ * Legende darunter. Ein Feld, in dem nichts mehr angezeigt wird, verschwindet
+ * – sonst bliebe ein leerer Kasten stehen und nähme den anderen den Platz weg.
  */
 
-export type SeriesKey = 'hoch' | 'nieder' | 'energie' | 'netz' | 'abgaben' | 'preis'
-
-export interface ChartPoint {
-  id: string
-  /** Kurzform für die Achse: „H2 24". */
-  label: string
-  /** Ausgeschrieben für die Werteanzeige: „01.07.2024 – 31.12.2024". */
-  periodLabel: string
-  /** Verbrauch je Tarif in kWh. */
-  hoch: number | null
-  nieder: number | null
-  /** Kosten der Periode in Franken. */
-  energie: number | null
-  netz: number | null
-  abgaben: number | null
-  /** Ø Preis in Rappen je Kilowattstunde. */
-  preis: number | null
-}
-
-interface Series {
-  key: SeriesKey
+export interface ChartSeries {
+  key: string
   label: string
   color: string
-  /** Nachkommastellen in der Werteanzeige. */
-  digits: number
+  /** Ein Wert je Periode, in der Reihenfolge von `labels`. null heisst „keine Angabe". */
+  values: (number | null)[]
 }
 
-interface Panel {
+export interface ChartPanel {
   id: string
   title: string
   unit: string
   kind: 'stapel' | 'linie'
-  height: number
-  series: Series[]
+  /** Nachkommastellen in Achse und Werteanzeige. */
+  digits: number
+  series: ChartSeries[]
 }
 
-const PANELS: Panel[] = [
-  {
-    id: 'verbrauch',
-    title: 'Verbrauch',
-    unit: 'kWh',
-    kind: 'stapel',
-    height: 150,
-    series: [
-      { key: 'hoch', label: 'Hochtarif', color: 'var(--strom-hochtarif)', digits: 0 },
-      { key: 'nieder', label: 'Niedertarif', color: 'var(--strom-niedertarif)', digits: 0 },
-    ],
-  },
-  {
-    id: 'kosten',
-    title: 'Kosten',
-    unit: 'CHF',
-    kind: 'stapel',
-    height: 150,
-    series: [
-      { key: 'energie', label: 'Energie', color: 'var(--strom-energie)', digits: 2 },
-      { key: 'netz', label: 'Netznutzung', color: 'var(--strom-netznutzung)', digits: 2 },
-      { key: 'abgaben', label: 'Abgaben', color: 'var(--strom-abgaben)', digits: 2 },
-    ],
-  },
-  {
-    id: 'preis',
-    title: 'Ø Preis',
-    unit: 'Rp./kWh',
-    kind: 'linie',
-    height: 116,
-    series: [{ key: 'preis', label: 'Ø Preis', color: 'var(--strom-preis)', digits: 2 }],
-  },
-]
-
-const ALL_SERIES = PANELS.flatMap((panel) => panel.series)
+export interface ChartData {
+  /** Kurzform je Periode für die Achse: „H2 24". */
+  labels: string[]
+  /** Ausgeschrieben für die Werteanzeige: „01.07.2024 – 31.12.2024". */
+  periods: string[]
+  panels: ChartPanel[]
+}
 
 const AXIS_WIDTH = 44
 const RIGHT_PAD = 10
@@ -97,6 +53,8 @@ const LABEL_BAND = 26
 const GAP = 2
 const MAX_BAR = 24
 const DOT_RADIUS = 4
+const STACK_HEIGHT = 150
+const LINE_HEIGHT = 116
 
 // ------------------------------------------------------------------ Werkzeug
 
@@ -125,7 +83,8 @@ function niceStep(rough: number): number {
   if (rough <= 0) return 1
   const magnitude = 10 ** Math.floor(Math.log10(rough))
   const normalized = rough / magnitude
-  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10
+  const factor =
+    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10
   return factor * magnitude
 }
 
@@ -145,7 +104,7 @@ function stackScale(max: number): Scale {
 }
 
 /**
- * Skala für die Preislinie.
+ * Skala für eine Preislinie.
  *
  * Hier darf die Achse über der Null beginnen: Gezeigt wird die Veränderung
  * eines Preises, der nie in die Nähe von null kommt, und bei einer Linie misst
@@ -155,7 +114,7 @@ function stackScale(max: number): Scale {
 function lineScale(values: number[]): Scale {
   const min = Math.min(...values)
   const max = Math.max(...values)
-  const spanne = Math.max(max - min, Math.max(max, 1) * 0.04)
+  const spanne = Math.max(max - min, Math.max(Math.abs(max), 1) * 0.04)
   const step = niceStep(spanne / 2)
 
   const unten = Math.floor((min - spanne * 0.25) / step) * step
@@ -180,51 +139,50 @@ function barPath(x: number, y: number, width: number, height: number, radius: nu
   return `M${x} ${y + height}V${y + r}a${r} ${r} 0 0 1 ${r} ${-r}h${width - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}V${y + height}Z`
 }
 
+function panelHeight(panel: ChartPanel): number {
+  return panel.kind === 'linie' ? LINE_HEIGHT : STACK_HEIGHT
+}
+
 // ------------------------------------------------------------------ Diagramm
 
-export function StromChart({ points }: { points: ChartPoint[] }) {
+export function HausChart({ data }: { data: ChartData }) {
   const { ref, width } = useWidth()
-  const [hidden, setHidden] = useState<Set<SeriesKey>>(() => new Set())
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const [selected, setSelected] = useState<number | null>(null)
 
+  const anzahl = data.labels.length
   // Ohne eigene Wahl steht die jüngste Periode in der Werteanzeige: Das ist
   // die Zahl, wegen der man den Bildschirm geöffnet hat.
-  const active = selected !== null && selected < points.length ? selected : points.length - 1
+  const active = selected !== null && selected < anzahl ? selected : anzahl - 1
 
-  const sichtbar = useMemo(
-    () => new Set(ALL_SERIES.map((series) => series.key).filter((key) => !hidden.has(key))),
-    [hidden],
+  const alleSerien = useMemo(
+    () => data.panels.flatMap((panel) => panel.series),
+    [data.panels],
   )
 
-  const panels = PANELS.map((panel) => ({
-    ...panel,
-    series: panel.series.filter((series) => sichtbar.has(series.key)),
-  })).filter((panel) => {
-    if (panel.series.length === 0) return false
+  const panels = data.panels
+    .map((panel) => ({ ...panel, series: panel.series.filter((s) => !hidden.has(s.key)) }))
+    .filter((panel) => panel.series.length > 0)
     // Ein Feld ohne Zahlen bleibt weg – bei reinen Akontoperioden gibt es
     // keinen Verbrauch, und eine leere Fläche erklärt niemandem, warum.
-    return points.some((point) => panel.series.some((series) => point[series.key] !== null))
-  })
+    .filter((panel) => panel.series.some((s) => s.values.some((v) => v !== null)))
 
-  if (points.length === 0) return null
+  if (anzahl === 0 || alleSerien.length === 0) return null
 
   const plotWidth = Math.max(width - AXIS_WIDTH - RIGHT_PAD, 60)
-  const band = plotWidth / points.length
+  const band = plotWidth / anzahl
   const barWidth = Math.max(6, Math.min(MAX_BAR, band - 10))
 
   // Jede zweite Beschriftung, sobald es eng wird – abgeschnittene Wörter
   // helfen niemandem.
   const labelStep = Math.max(1, Math.ceil(52 / Math.max(band, 1)))
-
-  const height = panels.reduce((sum, panel) => sum + panel.height, 0) + LABEL_BAND + TOP_PAD
-
+  const height = panels.reduce((sum, panel) => sum + panelHeight(panel), 0) + LABEL_BAND + TOP_PAD
   const bandX = (index: number): number => AXIS_WIDTH + band * index
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
-    const next = active + (event.key === 'ArrowRight' ? 1 : -1)
-    setSelected(Math.max(0, Math.min(points.length - 1, next)))
+    setSelected(Math.max(0, Math.min(anzahl - 1, active + (event.key === 'ArrowRight' ? 1 : -1))))
   }
 
   return (
@@ -233,7 +191,7 @@ export function StromChart({ points }: { points: ChartPoint[] }) {
         <div
           tabIndex={0}
           role="group"
-          aria-label="Entwicklung von Verbrauch, Kosten und Strompreis. Mit den Pfeiltasten eine Periode wählen."
+          aria-label="Entwicklung der Hauskosten. Mit den Pfeiltasten eine Periode wählen."
           onKeyDown={onKeyDown}
           className="rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
         >
@@ -242,32 +200,28 @@ export function StromChart({ points }: { points: ChartPoint[] }) {
             height={height}
             viewBox={`0 0 ${width} ${height}`}
             role="img"
-            aria-label={beschreibung(points, panels)}
+            aria-label={beschreibung(data, panels)}
           >
-            {panels.map((panel, index) => {
-              const top = TOP_PAD + panels.slice(0, index).reduce((sum, p) => sum + p.height, 0)
-              return (
-                <PanelBody
-                  key={panel.id}
-                  panel={panel}
-                  points={points}
-                  top={top}
-                  width={width}
-                  band={band}
-                  barWidth={barWidth}
-                  active={active}
-                  bandX={bandX}
-                />
-              )
-            })}
+            {panels.map((panel, index) => (
+              <PanelBody
+                key={panel.id}
+                panel={panel}
+                top={TOP_PAD + panels.slice(0, index).reduce((sum, p) => sum + panelHeight(p), 0)}
+                width={width}
+                band={band}
+                barWidth={barWidth}
+                active={active}
+                bandX={bandX}
+              />
+            ))}
 
             {/* Die Periodenbeschriftung steht einmal ganz unten: Alle Felder
                 zeigen dieselben Perioden, und dreimal dieselbe Zeile wäre
                 dreimal derselbe Platzverbrauch. */}
-            {points.map((point, index) =>
+            {data.labels.map((label, index) =>
               index % labelStep === 0 || index === active ? (
                 <text
-                  key={point.id}
+                  key={`${label}-${index}`}
                   x={bandX(index) + band / 2}
                   y={height - LABEL_BAND / 2 + 4}
                   textAnchor="middle"
@@ -277,16 +231,16 @@ export function StromChart({ points }: { points: ChartPoint[] }) {
                       : 'fill-slate-500 dark:fill-slate-400'
                   }`}
                 >
-                  {point.label}
+                  {label}
                 </text>
               ) : null,
             )}
 
             {/* Die Trefferflächen liegen zuoberst und sind so breit wie die
                 ganze Spalte – auf einem Handy trifft niemand einen Balken. */}
-            {points.map((point, index) => (
+            {data.labels.map((label, index) => (
               <rect
-                key={point.id}
+                key={`treffer-${label}-${index}`}
                 x={bandX(index)}
                 y={TOP_PAD}
                 width={band}
@@ -296,7 +250,7 @@ export function StromChart({ points }: { points: ChartPoint[] }) {
                 onPointerDown={() => setSelected(index)}
                 onMouseEnter={() => setSelected(index)}
               >
-                <title>{`${point.periodLabel}`}</title>
+                <title>{data.periods[index]}</title>
               </rect>
             ))}
           </svg>
@@ -305,9 +259,10 @@ export function StromChart({ points }: { points: ChartPoint[] }) {
         <div className="h-72 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
       )}
 
-      <Readout point={points[active]} sichtbar={sichtbar} />
+      <Readout data={data} index={active} hidden={hidden} />
 
       <Legend
+        panels={data.panels}
         hidden={hidden}
         onToggle={(key) =>
           setHidden((current) => {
@@ -322,18 +277,17 @@ export function StromChart({ points }: { points: ChartPoint[] }) {
   )
 }
 
-function beschreibung(points: ChartPoint[], panels: Panel[]): string {
-  const von = points[0]?.periodLabel ?? ''
-  const bis = points[points.length - 1]?.periodLabel ?? ''
+function beschreibung(data: ChartData, panels: ChartPanel[]): string {
   const felder = panels.map((panel) => `${panel.title} in ${panel.unit}`).join(', ')
-  return `${felder} über ${points.length} Perioden, von ${von} bis ${bis}.`
+  return `${felder} über ${data.labels.length} Perioden, von ${data.periods[0] ?? ''} bis ${
+    data.periods[data.periods.length - 1] ?? ''
+  }.`
 }
 
 // -------------------------------------------------------------------- Felder
 
 interface PanelBodyProps {
-  panel: Panel
-  points: ChartPoint[]
+  panel: ChartPanel
   top: number
   width: number
   band: number
@@ -342,31 +296,37 @@ interface PanelBodyProps {
   bandX: (index: number) => number
 }
 
-function PanelBody({ panel, points, top, width, band, barWidth, active, bandX }: PanelBodyProps) {
+function PanelBody({ panel, top, width, band, barWidth, active, bandX }: PanelBodyProps) {
   const plotTop = top + 20
-  const plotBottom = top + panel.height - 8
+  const plotBottom = top + panelHeight(panel) - 8
   const plotHeight = plotBottom - plotTop
+  const anzahl = panel.series[0]?.values.length ?? 0
 
   // Nur Perioden mit Zahlen zählen für die Skala – eine Akontoperiode ohne
   // Verbrauch soll die Achse nicht auf null herunterziehen.
-  const werte = points
-    .filter((point) => panel.series.some((series) => point[series.key] !== null))
-    .map((point) => panel.series.reduce((sum, series) => sum + (point[series.key] ?? 0), 0))
-
-  const linienwerte = points
-    .map((point) => point[panel.series[0]?.key ?? 'preis'])
-    .filter((value): value is number => value !== null)
+  //
+  // Gestapelt zählt die Summe der Reihen, als Linie jeder Wert für sich: Zwei
+  // Preise übereinanderzulegen ergäbe eine Achse, auf der keiner von beiden
+  // liegt.
+  const werte: number[] = []
+  for (let index = 0; index < anzahl; index += 1) {
+    const spalte = panel.series
+      .map((serie) => serie.values[index])
+      .filter((wert): wert is number => wert !== null && wert !== undefined)
+    if (spalte.length === 0) continue
+    if (panel.kind === 'stapel') werte.push(spalte.reduce((sum, wert) => sum + wert, 0))
+    else werte.push(...spalte)
+  }
 
   const scale =
     panel.kind === 'linie'
-      ? lineScale(linienwerte.length > 0 ? linienwerte : [0, 1])
+      ? lineScale(werte.length > 0 ? werte : [0, 1])
       : stackScale(Math.max(...werte, 0))
 
   const y = (value: number): number =>
     plotBottom - ((value - scale.min) / (scale.max - scale.min || 1)) * plotHeight
 
-  const digits = panel.series[0]?.digits ?? 0
-  const tickDigits = panel.kind === 'linie' ? digits : scale.max < 10 ? 2 : 0
+  const tickDigits = panel.kind === 'linie' ? panel.digits : scale.max < 10 ? 2 : 0
 
   return (
     <g>
@@ -383,7 +343,7 @@ function PanelBody({ panel, points, top, width, band, barWidth, active, bandX }:
             x2={width - RIGHT_PAD}
             y1={y(tick)}
             y2={y(tick)}
-            stroke="var(--strom-gitter)"
+            stroke="var(--haus-gitter)"
             strokeWidth={1}
           />
           <text
@@ -406,56 +366,56 @@ function PanelBody({ panel, points, top, width, band, barWidth, active, bandX }:
         className="fill-slate-500/8 dark:fill-slate-400/10"
       />
 
-      {panel.kind === 'stapel'
-        ? points.map((point, index) => (
-            <Stack
-              key={point.id}
-              point={point}
-              series={panel.series}
-              x={bandX(index) + (band - barWidth) / 2}
-              width={barWidth}
-              y={y}
-              baseline={plotBottom}
-            />
-          ))
-        : (
+      {panel.kind === 'stapel' ? (
+        Array.from({ length: anzahl }, (_, index) => (
+          <Stack
+            key={index}
+            series={panel.series}
+            index={index}
+            x={bandX(index) + (band - barWidth) / 2}
+            width={barWidth}
+            y={y}
+          />
+        ))
+      ) : (
+        panel.series.map((serie) => (
           <Line
-            points={points}
-            series={panel.series[0] as Series}
+            key={serie.key}
+            series={serie}
+            digits={panel.digits}
             band={band}
             bandX={bandX}
             y={y}
             active={active}
           />
-        )}
+        ))
+      )}
     </g>
   )
 }
 
 function Stack({
-  point,
   series,
+  index,
   x,
   width,
   y,
-  baseline,
 }: {
-  point: ChartPoint
-  series: Series[]
+  series: ChartSeries[]
+  index: number
   x: number
   width: number
   y: (value: number) => number
-  baseline: number
 }) {
   const teile = series
-    .map((entry) => ({ entry, value: point[entry.key] }))
-    .filter((teil): teil is { entry: Series; value: number } => teil.value !== null && teil.value > 0)
+    .map((serie) => ({ serie, value: serie.values[index] ?? null }))
+    .filter((teil): teil is { serie: ChartSeries; value: number } => teil.value !== null && teil.value > 0)
 
   let unten = 0
 
   return (
     <g>
-      {teile.map((teil, index) => {
+      {teile.map((teil, position) => {
         const oben = unten + teil.value
         const yTop = y(oben)
         const yBottom = y(unten)
@@ -463,46 +423,41 @@ function Stack({
 
         // Der Zwischenraum sitzt am Fuss jedes Abschnitts ausser dem untersten –
         // so bleibt die Spitze des Stapels der wahre Gesamtwert.
-        const höhe = Math.max(1, yBottom - yTop - (index > 0 ? GAP : 0))
-        const istOberster = index === teile.length - 1
+        const höhe = Math.max(1, yBottom - yTop - (position > 0 ? GAP : 0))
 
         return (
           <path
-            key={teil.entry.key}
-            d={barPath(x, yTop, width, höhe, istOberster ? 4 : 0)}
-            fill={teil.entry.color}
+            key={teil.serie.key}
+            d={barPath(x, yTop, width, höhe, position === teile.length - 1 ? 4 : 0)}
+            fill={teil.serie.color}
           />
         )
       })}
-      {teile.length === 0 ? <line x1={x} x2={x + width} y1={baseline} y2={baseline} /> : null}
     </g>
   )
 }
 
 function Line({
-  points,
   series,
+  digits,
   band,
   bandX,
   y,
   active,
 }: {
-  points: ChartPoint[]
-  series: Series
+  series: ChartSeries
+  digits: number
   band: number
   bandX: (index: number) => number
   y: (value: number) => number
   active: number
 }) {
-  const gesetzt = points
-    .map((point, index) => ({ value: point[series.key], index }))
+  const gesetzt = series.values
+    .map((value, index) => ({ value, index }))
     .filter((entry): entry is { value: number; index: number } => entry.value !== null)
 
   const d = gesetzt
-    .map(
-      (entry, position) =>
-        `${position === 0 ? 'M' : 'L'}${bandX(entry.index) + band / 2} ${y(entry.value)}`,
-    )
+    .map((entry, position) => `${position === 0 ? 'M' : 'L'}${bandX(entry.index) + band / 2} ${y(entry.value)}`)
     .join(' ')
 
   const letzter = gesetzt[gesetzt.length - 1]
@@ -526,7 +481,7 @@ function Line({
           fill={series.color}
           // Der Ring in der Flächenfarbe hält den Punkt lesbar, wo er die
           // Linie kreuzt – eine Umrandung wäre Tinte ohne Aussage.
-          stroke="var(--strom-flaeche)"
+          stroke="var(--haus-flaeche)"
           strokeWidth={2}
         />
       ))}
@@ -539,7 +494,7 @@ function Line({
           textAnchor="end"
           className="fill-slate-900 text-[10px] font-semibold tabular-nums dark:fill-slate-100"
         >
-          {formatTick(letzter.value, series.digits)}
+          {formatTick(letzter.value, digits)}
         </text>
       ) : null}
     </g>
@@ -548,33 +503,43 @@ function Line({
 
 // ------------------------------------------------------------ Werte & Legende
 
-function Readout({ point, sichtbar }: { point: ChartPoint | undefined; sichtbar: Set<SeriesKey> }) {
-  if (!point) return null
-
-  const zeilen = ALL_SERIES.filter(
-    (series) => sichtbar.has(series.key) && point[series.key] !== null,
+function Readout({
+  data,
+  index,
+  hidden,
+}: {
+  data: ChartData
+  index: number
+  hidden: Set<string>
+}) {
+  const zeilen = data.panels.flatMap((panel) =>
+    panel.series
+      .filter((serie) => !hidden.has(serie.key) && serie.values[index] !== null)
+      .map((serie) => ({ serie, digits: panel.digits, unit: panel.unit })),
   )
+
+  if (zeilen.length === 0) return null
 
   return (
     <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-        {point.periodLabel}
+        {data.periods[index]}
       </p>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
-        {zeilen.map((series) => (
-          <div key={series.key} className="flex items-center justify-between gap-2">
+        {zeilen.map(({ serie, digits }) => (
+          <div key={serie.key} className="flex items-center justify-between gap-2">
             <dt className="flex min-w-0 items-center gap-1.5">
               <span
                 className="size-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: series.color }}
+                style={{ backgroundColor: serie.color }}
                 aria-hidden="true"
               />
               <span className="truncate text-xs text-slate-600 dark:text-slate-300">
-                {series.label}
+                {serie.label}
               </span>
             </dt>
             <dd className="shrink-0 text-xs font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-              {formatTick(point[series.key] as number, series.digits)}
+              {formatTick(serie.values[index] as number, digits)}
             </dd>
           </div>
         ))}
@@ -584,21 +549,23 @@ function Readout({ point, sichtbar }: { point: ChartPoint | undefined; sichtbar:
 }
 
 function Legend({
+  panels,
   hidden,
   onToggle,
 }: {
-  hidden: Set<SeriesKey>
-  onToggle: (key: SeriesKey) => void
+  panels: ChartPanel[]
+  hidden: Set<string>
+  onToggle: (key: string) => void
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {ALL_SERIES.map((series) => {
-        const aktiv = !hidden.has(series.key)
+      {panels.flatMap((panel) => panel.series).map((serie) => {
+        const aktiv = !hidden.has(serie.key)
         return (
           <button
-            key={series.key}
+            key={serie.key}
             type="button"
-            onClick={() => onToggle(series.key)}
+            onClick={() => onToggle(serie.key)}
             aria-pressed={aktiv}
             className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
               aktiv
@@ -609,12 +576,12 @@ function Legend({
             <span
               className="size-2.5 rounded-full border-2"
               style={{
-                backgroundColor: aktiv ? series.color : 'transparent',
-                borderColor: series.color,
+                backgroundColor: aktiv ? serie.color : 'transparent',
+                borderColor: serie.color,
               }}
               aria-hidden="true"
             />
-            {series.label}
+            {serie.label}
           </button>
         )
       })}
@@ -630,7 +597,7 @@ export interface ShareSlice {
   color: string
 }
 
-/** Nachkommastellen der Werte: Franken haben zwei, Kilowattstunden keine. */
+/** Nachkommastellen der Werte: Franken haben zwei, Mengen keine. */
 type ShareDigits = 0 | 2
 
 /**
@@ -725,7 +692,3 @@ function wholePercentages(values: number[], total: number): number[] {
   }
   return ergebnis
 }
-
-export const SERIES_COLORS: Record<SeriesKey, string> = Object.fromEntries(
-  ALL_SERIES.map((series) => [series.key, series.color]),
-) as Record<SeriesKey, string>

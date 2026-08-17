@@ -120,6 +120,13 @@
       "when": 1787001555903,
       "tag": "0016_strom",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1787007756549,
+      "tag": "0017_haus_sparten",
+      "breakpoints": true
     }
   ]
 }

@@ -429,15 +429,21 @@ export const donations = sqliteTable(
 export type DonationRow = typeof donations.$inferSelect
 
 /**
- * Stromrechnungen des Energieversorgers – je Zeile eine Rechnung.
+ * Rechnungen der Energie- und Wasserversorgung – je Zeile eine Rechnung.
+ *
+ * Der Versorger stellt zwei Arten: eine für den Strom und eine für Wasser,
+ * Abwasser und Kehricht zusammen. Die zweite trägt drei Sparten auf einem
+ * Beleg. Deshalb steht hier die Rechnung und nicht die Sparte: Akontoabzug und
+ * Rechnungsbetrag gelten für den ganzen Beleg, und wer sie je Sparte
+ * aufteilte, müsste dafür einen Verteilschlüssel erfinden, den es nicht gibt.
  *
  * Die Kennzahlen (Verbrauch, Ø Preis, Trend) werden bewusst nicht mitgespeichert,
  * sondern bei jeder Abfrage gerechnet. Sie hängen an einer Formel, die sich noch
  * ändern kann; gespeicherte Zwischenergebnisse wären beim ersten Nachdenken über
- * den Preis pro Kilowattstunde veraltet, ohne dass es jemand merkt.
+ * den Preis pro Einheit veraltet, ohne dass es jemand merkt.
  */
-export const electricityBills = sqliteTable(
-  'electricity_bills',
+export const utilityBills = sqliteTable(
+  'utility_bills',
   {
     id: text('id').primaryKey(),
     /** 'abrechnung' (mit Verbrauch) oder 'akonto' (blosse Vorauszahlung). */
@@ -454,21 +460,15 @@ export const electricityBills = sqliteTable(
     periodEnd: text('period_end').notNull(),
 
     customerNumber: text('customer_number'),
-    meterPoint: text('meter_point'),
-    meterNumber: text('meter_number'),
 
     /**
-     * Zählerablesungen als JSON: höchstens vier Zeilen (zwei Tarife, alter und
-     * neuer Zähler). Eine eigene Tabelle für so wenige Werte, die nur zusammen
-     * mit ihrer Rechnung gelesen werden, wäre eine Verknüpfung ohne Nutzen.
+     * Die Sparten als JSON: je Eintrag Total, Zählerablesungen, Positionen und
+     * – beim Strom – die drei Kostenblöcke. Höchstens eine Handvoll Einträge,
+     * die nur zusammen mit ihrer Rechnung gelesen werden; eigene Tabellen dafür
+     * wären Verknüpfungen ohne Nutzen.
      */
-    readings: text('readings').notNull().default('[]'),
-    /** Die Betragsermittlung, Zeile für Zeile – ebenfalls als JSON. */
-    positions: text('positions').notNull().default('[]'),
+    sections: text('sections').notNull().default('[]'),
 
-    energyCents: integer('energy_cents').notNull().default(0),
-    gridCents: integer('grid_cents').notNull().default(0),
-    leviesCents: integer('levies_cents').notNull().default(0),
     /** Zwischentotal: die Kosten der Periode, vor dem Akontoabzug. */
     subtotalCents: integer('subtotal_cents').notNull().default(0),
     /** Abgezogene Akontozahlungen, positiv gespeichert. */
@@ -477,6 +477,13 @@ export const electricityBills = sqliteTable(
     totalCents: integer('total_cents').notNull().default(0),
     vatCents: integer('vat_cents').notNull().default(0),
 
+    /**
+     * Das abgelegte PDF in den Dokumenten.
+     *
+     * `set null`: Wer ein Dokument aus der Ablage entfernt, wollte die Datei
+     * loswerden – nicht die Auswertung, die längst aus Zahlen besteht.
+     */
+    documentId: text('document_id').references(() => documents.id, { onDelete: 'set null' }),
     /** Dateiname des importierten PDFs. Leer bei Eingabe von Hand. */
     sourceFile: text('source_file'),
     note: text('note').notNull().default(''),
@@ -489,10 +496,10 @@ export const electricityBills = sqliteTable(
   },
   (table) => [
     // Jede Auswertung geht der Reihe nach durch die Perioden.
-    index('electricity_bills_period_idx').on(table.periodStart),
-    index('electricity_bills_kind_idx').on(table.kind),
+    index('utility_bills_period_idx').on(table.periodStart),
+    index('utility_bills_kind_idx').on(table.kind),
   ],
 )
 
-export type ElectricityBillRow = typeof electricityBills.$inferSelect
-export type NewElectricityBillRow = typeof electricityBills.$inferInsert
+export type UtilityBillRow = typeof utilityBills.$inferSelect
+export type NewUtilityBillRow = typeof utilityBills.$inferInsert

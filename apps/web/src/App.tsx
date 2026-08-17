@@ -9,12 +9,12 @@ import { Dashboard } from './screens/Dashboard'
 import { DocumentDetail } from './screens/DocumentDetail'
 import { Documents } from './screens/Documents'
 import { Finance } from './screens/Finance'
+import { Haus } from './screens/Haus'
 import { Login } from './screens/Login'
 import { Notes } from './screens/Notes'
 import { Setup } from './screens/Setup'
 import { Share } from './screens/Share'
 import { Shopping } from './screens/Shopping'
-import { Strom } from './screens/Strom'
 
 export function App() {
   const { user, isLoading, needsSetup, connectionError, retry } = useSession()
@@ -37,7 +37,7 @@ export function App() {
           <Route path="einkauf" element={<Shopping />} />
           <Route path="notizen" element={<Notes />} />
           <Route path="finanzen" element={<Finance />} />
-          <Route path="strom" element={<Strom />} />
+          <Route path="haus" element={<Haus />} />
           {/* Wo das Android-Teilen-Menü landet. Die Adresse steht in
               shareConstants, weil der Service Worker hierher weiterleitet –
               zwei Schreibweisen liessen das Teilen ins Leere laufen. */}

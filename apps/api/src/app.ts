@@ -13,11 +13,11 @@ import authRoutes from './routes/auth.js'
 import categoryRoutes from './routes/categories.js'
 import documentRoutes from './routes/documents.js'
 import financeRoutes from './routes/finance.js'
+import hausRoutes from './routes/haus.js'
 import healthRoutes from './routes/health.js'
 import noteRoutes from './routes/notes.js'
 import setupRoutes from './routes/setup.js'
 import shoppingRoutes from './routes/shopping.js'
-import stromRoutes from './routes/strom.js'
 import userRoutes from './routes/users.js'
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -74,7 +74,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(shoppingRoutes)
   await app.register(noteRoutes)
   await app.register(financeRoutes)
-  await app.register(stromRoutes)
+  await app.register(hausRoutes)
 
   app.setNotFoundHandler(async (_request, reply) => {
     return reply.status(404).send(apiError(API_ERROR_CODES.notFound, 'Endpunkt nicht gefunden.'))
