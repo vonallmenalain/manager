@@ -1,5 +1,6 @@
 import type {
   Bereich,
+  BillInput,
   Category,
   CreateCategoryInput,
   CreatePaymentInput,
@@ -9,8 +10,10 @@ import type {
   DocumentDetail,
   DocumentStatus,
   Donation,
+  ElectricityBill,
   FinanceSettings,
   Health,
+  ImportResult,
   IncomeEntry,
   LoginInput,
   ManagedDocument,
@@ -350,6 +353,39 @@ export const api = {
 
   deleteDonation: (year: number, id: string) =>
     request<FinanceYear>(`/api/finanzen/${year}/zahlungen/${id}`, { method: 'DELETE' }),
+
+  listStromBills: () => request<StromBills>('/api/strom'),
+
+  /**
+   * Liest ein PDF aus, ohne etwas zu speichern. Was zurückkommt, füllt das
+   * Formular der Vorschau – gespeichert wird erst mit `addStromBill`.
+   */
+  importStromBill: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    // Kein content-type setzen: Der Browser muss die multipart-Grenze selbst
+    // bestimmen, sonst kann der Server den Datenstrom nicht zerlegen.
+    return request<ImportResult>('/api/strom/import', { method: 'POST', body })
+  },
+
+  addStromBill: (bill: BillInput) =>
+    request<StromBills>('/api/strom/rechnungen', {
+      method: 'POST',
+      body: JSON.stringify(bill),
+    }),
+
+  updateStromBill: (id: string, bill: BillInput) =>
+    request<StromBills>(`/api/strom/rechnungen/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(bill),
+    }),
+
+  deleteStromBill: (id: string) =>
+    request<StromBills>(`/api/strom/rechnungen/${id}`, { method: 'DELETE' }),
+}
+
+export interface StromBills {
+  bills: ElectricityBill[]
 }
 
 export interface FinanceYear {

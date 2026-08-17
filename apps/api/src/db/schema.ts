@@ -427,3 +427,72 @@ export const donations = sqliteTable(
 )
 
 export type DonationRow = typeof donations.$inferSelect
+
+/**
+ * Stromrechnungen des Energieversorgers – je Zeile eine Rechnung.
+ *
+ * Die Kennzahlen (Verbrauch, Ø Preis, Trend) werden bewusst nicht mitgespeichert,
+ * sondern bei jeder Abfrage gerechnet. Sie hängen an einer Formel, die sich noch
+ * ändern kann; gespeicherte Zwischenergebnisse wären beim ersten Nachdenken über
+ * den Preis pro Kilowattstunde veraltet, ohne dass es jemand merkt.
+ */
+export const electricityBills = sqliteTable(
+  'electricity_bills',
+  {
+    id: text('id').primaryKey(),
+    /** 'abrechnung' (mit Verbrauch) oder 'akonto' (blosse Vorauszahlung). */
+    kind: text('kind').notNull().default('abrechnung'),
+    /**
+     * Die Nummer auf der Rechnung. Eindeutig, damit dasselbe PDF nicht zweimal
+     * in der Auswertung landet – beim Import ist ein zweiter Anlauf mit
+     * derselben Datei der Normalfall, nicht die Ausnahme.
+     */
+    invoiceNumber: text('invoice_number').notNull().unique(),
+    invoiceDate: text('invoice_date').notNull(),
+    /** Die abgerechnete Periode – sie und nicht das Rechnungsdatum ordnet ein. */
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+
+    customerNumber: text('customer_number'),
+    meterPoint: text('meter_point'),
+    meterNumber: text('meter_number'),
+
+    /**
+     * Zählerablesungen als JSON: höchstens vier Zeilen (zwei Tarife, alter und
+     * neuer Zähler). Eine eigene Tabelle für so wenige Werte, die nur zusammen
+     * mit ihrer Rechnung gelesen werden, wäre eine Verknüpfung ohne Nutzen.
+     */
+    readings: text('readings').notNull().default('[]'),
+    /** Die Betragsermittlung, Zeile für Zeile – ebenfalls als JSON. */
+    positions: text('positions').notNull().default('[]'),
+
+    energyCents: integer('energy_cents').notNull().default(0),
+    gridCents: integer('grid_cents').notNull().default(0),
+    leviesCents: integer('levies_cents').notNull().default(0),
+    /** Zwischentotal: die Kosten der Periode, vor dem Akontoabzug. */
+    subtotalCents: integer('subtotal_cents').notNull().default(0),
+    /** Abgezogene Akontozahlungen, positiv gespeichert. */
+    prepaidCents: integer('prepaid_cents').notNull().default(0),
+    /** Rechnungsbetrag inkl. MWST – was zu überweisen war. */
+    totalCents: integer('total_cents').notNull().default(0),
+    vatCents: integer('vat_cents').notNull().default(0),
+
+    /** Dateiname des importierten PDFs. Leer bei Eingabe von Hand. */
+    sourceFile: text('source_file'),
+    note: text('note').notNull().default(''),
+
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: text('created_at').notNull().default(now),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (table) => [
+    // Jede Auswertung geht der Reihe nach durch die Perioden.
+    index('electricity_bills_period_idx').on(table.periodStart),
+    index('electricity_bills_kind_idx').on(table.kind),
+  ],
+)
+
+export type ElectricityBillRow = typeof electricityBills.$inferSelect
+export type NewElectricityBillRow = typeof electricityBills.$inferInsert

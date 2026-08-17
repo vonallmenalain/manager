@@ -2,7 +2,7 @@ import type { PublicUser } from '@manager/shared'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { ConnectionBanner } from './ConnectionBanner'
-import { CartIcon, CoinIcon, DocumentIcon, HomeIcon, NoteIcon } from './icons'
+import { BoltIcon, CartIcon, CoinIcon, DocumentIcon, HomeIcon, NoteIcon } from './icons'
 import { ProfileMenu } from './ProfileMenu'
 
 const TABS = [
@@ -11,6 +11,7 @@ const TABS = [
   { to: '/einkauf', label: 'Einkauf', Icon: CartIcon, end: false },
   { to: '/notizen', label: 'Notizen', Icon: NoteIcon, end: false },
   { to: '/finanzen', label: 'Finanzen', Icon: CoinIcon, end: false },
+  { to: '/strom', label: 'Strom', Icon: BoltIcon, end: false },
 ] as const
 
 export function AppShell({ user }: { user: PublicUser }) {
@@ -41,7 +42,9 @@ export function AppShell({ user }: { user: PublicUser }) {
                 to={to}
                 end={end}
                 className={({ isActive }) =>
-                  `flex min-h-14 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition ${
+                  // text-[10px] statt 11: Mit sechs Reitern bleibt auf einem
+                  // schmalen Handy sonst kein Platz mehr für „Dokumente".
+                  `flex min-h-14 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium tracking-tight transition ${
                     isActive
                       ? 'text-brand-700 dark:text-brand-300'
                       : 'text-slate-500 dark:text-slate-400'

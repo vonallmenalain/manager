@@ -1,9 +1,9 @@
 # Manager
 
-Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen
-und Finanzen (Zehnten / Fastopfer) für zwei Personen.
+Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen,
+Finanzen (Zehnten / Fastopfer) und Stromverbrauch für zwei Personen.
 
-**Stand: Etappe 5 abgeschlossen** – alle geplanten Bereiche sind gebaut.
+**Stand: Etappe 6 abgeschlossen** – alle geplanten Bereiche sind gebaut.
 Dokumente lassen sich teilen, aufnehmen, verwalten und **über ihren Inhalt
 durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Der
 **Dokumentenmodus** schneidet ein abfotografiertes Blatt selbst zu, entzerrt es
@@ -14,7 +14,11 @@ Reihenfolge des eigenen Rundgangs gebracht – und merkt sich Korrekturen
 dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
 mit Autospeichern, Anheften, Farben und Suche –, und die **Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet
-sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export.
+sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Der
+Bereich **Strom** liest die Rechnungen des Energieversorgers direkt aus dem
+PDF – Verbrauch nach Tarif, Ø Preis je Kilowattstunde, die drei Kostenblöcke
+und der Vergleich mit dem Vorjahr, dargestellt in Diagrammen, deren Reihen sich
+ein- und ausblenden lassen.
 Offen ist nur noch der Feinschliff, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz

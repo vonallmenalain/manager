@@ -171,6 +171,7 @@ erDiagram
     USER ||--o{ INCOME_ENTRY : ""
     FINANCE_YEAR ||--o{ INCOME_ENTRY : ""
     FINANCE_YEAR ||--o{ DONATION : ""
+    USER ||--o{ ELECTRICITY_BILL : "erfasst"
 ```
 
 **Kerntabellen**
@@ -225,6 +226,16 @@ erDiagram
 * `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum, den abgerechneten
   Monaten (`covers_months`, z. B. `3,4,5`) und – beim Zehnten – dem damit verrechneten
   Steuerguthaben
+* `electricity_bills` – eine Zeile je Stromrechnung: Art (`abrechnung` oder `akonto`),
+  Nummer, Datum, Periode, Messpunkt, die drei Kostenblöcke, Zwischentotal, Akontoabzug,
+  Rechnungsbetrag und MWST. Zählerstände und die Zeilen der Betragsermittlung liegen als
+  JSON in je einer Spalte – höchstens vier beziehungsweise ein paar Dutzend Werte, die
+  nur zusammen mit ihrer Rechnung gelesen werden; eigene Tabellen dafür wären
+  Verknüpfungen ohne Nutzen. Die Rechnungsnummer ist eindeutig: Beim Import ist ein
+  zweiter Anlauf mit derselben Datei der Normalfall, nicht die Ausnahme. Kennzahlen
+  (Verbrauch, Ø Preis, Trend) werden **nicht** gespeichert, sondern bei jeder Abfrage
+  gerechnet – gespeicherte Zwischenergebnisse wären beim ersten Nachdenken über den
+  Preis pro Kilowattstunde veraltet, ohne dass es jemand merkt
 * `sessions` – angemeldete Geräte
 
 **Dokument-Status:** `pendent` → `erledigt` → `archiviert`. Bewusst nur drei, mit
@@ -847,6 +858,92 @@ Aufwand für etwas, das das Betriebssystem schon kann.
 
 ---
 
+### 6.5 Strom: Verbrauch, Preis und Entwicklung
+
+Was das Haus an Strom verbraucht, was es kostet – und wohin sich beides bewegt.
+Grundlage sind die Rechnungen der Energie- und Wasserversorgung; erfasst werden sie,
+indem man das PDF hochlädt.
+
+**Der Import liest, der Mensch entscheidet.** Ein hochgeladenes PDF wird ausgelesen und
+als ausgefülltes Formular zurückgegeben – gespeichert wird erst mit dem Knopf darunter.
+Ein Automat, der stillschweigend Datensätze anlegt, wäre beim ersten unbekannten
+Rechnungsaufbau nicht mehr einzufangen, und niemand merkte es, weil die Zahlen ja „da"
+wären. Was der Automat nicht sicher lesen konnte, steht als Hinweis über dem Formular
+und lässt sich dort gleich richtigstellen. Mehrere Dateien auf einmal werden
+nacheinander vorgelegt.
+
+Gelesen werden Rechnungsnummer und -datum, die abgerechnete Periode, Kunden- und
+Zählernummer, der Messpunkt, die Zählerstände je Tarif, jede Zeile der
+Betragsermittlung mit Menge, Ansatz und Steuersatz sowie die drei Blöcke Energie,
+Netznutzung und gesetzliche Abgaben. Eine Wasser- oder Kehrichtrechnung desselben
+Absenders wird erkannt und mit Begründung abgewiesen, statt als Strom verbucht zu
+werden.
+
+**Warum ein eigener PDF-Leser** (`apps/api/src/lib/pdf-text.ts`): Diese Rechnungen
+bringen eine Textebene mit, aber ihre eingebetteten Schriften bilden die Zeichen auf den
+privaten Unicode-Bereich ab. `pdftotext` – das Werkzeug aus der OCR-Pipeline – gibt das
+brav so aus: rund 2000 Zeichen aus U+E000 aufwärts. Das ist unlesbar und sieht obendrein
+nach „genug Text" aus, würde die Texterkennung also gar nicht erst anspringen lassen.
+Die richtige Zuordnung steht im `/Differences`-Encoding der Schrift, in Glyphennamen wie
+`/E` oder `/adieresis`; genau die wird gelesen. Eine `/ToUnicode`-Tabelle, die in den
+privaten Bereich zeigt, wird dabei verworfen – dort steht nie echter Text.
+
+Der Leser behält ausserdem die Position jedes Textstücks und setzt daraus Zeilen und
+Spalten zusammen. Eine Rechnung ist eine Tabelle; ohne Spalten bliebe von
+„3'286 kWh zu 18.50 Rp." nur eine Zahlenreihe ohne Zuordnung. Der Parser arbeitet
+danach an Beschriftungen entlang und nicht an Zeilennummern: „Rechnungsdatum:" steht auf
+jeder Rechnung, die dreizehnte Zeile bedeutet auf jeder etwas anderes.
+
+**Akontorechnungen zählen nicht als Verbrauch.** Sie sind Vorauszahlungen auf denselben
+Strom und würden jede Summe verdoppeln. Sie stehen deshalb neben der Auswertung, in
+einer eigenen Zusammenstellung „Zahlungen" – dort, wo die Frage „wie viel habe ich
+überwiesen?" hingehört.
+
+**Der Preis kommt aus dem Zwischentotal, nicht aus dem Rechnungsbetrag.** Der
+Rechnungsbetrag ist das, was nach Abzug der Akontozahlungen noch offen war; wer den
+Strompreis daraus ableitet, misst seine Abschlagszahlungen und nicht seinen Strom.
+Gerechnet wird deshalb mit der Summe der Periode – dieselbe Zahl, die der Haushalt
+bisher von Hand aus der Rechnung geholt hat.
+
+```
+Ø Strompreis
+39.66  Rp./kWh          = Zwischentotal 2'162.05 / 5'451 kWh
+```
+
+**Vergleichbar über verschieden lange Perioden.** Der Versorger rechnet halbjährlich ab,
+aber nicht auf den Tag genau gleich lang. Deshalb steht neben den Summen immer auch der
+Wert je Tag und die Hochrechnung aufs Jahr; und der Vergleich sucht zu jeder Abrechnung
+die des Vorjahres über den Anfang der Periode, mit einem Fenster von 45 Tagen. So wird
+nie ein Winterhalbjahr gegen ein Sommerhalbjahr gestellt.
+
+**Die Diagramme haben keine zweite Achse.** Kilowattstunden, Franken und Rappen je
+Kilowattstunde haben nichts gemeinsam; zwei Skalen auf einer Fläche erfinden einen
+Zusammenhang, den die Zahlen nicht hergeben – die Linie schneidet die Balken dort, wo
+jemand die Achsen aneinander ausgerichtet hat. Stattdessen stehen drei Felder
+untereinander und teilen sich die Zeitachse: Verbrauch nach Tarif, Kosten nach Block,
+Ø Preis als Linie. Was untereinander steht, gehört zur selben Periode, und jede Skala
+bleibt ehrlich. Über die Legende darunter lässt sich jede Reihe ein- und ausblenden; ein
+Feld, in dem nichts mehr angezeigt wird, verschwindet ganz.
+
+Die Farben sind auf Farbfehlsichtigkeit geprüft (Abstand ΔE ≥ 8 im OKLab-Raum für jedes
+Paar, das im selben Balken übereinanderliegt) und für den dunklen Hintergrund eigens
+gestuft statt automatisch aufgehellt. Sie stehen als CSS-Variablen in `index.css`; wer
+eine austauscht, prüft das bitte nach. Jede Farbe hat zusätzlich eine Beschriftung –
+Farbe allein ist nie die einzige Quelle für einen Wert, und jede Zahl aus den Diagrammen
+steht auch in der Rechnungsliste und im CSV.
+
+**Von Hand erfassen** geht mit demselben Formular. Wer ältere Perioden aus einer eigenen
+Tabelle nachträgt, bekommt dieselbe Auswertung wie jemand, der ein PDF hochlädt.
+Zwischentotal und Rechnungsbetrag stehen nicht als Felder darin, sondern werden aus den
+drei Blöcken und dem Akontoabzug gerechnet: Zwei Zahlen, die auseinanderlaufen können,
+wären eine Fehlerquelle ohne Gegenwert.
+
+**Export als CSV** – wie bei den Finanzen mit Semikolon und BOM. Drei Tabellen in einer
+Datei: je Rechnung eine Zeile mit den Kennzahlen, darunter die einzelnen Positionen und
+die Zählerstände. Wer weiterrechnen will, hat damit dieselbe Grundlage wie die App.
+
+---
+
 ## 7. OCR-Pipeline
 
 ```mermaid
@@ -1047,8 +1144,8 @@ manager/
 ```
 
 Ein Monorepo mit npm-Workspaces. Der entscheidende Gewinn: `packages/shared` enthält die
-API-Verträge und die Zehnten-Berechnung genau einmal – Frontend und Backend können nicht
-auseinanderlaufen, und die Rechenlogik ist an einem Ort testbar.
+API-Verträge, die Zehnten-Berechnung und die Stromauswertung genau einmal – Frontend und
+Backend können nicht auseinanderlaufen, und die Rechenlogik ist an einem Ort testbar.
 
 ---
 
@@ -1065,9 +1162,10 @@ eine funktionierende App auf dem Handy.
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
 | **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
-| **6** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
+| **6** ✅ | **Strom** | PDF-Import der Rechnungen, Verbrauch nach Tarif, Ø Preis, Kostenblöcke, Perioden- und Vorjahresvergleich, Diagramme, CSV-Export | Der Stromverbrauch des Hauses steht nicht mehr in einer Tabelle auf dem Desktop |
+| **7** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
 
-Etappen 0 bis 5 sind gebaut. Was in Etappe 6 noch aussteht, steht in der Tabelle oben;
+Etappen 0 bis 6 sind gebaut. Was in Etappe 7 noch aussteht, steht in der Tabelle oben;
 nichts davon hält den täglichen Gebrauch auf.
 
 ---
@@ -1086,6 +1184,11 @@ nichts davon hält den täglichen Gebrauch auf.
 | Verrechenbare Steuern | **Ein Zehntel des Steuerbetrags** | Steuern mindern das Einkommen, nicht die Zahlung – von CHF 15 000 sind es CHF 1 500 |
 | Zahlung erfassen | **Monate abhaken, Beträge rechnen lassen** | Der Zehnte steht im Einkommen; ein Eingabefeld dafür wäre nur eine Gelegenheit, sich zu vertippen |
 | Jahresexport | **CSV, kein eigenes PDF** | Das Handy druckt jede Ansicht als PDF; eine eigene Erzeugung wäre Aufwand ohne Gewinn |
+| Stromrechnungen lesen | **Eigener PDF-Leser statt `pdftotext`** | Die Schriften dieser Rechnungen bilden auf den privaten Unicode-Bereich ab; das fertige Werkzeug liefert dafür 2000 Zeichen Buchstabensalat |
+| Import | **Zweistufig: auslesen, dann bestätigen** | Ein Automat, der still speichert, ist beim ersten unbekannten Rechnungsaufbau nicht mehr einzufangen |
+| Strompreis | **Aus dem Zwischentotal, nicht aus dem Rechnungsbetrag** | Der Akontoabzug ist eine Vorauszahlung und kein Strompreis |
+| Akontorechnungen | **Neben der Verbrauchsauswertung, nicht darin** | Sie sind Vorauszahlungen auf denselben Strom und verdoppelten jede Summe |
+| Diagramme | **Mehrere Felder mit gemeinsamer Zeitachse, nie zwei Achsen** | kWh, Franken und Rp./kWh auf einer Skala erfinden einen Zusammenhang, den die Zahlen nicht hergeben |
 
 ## 14. Noch offen
 

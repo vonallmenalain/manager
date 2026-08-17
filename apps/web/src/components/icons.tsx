@@ -80,6 +80,19 @@ export function CoinIcon({ className = '' }: IconProps) {
   )
 }
 
+export function BoltIcon({ className = '' }: IconProps) {
+  return (
+    <svg className={`${base} ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M13.5 3 5.5 13.5h5L10 21l8.5-10.5h-5L13.5 3Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export function LogoutIcon({ className = '' }: IconProps) {
   return (
     <svg className={`${base} ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">

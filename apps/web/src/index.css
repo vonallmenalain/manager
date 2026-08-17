@@ -21,6 +21,45 @@
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
+/*
+ * Farben der Diagramme im Bereich Strom.
+ *
+ * Getrennt von der Markenfarbe und bewusst nicht „irgendwie passend" gewählt:
+ * Die Reihenfolge ist auf Farbfehlsichtigkeit geprüft (Abstand ΔE ≥ 8 im
+ * OKLab-Raum für jedes Paar, das im selben Balken übereinanderliegt), und für
+ * den dunklen Hintergrund stehen eigene Stufen statt einer automatischen
+ * Aufhellung. Wer hier eine Farbe austauscht, prüft das bitte nach.
+ *
+ * Der Ø-Preis ist die einzige Linie in ihrem Feld und trägt deshalb kein
+ * eigenes Kennfarbe, sondern die Markenfarbe: Es gibt nichts, wovon sie sich
+ * unterscheiden müsste.
+ */
+:root {
+  --strom-flaeche: #ffffff;
+  --strom-hochtarif: #2a78d6;
+  --strom-niedertarif: #1baf7a;
+  --strom-energie: #eb6834;
+  --strom-netznutzung: #4a3aa7;
+  --strom-abgaben: #e87ba4;
+  --strom-preis: #1e3a5f;
+  --strom-gitter: #e2e8f0;
+  --strom-achse: #94a3b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --strom-flaeche: #0f172a;
+    --strom-hochtarif: #3987e5;
+    --strom-niedertarif: #199e70;
+    --strom-energie: #d95926;
+    --strom-netznutzung: #9085e9;
+    --strom-abgaben: #d55181;
+    --strom-preis: #8ab0d6;
+    --strom-gitter: #1e293b;
+    --strom-achse: #475569;
+  }
+}
+
 @layer base {
   html {
     /* Verhindert, dass iOS/Android beim Fokus auf ein Eingabefeld hineinzoomt. */
