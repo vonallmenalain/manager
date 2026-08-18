@@ -15,7 +15,7 @@ import { DocumentIcon } from '../../components/icons'
 import { SearchSnippet } from '../../components/SearchSnippet'
 import { UploadControls } from '../../components/UploadControls'
 import { useLocalJson, useLocalSetting } from '../../lib/einstellungen'
-import { useCategories, useDocuments } from '../../lib/documents'
+import { useCategories, useDocuments, withoutFilters } from '../../lib/documents'
 import { useEscape } from '../../lib/overlay'
 
 /**
@@ -67,14 +67,22 @@ export function Library() {
   const [spalten, setSpalten] = useLocalSetting<Spalten>('docbase.spalten', SPALTEN, '2')
 
   const categories = useCategories('docbase')
-  const query = useDocuments({
-    bereich: 'docbase',
+  const gesucht = {
+    bereich: 'docbase' as const,
     q: search || undefined,
     categoryId: kategorien.length > 0 ? kategorien : undefined,
-  })
+  }
+  const query = useDocuments(gesucht)
 
   const documents = query.data?.documents ?? []
   const alleKategorien = categories.data?.categories ?? []
+
+  // Bleibt die Sammlung leer, obwohl Kategorien angehakt sind, läuft dieselbe
+  // Suche ein zweites Mal ohne sie. Erst dann: Solange etwas zu sehen ist,
+  // holte sie bei jedem Tastendruck eine zweite Liste ohne Nutzen.
+  const leer = !query.isLoading && documents.length === 0
+  const ohneFilter = useDocuments(withoutFilters(gesucht), leer && kategorien.length > 0)
+  const ausgeblendet = leer ? (ohneFilter.data?.documents ?? []) : []
 
   /** „Notfall › Medikamente" – ohne die Hauptkategorie fehlt die Hälfte. */
   function kategorieName(document: ManagedDocument): string | undefined {
@@ -105,23 +113,29 @@ export function Library() {
       {query.isLoading ? (
         <ListSkeleton />
       ) : documents.length === 0 ? (
-        <EmptyState gefiltert={Boolean(search) || kategorien.length > 0} />
-      ) : ansicht === 'kacheln' ? (
-        <ul className={`grid gap-2 ${SPALTEN_KLASSE[spalten]}`}>
-          {documents.map((document) => (
-            <DocumentTile
-              key={document.id}
-              document={document}
-              categoryName={kategorieName(document)}
+        <>
+          <EmptyState
+            gefiltert={Boolean(search) || kategorien.length > 0}
+            ausgeblendet={ausgeblendet.length}
+          />
+          {ausgeblendet.length > 0 ? (
+            <AusgeblendetVomFilter
+              documents={ausgeblendet}
+              total={ohneFilter.data?.total ?? ausgeblendet.length}
+              ansicht={ansicht}
+              spalten={spalten}
+              kategorieName={kategorieName}
+              onReset={() => setKategorien([])}
             />
-          ))}
-        </ul>
+          ) : null}
+        </>
       ) : (
-        <ul className="space-y-2">
-          {documents.map((document) => (
-            <Row key={document.id} document={document} categoryName={kategorieName(document)} />
-          ))}
-        </ul>
+        <Sammlung
+          documents={documents}
+          ansicht={ansicht}
+          spalten={spalten}
+          kategorieName={kategorieName}
+        />
       )}
 
       {/* Dieselben Wege wie im Manager – Scannen, Foto, Datei –, aber nur mit
@@ -458,6 +472,109 @@ function Radio({
   )
 }
 
+/**
+ * Die Sammlung selbst – als Liste oder als Kacheln.
+ *
+ * Eigene Komponente, weil sie an zwei Stellen steht: als Ergebnis und noch
+ * einmal unter „Nichts gefunden" für das, was der Filter zurückhält. Beides
+ * folgt derselben Einstellung; ein Wechsel auf Kacheln, der nur die eine
+ * Hälfte erwischte, wäre schwer zu erklären.
+ */
+function Sammlung({
+  documents,
+  ansicht,
+  spalten,
+  kategorieName,
+}: {
+  documents: ManagedDocument[]
+  ansicht: Ansicht
+  spalten: Spalten
+  kategorieName: (document: ManagedDocument) => string | undefined
+}) {
+  if (ansicht === 'kacheln') {
+    return (
+      <ul className={`grid gap-2 ${SPALTEN_KLASSE[spalten]}`}>
+        {documents.map((document) => (
+          <DocumentTile
+            key={document.id}
+            document={document}
+            categoryName={kategorieName(document)}
+          />
+        ))}
+      </ul>
+    )
+  }
+
+  return (
+    <ul className="space-y-2">
+      {documents.map((document) => (
+        <Row key={document.id} document={document} categoryName={kategorieName(document)} />
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * Was die Suche gefunden hätte, wären da nicht die angehakten Kategorien.
+ *
+ * Hier wiegt das schwerer als im Haushalt: Die Kategorien bleiben am Gerät
+ * stehen, und wer in einer Sammlung sucht, sucht quer durch alles – „nicht
+ * gefunden" heisst dann leicht „gibt es nicht", obwohl es nur woanders
+ * einsortiert ist.
+ */
+function AusgeblendetVomFilter({
+  documents,
+  total,
+  ansicht,
+  spalten,
+  kategorieName,
+  onReset,
+}: {
+  documents: ManagedDocument[]
+  total: number
+  ansicht: Ansicht
+  spalten: Spalten
+  kategorieName: (document: ManagedDocument) => string | undefined
+  onReset: () => void
+}) {
+  // Mehr Treffer als Zeilen: Der Server liefert höchstens fünfzig auf einmal.
+  const weitere = total - documents.length
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+          Von der Kategorie ausgeblendet
+        </h2>
+        <button
+          onClick={onReset}
+          className="shrink-0 text-sm font-medium text-teal-700 dark:text-teal-300"
+        >
+          Zurücksetzen
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {total === 1
+          ? 'Ein Treffer ausserhalb der angehakten Kategorien.'
+          : `${total} Treffer ausserhalb der angehakten Kategorien.`}
+      </p>
+
+      <Sammlung
+        documents={documents}
+        ansicht={ansicht}
+        spalten={spalten}
+        kategorieName={kategorieName}
+      />
+
+      {weitere > 0 ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          … und {weitere} weitere. Zurücksetzen zeigt alle.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 function Row({
   document,
   categoryName,
@@ -498,15 +615,21 @@ function ListSkeleton() {
   )
 }
 
-function EmptyState({ gefiltert }: { gefiltert: boolean }) {
+/**
+ * `ausgeblendet` sagt, ob unter diesem Kasten noch Treffer stehen. Dann ist
+ * der Rat „andere Suche" falsch – die Suche stimmte ja, nur die Kategorie nicht.
+ */
+function EmptyState({ gefiltert, ausgeblendet }: { gefiltert: boolean; ausgeblendet: number }) {
+  const hinweis = !gefiltert
+    ? 'Unten rechts hinzufügen – PDF, Foto oder Scan. Gesucht wird danach im ganzen Text.'
+    : ausgeblendet > 0
+      ? 'Nicht in den angehakten Kategorien. Weiter unten steht, was ohne sie da wäre.'
+      : 'Andere Suche oder Kategorie zurücksetzen.'
+
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-12 text-center dark:border-slate-700">
       <p className="font-medium">{gefiltert ? 'Nichts gefunden' : 'Noch nichts abgelegt'}</p>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        {gefiltert
-          ? 'Andere Suche oder Kategorie zurücksetzen.'
-          : 'Unten rechts hinzufügen – PDF, Foto oder Scan. Gesucht wird danach im ganzen Text.'}
-      </p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{hinweis}</p>
     </div>
   )
 }
