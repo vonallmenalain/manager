@@ -33,8 +33,18 @@ registerRoute(
   }),
 )
 
-self.addEventListener('install', () => {
-  void self.skipWaiting()
+/**
+ * Übernommen wird erst auf Zuruf.
+ *
+ * Vorher stand hier ein `skipWaiting()` beim Einbau. Das tauschte den Worker
+ * im Hintergrund aus, während die offene Seite unbeirrt mit dem alten Programm
+ * weiterlief – und niemand erfuhr davon. Jetzt wartet der neue Worker, die App
+ * zeigt einen Hinweis, und erst ein Tipp auf „Aktualisieren" schickt diese
+ * Nachricht und lädt die Seite neu.
+ */
+self.addEventListener('message', (event) => {
+  const nachricht = event.data as { type?: string } | null
+  if (nachricht?.type === 'SKIP_WAITING') void self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {

@@ -60,7 +60,24 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      registerType: 'autoUpdate',
+      /**
+       * Die App fragt, bevor sie sich austauscht.
+       *
+       * Vorher stand hier 'autoUpdate'. Das klang richtig, war aber das
+       * Gegenteil: Die eingebaute Registrierung meldet den Worker nur an – sie
+       * fragt nie nach einer neuen Fassung und lädt die Seite nie neu. Ein
+       * neuer Worker übernahm zwar im Hintergrund, die offene Seite lief aber
+       * bis zum vollständigen Schliessen der App mit dem alten Programm
+       * weiter. Auf dem Handy hiess das: App wegwischen und neu öffnen, sonst
+       * nichts.
+       *
+       * Mit 'prompt' wartet der neue Worker, die App merkt es und zeigt unten
+       * einen Hinweis. Registriert wird er von der App selbst (siehe
+       * lib/appUpdate.ts) – deshalb injectRegister: null, sonst täte es das
+       * eingebaute Skript ein zweites Mal.
+       */
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
 
       manifest: {

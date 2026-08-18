@@ -53,7 +53,10 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src/docbase',
       filename: 'sw.ts',
-      registerType: 'autoUpdate',
+      // Wie beim Manager: Die App fragt, bevor sie sich austauscht, und
+      // registriert den Worker selbst (siehe lib/appUpdate.ts).
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
 
       manifest: {
