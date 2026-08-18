@@ -143,6 +143,124 @@ describe('parseUtilityInvoice – Stromrechnung', () => {
   })
 })
 
+// ------------------------------------------- Stromrechnung im Aufbau ab 2026
+
+/**
+ * Dieselbe Rechnung, wie der Versorger sie seit 2026 stellt – abgeschrieben
+ * von der Abrechnung 248'619 für das erste Halbjahr 2026.
+ *
+ * Zwei Dinge haben sich geändert, und beide brachten den Import zu Fall: Die
+ * „Messung" ist ein eigener Block neben Energie, Netznutzung und Abgaben, und
+ * die beiden Tarife heissen nicht mehr Hoch- und Niedertarif, sondern Tag- und
+ * Nachttarif.
+ */
+const STROM_2026_KOPF = [
+  'Kundennummer: | 18444 / 4086',
+  'Rechnungsdatum: | 14.07.2026',
+  'Abrechnung Nr. 248619 | Betrag CHF',
+  'Elektrizität',
+  'Periode vom 01.01.2026 - 30.06.2026',
+  'Energie | 854.90',
+  'Netznutzung | 697.85',
+  'Gesetzliche Abgaben und Förderbeiträge | 238.65',
+  'Messung | 42.15',
+  "Zwischentotal | 1'833.55",
+  'Akontoabzug | -870.00',
+  'Rechnungsbetrag inkl. MWST | 963.55',
+  'CHE-110.349.410 MWST CHF 72.10 (inkl. 8.10% von CHF 963.55)',
+]
+
+const STROM_2026_DETAIL = [
+  'Elektrizität',
+  'Messpunkt: CH1071601234500000000000000000919',
+  'Verbrauchsermittlung | Messperiode | Zähler Nr. | Stand alt | Stand neu | Faktor | Menge',
+  "Wirkstrom Tagtarif | 06.01.2026 | - | 06.07.2026 | 3760 | 31'185 | 33'945 | 2'760 | kWh",
+  "Wirkstrom Nachttarif | 06.01.2026 | - | 06.07.2026 | 34'093 | 36'553 | 2'460 | kWh",
+  'Betragsermittlung | Menge | Ansatz | Dauer | exkl. MWST | Satz | inkl. MWST',
+  'Energielieferung Tarif Haushalt',
+  "Arbeitspreis Einheitstarif | 5'220 | kWh | 15.15 | Rp. | 790.85 | 8.10 | 854.90",
+  'Total Energie | 854.90',
+  'Netznutzung Tarif Haushalt',
+  "Arbeitspreis Tagtarif | 2'760 | kWh | 10.20 | Rp. | 281.50 | 8.10 | 304.30",
+  "Arbeitspreis Nachttarif | 2'460 | kWh | 11.75 | Rp. | 289.05 | 8.10 | 312.45",
+  'Grundpreis | 1 | 12.50 | Fr. | 6 Mt. | 75.00 | 8.10 | 81.10',
+  'Total Netznutzung | 697.85',
+  'Gesetzliche Abgaben und Förderbeiträge',
+  "Gemeindeabgabe | 5'220 | kWh | 1.20 | Rp. | 62.65 | 8.10 | 67.70",
+  "Systemdienstleistungen (SDL) | 5'220 | kWh | 0.27 | Rp. | 14.10 | 8.10 | 15.25",
+  "Stromreserve Bund | 5'220 | kWh | 0.41 | Rp. | 21.40 | 8.10 | 23.15",
+  "Netzzuschlag | 5'220 | kWh | 2.30 | Rp. | 120.05 | 8.10 | 129.75",
+  "Solidarisierte Kosten | 5'220 | kWh | 0.05 | Rp. | 2.60 | 8.10 | 2.80",
+  'Total Gesetzliche Abgaben und Förderbeiträge | 238.65',
+  'Messung',
+  'Messung | 1 | 6.50 | Fr. | 6 Mt. | 39.00 | 8.10 | 42.15',
+  'Total Messung | 42.15',
+  "Zwischentotal | 1'833.55",
+  'Akontoabzug | -870.00',
+  'Total Objekt | 963.55',
+]
+
+function stromrechnung2026(): PdfLine[] {
+  return [...lines(STROM_2026_KOPF, 1), ...lines(STROM_2026_DETAIL, 2)]
+}
+
+describe('parseUtilityInvoice – Stromrechnung ab 2026', () => {
+  it('nimmt die Messung als eigenen Block auf, statt sie fallen zu lassen', () => {
+    const { bill, hinweise } = parseUtilityInvoice(stromrechnung2026())
+
+    // Ohne den vierten Block fehlten der Sparte 42.15: 1'791.40 statt
+    // 1'833.55 – und die Prüfung gegen das Zwischentotal schlug an.
+    assert.deepEqual(hinweise, [])
+    assert.deepEqual(bill?.sections[0]?.groups, [
+      { group: 'energie', amountCents: 85_490 },
+      { group: 'netznutzung', amountCents: 69_785 },
+      { group: 'abgaben', amountCents: 23_865 },
+      { group: 'messung', amountCents: 4215 },
+    ])
+    assert.equal(bill?.sections[0]?.amountCents, 183_355)
+    assert.equal(bill?.subtotalCents, 183_355)
+    assert.equal(bill?.prepaidCents, 87_000)
+    assert.equal(bill?.totalCents, 96_355)
+  })
+
+  it('behält die Zeile der Messung samt ihrem Block', () => {
+    const { bill } = parseUtilityInvoice(stromrechnung2026())
+    const messung = bill?.sections[0]?.positions.find((p) => p.label === 'Messung')
+
+    // Die Summenzeile ordnet die Position zu. Kennt der Parser den Block
+    // nicht, verwirft er sie mitsamt dem Betrag.
+    assert.equal(messung?.group, 'messung')
+    assert.equal(messung?.rateHundredths, 650)
+    assert.equal(messung?.durationMonths, 6)
+    assert.equal(messung?.grossCents, 4215)
+  })
+
+  it('hält Tag- und Nachttarif auseinander, obwohl sie anders heissen als früher', () => {
+    const { bill } = parseUtilityInvoice(stromrechnung2026())
+
+    // Landen beide im selben Tarif, gelten sie als Zählerwechsel: Aus zwei
+    // Zählern wird einer, dessen Stand von 31'185 auf 36'553 springt.
+    assert.deepEqual(bill?.sections[0]?.readings, [
+      {
+        tariff: 'hoch',
+        label: 'Wirkstrom Tagtarif',
+        unit: 'kWh',
+        startValue: 31_185,
+        endValue: 33_945,
+        quantity: 2760,
+      },
+      {
+        tariff: 'nieder',
+        label: 'Wirkstrom Nachttarif',
+        unit: 'kWh',
+        startValue: 34_093,
+        endValue: 36_553,
+        quantity: 2460,
+      },
+    ])
+  })
+})
+
 // ------------------------------------------------- Wasser / Abwasser / Kehricht
 
 const WASSER_KOPF = [

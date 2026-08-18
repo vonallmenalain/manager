@@ -59,10 +59,20 @@ const DIVISION_BY_LABEL = new Map<string, Division>([
   ['kehricht', 'kehricht'],
 ])
 
-/** Die Beschriftungen der drei Stromblöcke in der Zusammenfassung. */
+/**
+ * Die Beschriftungen der Stromblöcke in der Zusammenfassung.
+ *
+ * Seit 2026 weist der Versorger die „Messung" als eigenen Block aus, statt sie
+ * in der Netznutzung mitlaufen zu lassen. Ein unbekannter Block fällt hier
+ * still heraus: Seine Zeile trägt eine Beschriftung, die niemand kennt, und
+ * sein Betrag landet in keiner Summe. Genau daran fehlten der Rechnung
+ * 248'619 die 42.15 der Messung – das Zwischentotal wies 1'833.55 aus, die
+ * Sparte kam auf 1'791.40.
+ */
 const GROUP_BY_LABEL = new Map<string, CostGroup>([
   ['energie', 'energie'],
   ['netznutzung', 'netznutzung'],
+  ['messung', 'messung'],
   ['gesetzliche abgaben und förderbeiträge', 'abgaben'],
   ['gesetzliche abgaben und foerderbeitraege', 'abgaben'],
 ])
@@ -71,6 +81,7 @@ const GROUP_BY_LABEL = new Map<string, CostGroup>([
 const GROUP_BY_TOTAL: ReadonlyArray<{ prefix: string; group: CostGroup }> = [
   { prefix: 'total energie', group: 'energie' },
   { prefix: 'total netznutzung', group: 'netznutzung' },
+  { prefix: 'total messung', group: 'messung' },
   { prefix: 'total gesetzliche abgaben', group: 'abgaben' },
 ]
 
@@ -566,10 +577,21 @@ function addReading(detail: Detail, row: ReadingRow, hinweise: string[]): void {
   })
 }
 
+/**
+ * Welcher der beiden Stromtarife eine Zeile meint.
+ *
+ * Der Versorger nennt sie seit 2026 „Tagtarif" und „Nachttarif"; bis dahin
+ * hiessen dieselben zwei „Hochtarif" und „Niedertarif". Wer nur die alten
+ * Namen kennt, wirft beide in denselben Topf `einzel` – und weil zwei
+ * Ablesungen desselben Tarifs als Zählerwechsel gelten, wird aus zwei Zählern
+ * einer, dessen Stand von 31'185 auf 36'553 springt. Das Formular der
+ * Vorschau sucht danach nach Hoch- und Niedertarif, findet nichts und
+ * speichert eine Rechnung ganz ohne Ablesung.
+ */
 function tariffOf(label: string): Tariff {
   const text = label.toLowerCase()
-  if (text.includes('hochtarif')) return 'hoch'
-  if (text.includes('niedertarif')) return 'nieder'
+  if (text.includes('hochtarif') || text.includes('tagtarif')) return 'hoch'
+  if (text.includes('niedertarif') || text.includes('nachttarif')) return 'nieder'
   return 'einzel'
 }
 

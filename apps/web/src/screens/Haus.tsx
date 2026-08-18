@@ -4,6 +4,7 @@ import {
   billYear,
   BILL_KIND_LABELS,
   COST_GROUPS,
+  COST_GROUP_LABELS,
   COST_GROUP_SHORT,
   DIVISIONS,
   DIVISION_LABELS,
@@ -249,7 +250,7 @@ function buildChart(entries: DivisionEntry[], sparte: SparteWahl): ChartData {
       ? COST_GROUPS.map((group) => ({
           key: `kosten-${group}`,
           label: COST_GROUP_SHORT[group],
-          color: `var(--haus-${group === 'netznutzung' ? 'netznutzung' : group})`,
+          color: `var(--haus-${group})`,
           values: leer(),
         }))
       : DIVISIONS.filter((division) => vorhanden.has(division)).map((division) => ({
@@ -261,10 +262,12 @@ function buildChart(entries: DivisionEntry[], sparte: SparteWahl): ChartData {
 
   for (const entry of entries) {
     if (sparte === 'strom') {
+      // Aus dem Block selbst, nicht aus seiner Reihenfolge: Eine Kette von
+      // Wenn-Dann über drei feste Namen schrieb den vierten Block still dem
+      // dritten zu und zeigte die Messung als Abgabe.
       for (const [position, group] of COST_GROUPS.entries()) {
-        const betrag =
-          group === 'energie' ? entry.energyCents : group === 'netznutzung' ? entry.gridCents : entry.leviesCents
-        if (betrag !== null) addiere(kosten[position]?.values ?? [], spalte(entry), betrag / 100)
+        const betrag = entry.groupCents?.[group]
+        if (betrag !== undefined) addiere(kosten[position]?.values ?? [], spalte(entry), betrag / 100)
       }
     } else {
       const serie = kosten.find((eintrag) => eintrag.key === `kosten-${entry.division}`)
@@ -711,11 +714,11 @@ function Aufteilung({ summe, sparte }: { summe: PeriodSummary; sparte: SparteWah
   // Blöcken – dieselbe Regel wie im Diagramm darüber.
   const slices =
     sparte === 'strom'
-      ? [
-          { label: 'Energie', value: (summe.energyCents ?? 0) / 100, color: 'var(--haus-energie)' },
-          { label: 'Netznutzung', value: (summe.gridCents ?? 0) / 100, color: 'var(--haus-netznutzung)' },
-          { label: 'Abgaben & Förderbeiträge', value: (summe.leviesCents ?? 0) / 100, color: 'var(--haus-abgaben)' },
-        ]
+      ? COST_GROUPS.map((group) => ({
+          label: COST_GROUP_LABELS[group],
+          value: (summe.groupCents?.[group] ?? 0) / 100,
+          color: `var(--haus-${group})`,
+        })).filter((slice) => slice.value > 0)
       : summe.perDivision.map((eintrag) => ({
           label: DIVISION_LABELS[eintrag.division],
           value: eintrag.costCents / 100,

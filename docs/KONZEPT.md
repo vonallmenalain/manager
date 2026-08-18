@@ -958,6 +958,26 @@ an Beschriftungen entlang und nicht an Zeilennummern, und er unterscheidet Spart
 **ganzen** Beschriftung: „Abwasser" enthält „Wasser", und wer mit Teilwörtern vergleicht,
 bucht die Abwassergebühr auf das Trinkwasser.
 
+**Der Versorger ändert seine Rechnung, und zwar still.** Auf das Jahr 2026 hat er die
+**Messung** als eigenen Block aus der Netznutzung herausgelöst und die beiden Stromtarife
+von „Hochtarif / Niedertarif" in „Tagtarif / Nachttarif" umbenannt. Beides hat den Import
+der Abrechnung 248'619 verdorben, ohne dass eine Fehlermeldung erschien: Der unbekannte
+vierte Block fiel samt seinen 42.15 heraus (1'791.40 statt 1'833.55), und die
+umbenannten Tarife landeten im selben Topf, wo zwei Ablesungen als Zählerwechsel gelten –
+aus zwei Zählern wurde einer mit einem Sprung von 31'185 auf 36'553. Das Formular der
+Vorschau suchte danach nach Hoch- und Niedertarif, fand nichts und speicherte eine
+Rechnung ganz ohne Ablesung; der Verbrauch wurde ersatzweise geschätzt und stand bei
+36'540 kWh.
+
+Daraus zwei Regeln. Erstens: **Die Liste der Blöcke steht an genau einer Stelle**
+(`COST_GROUPS` in `packages/shared/src/haus.ts`); Formular, Diagramm, Aufteilung und CSV
+leiten ihre Spalten daraus ab. Wer sie an mehreren Stellen aufzählt, verliert bei jedem
+neuen Block einen Teil der Rechnung, und die Summe bleibt dabei plausibel – sie ist nur
+zu klein. Zweitens: **Was der Parser liest, muss das Formular auch halten können.** Der
+Weg von der gelesenen Rechnung durch die Vorschau und zurück ist deshalb eine eigene
+Datei (`apps/web/src/lib/hausFormular.ts`) mit eigenen Tests, statt im Formular
+mitzulaufen, wo er sich nur von Hand prüfen liesse.
+
 **Akontorechnungen zählen nicht als Verbrauch.** Sie sind Vorauszahlungen auf denselben
 Strom beziehungsweise dasselbe Wasser und würden jede Summe verdoppeln. Sie stehen
 deshalb neben der Auswertung, in einer eigenen Zusammenstellung „Zahlungen" – dort, wo
@@ -983,7 +1003,11 @@ noch nie jemand gesagt.
 **Das Abwasser hat keinen eigenen Zähler.** Verrechnet wird es über den Wasserzähler; die
 Menge steht in seiner Position. Deshalb liest die Auswertung den Verbrauch ersatzweise
 aus den Positionen – aber nur aus denen in der Einheit der Sparte: Die 133 m²
-Dachfläche für das Regenabwasser sind kein Wasserverbrauch. Und im Diagramm wird
+Dachfläche für das Regenabwasser sind kein Wasserverbrauch. Und beim Strom nur aus
+**einem** Block: Dieselben Kilowattstunden stehen in jedem Block noch einmal – die
+Energie liefert sie, die Netznutzung transportiert sie, und die gesetzlichen Abgaben
+rechnen gleich fünfmal mit ihnen. Über alle Blöcke summiert kommt ein Vielfaches heraus;
+aus 5'220 kWh werden 36'540 und aus 35.13 Rp./kWh werden 4.90. Und im Diagramm wird
 Wasser über Abwasser **nicht** gestapelt: Es ist dasselbe Wasser, und zwei Balken
 übereinander behaupteten den doppelten Verbrauch.
 
@@ -1009,7 +1033,7 @@ je Einheit ein Preisfeld. Welche es gibt, entscheidet die Auswahl; über die Leg
 darunter lässt sich jede Reihe ein- und ausblenden, und ein leeres Feld verschwindet ganz.
 
 Die Kosten stapeln sich nach dem, was gerade gefragt ist: über alle Sparten hinweg nach
-Sparte, beim Strom allein nach seinen drei Blöcken. Die Farben sind auf
+Sparte, beim Strom allein nach seinen Blöcken. Die Farben sind auf
 Farbfehlsichtigkeit geprüft (Abstand ΔE ≥ 8 im OKLab-Raum für jedes Paar, das im selben
 Balken benachbart ist) und für den dunklen Hintergrund eigens gestuft. Sie stehen als
 CSS-Variablen in `index.css`; wer eine austauscht, prüft das bitte nach. Jede Farbe hat

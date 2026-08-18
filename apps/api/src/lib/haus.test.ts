@@ -167,16 +167,82 @@ describe('computeDivisionEntry – Strom', () => {
     assert.equal(priceUnitLabel('kWh').label, 'Rp./kWh')
   })
 
-  it('reicht die drei Blöcke durch', () => {
-    assert.equal(entry.energyCents, 109_015)
-    assert.equal(entry.gridCents, 75_080)
-    assert.equal(entry.leviesCents, 32_110)
+  it('reicht die Blöcke durch und lässt nicht vorhandene auf 0', () => {
+    assert.deepEqual(entry.groupCents, {
+      energie: 109_015,
+      netznutzung: 75_080,
+      abgaben: 32_110,
+      messung: 0,
+    })
   })
 
   it('rechnet auf Tag und Jahr um, damit sich ungleiche Perioden vergleichen lassen', () => {
     assert.equal(entry.days, 184)
     assert.equal(entry.annualQuantity, 10_813)
     assert.equal(entry.annualCostCents, 428_885)
+  })
+})
+
+describe('computeDivisionEntry – Verbrauch ohne Ablesung', () => {
+  /** Eine Position der Betragsermittlung, knapp gehalten. */
+  function position(
+    label: string,
+    group: BillSection['positions'][number]['group'],
+    quantity: number,
+    unit = 'kWh',
+  ): BillSection['positions'][number] {
+    return {
+      group,
+      label,
+      quantity,
+      unit,
+      rateHundredths: null,
+      rateUnit: null,
+      durationMonths: null,
+      vatBasisPoints: 810,
+      netCents: 0,
+      grossCents: 0,
+    }
+  }
+
+  /**
+   * Der Aufbau ab 2026, ohne Zählerstände: So sieht die Sparte aus, wenn die
+   * Ablesung von Hand gelöscht wurde oder gar nicht gelesen werden konnte.
+   */
+  const ohneAblesung = section({
+    division: 'strom',
+    amountCents: 183_355,
+    positions: [
+      position('Arbeitspreis Einheitstarif', 'energie', 5220),
+      position('Arbeitspreis Tagtarif', 'netznutzung', 2760),
+      position('Arbeitspreis Nachttarif', 'netznutzung', 2460),
+      position('Grundpreis', 'netznutzung', 1, 'Anzahl'),
+      position('Gemeindeabgabe', 'abgaben', 5220),
+      position('Systemdienstleistungen (SDL)', 'abgaben', 5220),
+      position('Stromreserve Bund', 'abgaben', 5220),
+      position('Netzzuschlag', 'abgaben', 5220),
+      position('Solidarisierte Kosten', 'abgaben', 5220),
+      position('Messung', 'messung', 1, 'Anzahl'),
+    ],
+  })
+
+  it('zählt die Kilowattstunden eines Blocks und nicht die aller Blöcke', () => {
+    const entry = computeDivisionEntry(
+      stromrechnung({ id: 'h1-2026' }),
+      ohneAblesung,
+    )
+
+    // Dieselben 5'220 kWh stehen in jedem Block noch einmal: einmal in der
+    // Energie, verteilt auf Tag und Nacht in der Netznutzung, und fünfmal
+    // unter den Abgaben. Über alle summiert kämen 36'540 heraus – siebenmal
+    // der Verbrauch, und ein Preis von 4.90 statt 35.13 Rp./kWh.
+    assert.equal(entry.quantity, 5220)
+    assert.equal(entry.pricePerUnitHundredths, 3513)
+  })
+
+  it('nimmt weiterhin die Ablesung, wo es eine gibt', () => {
+    const entry = computeDivisionEntry(stromrechnung(), stromrechnung().sections[0] as BillSection)
+    assert.equal(entry.quantity, 5451)
   })
 })
 
@@ -208,8 +274,8 @@ describe('computeDivisionEntry – Wasser, Abwasser, Kehricht', () => {
   })
 
   it('lässt die Stromblöcke bei fremden Sparten leer, statt 0 zu behaupten', () => {
-    assert.equal(wasser?.energyCents, null)
-    assert.equal(kehricht?.gridCents, null)
+    assert.equal(wasser?.groupCents, null)
+    assert.equal(kehricht?.groupCents, null)
   })
 })
 
@@ -241,7 +307,7 @@ describe('summarize', () => {
     assert.equal(nurStrom.unit, 'kWh')
     assert.equal(nurStrom.quantity, 5451)
     assert.equal(nurStrom.pricePerUnitHundredths, 3966)
-    assert.equal(nurStrom.energyCents, 109_015)
+    assert.equal(nurStrom.groupCents?.energie, 109_015)
   })
 
   it('misst die abgedeckte Zeit als Spanne und nicht als Summe der Perioden', () => {
