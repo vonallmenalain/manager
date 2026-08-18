@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && vite build -c vite.config.docbase.ts",
+    "build": "node scripts/dist-leeren.mjs && tsc -b && vite build && vite build -c vite.config.docbase.ts",
     "preview": "vite preview",
     "test": "node --test",
     "typecheck": "tsc -b && tsc -p tsconfig.test.json",

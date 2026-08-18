@@ -26,6 +26,7 @@ import {
   useCategories,
   useDocuments,
   useHouseholdUsers,
+  withoutFilters,
   type DocumentFilters,
 } from '../lib/documents'
 import { useLocalJson } from '../lib/einstellungen'
@@ -42,11 +43,19 @@ export function Documents() {
     sanitizeFilters,
   )
 
-  const query = useDocuments({ ...filters, q: search || undefined })
+  const gesucht = { ...filters, q: search || undefined }
+  const query = useDocuments(gesucht)
   const categories = useCategories()
   const users = useHouseholdUsers()
 
   const documents = query.data?.documents ?? []
+
+  // Bleibt die Liste leer, obwohl Filter gesetzt sind, läuft dieselbe Suche
+  // ein zweites Mal – ohne sie. Erst dann: Solange etwas zu sehen ist, wäre
+  // eine zweite Liste bei jedem Tastendruck nur Last ohne Nutzen.
+  const leer = !query.isLoading && documents.length === 0
+  const ohneFilter = useDocuments(withoutFilters(gesucht), leer && countFilters(filters) > 0)
+  const ausgeblendet = leer ? (ohneFilter.data?.documents ?? []) : []
 
   return (
     <div className="space-y-4">
@@ -65,22 +74,27 @@ export function Documents() {
       {query.isLoading ? (
         <ListSkeleton />
       ) : documents.length === 0 ? (
-        <EmptyState hasFilters={Boolean(search) || Object.keys(filters).length > 0} />
-      ) : (
-        <ul className="space-y-2">
-          {documents.map((document) => (
-            <DocumentRow
-              key={document.id}
-              document={document}
-              categoryName={
-                document.categoryId
-                  ? categoryLabel(categories.data?.categories ?? [], document.categoryId)
-                  : undefined
-              }
-              assigneeName={users.data?.users.find((u) => u.id === document.assignedTo)?.name}
+        <>
+          <EmptyState
+            hasFilters={Boolean(search) || Object.keys(filters).length > 0}
+            ausgeblendet={ausgeblendet.length}
+          />
+          {ausgeblendet.length > 0 ? (
+            <AusgeblendetVomFilter
+              documents={ausgeblendet}
+              total={ohneFilter.data?.total ?? ausgeblendet.length}
+              categories={categories.data?.categories ?? []}
+              users={users.data?.users ?? []}
+              onReset={() => setFilters({})}
             />
-          ))}
-        </ul>
+          ) : null}
+        </>
+      ) : (
+        <DokumentListe
+          documents={documents}
+          categories={categories.data?.categories ?? []}
+          users={users.data?.users ?? []}
+        />
       )}
 
       <UploadControls />
@@ -393,6 +407,87 @@ function Haken({
   )
 }
 
+function DokumentListe({
+  documents,
+  categories,
+  users,
+}: {
+  documents: ManagedDocument[]
+  categories: Category[]
+  users: { id: string; name: string }[]
+}) {
+  return (
+    <ul className="space-y-2">
+      {documents.map((document) => (
+        <DocumentRow
+          key={document.id}
+          document={document}
+          categoryName={
+            document.categoryId ? categoryLabel(categories, document.categoryId) : undefined
+          }
+          assigneeName={users.find((user) => user.id === document.assignedTo)?.name}
+        />
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * Was die Suche gefunden hätte, wäre da nicht der Filter.
+ *
+ * Der häufigste Grund für ein leeres „Nichts gefunden" ist ein Filter von
+ * vorgestern: Man sucht eine Rechnung, bekommt nichts und sieht nicht, dass
+ * die Liste noch auf „Pendent" steht – der Knopf oben trägt zwar seine Zahl,
+ * aber niemand schaut dorthin, wenn er gerade sucht. Die zurückgehaltenen
+ * Treffer stehen deshalb hier, statt dass man sie sich erst freischalten
+ * muss: Wer sie sieht, versteht im selben Moment, woran es lag.
+ */
+function AusgeblendetVomFilter({
+  documents,
+  total,
+  categories,
+  users,
+  onReset,
+}: {
+  documents: ManagedDocument[]
+  total: number
+  categories: Category[]
+  users: { id: string; name: string }[]
+  onReset: () => void
+}) {
+  // Mehr Treffer als Zeilen: Der Server liefert höchstens fünfzig auf einmal.
+  const weitere = total - documents.length
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+          Vom Filter ausgeblendet
+        </h2>
+        <button
+          onClick={onReset}
+          className="shrink-0 text-sm font-medium text-brand-700 dark:text-brand-300"
+        >
+          Filter zurücksetzen
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {total === 1
+          ? 'Ein Treffer, den der Filter zurückhält.'
+          : `${total} Treffer, die der Filter zurückhält.`}
+      </p>
+
+      <DokumentListe documents={documents} categories={categories} users={users} />
+
+      {weitere > 0 ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          … und {weitere} weitere. Filter zurücksetzen zeigt alle.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 function DocumentRow({
   document,
   categoryName,
@@ -452,15 +547,21 @@ function ListSkeleton() {
   )
 }
 
-function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+/**
+ * `ausgeblendet` sagt, ob unter diesem Kasten noch Treffer stehen. Dann ist
+ * der Rat „andere Suche" falsch – die Suche stimmte ja, nur der Filter nicht.
+ */
+function EmptyState({ hasFilters, ausgeblendet }: { hasFilters: boolean; ausgeblendet: number }) {
+  const hinweis = !hasFilters
+    ? 'Unten rechts hinzufügen – PDF oder Foto.'
+    : ausgeblendet > 0
+      ? 'Nicht mit den gesetzten Filtern. Weiter unten steht, was ohne sie da wäre.'
+      : 'Andere Suche oder Filter zurücksetzen.'
+
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-12 text-center dark:border-slate-700">
       <p className="font-medium">{hasFilters ? 'Nichts gefunden' : 'Noch keine Dokumente'}</p>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        {hasFilters
-          ? 'Andere Suche oder Filter zurücksetzen.'
-          : 'Unten rechts hinzufügen – PDF oder Foto.'}
-      </p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{hinweis}</p>
     </div>
   )
 }

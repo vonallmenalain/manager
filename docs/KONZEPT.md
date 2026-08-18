@@ -409,6 +409,16 @@ aus gutem Grund nicht zeigt.
 Vorher stand dort eine Reihe von Chips (Pendent, jede Person, jede Kategorie). Sie lief
 waagrecht aus dem Bild und liess immer nur eines davon gelten.
 
+**„Nichts gefunden" sagt, was der Filter zurückhält.** Bleibt die Liste leer, obwohl
+Filter gesetzt sind, läuft dieselbe Suche ein zweites Mal ohne sie; was dabei
+herauskommt, steht unter dem Kasten, samt Knopf zum Zurücksetzen. Der Grund ist der
+Filter von vorgestern: Man sucht eine Rechnung, bekommt nichts und schaut in dem Moment
+nicht auf die Zahl am Filterknopf. Die zurückgehaltenen Treffer zu zeigen beantwortet die
+Frage sofort, statt sie erst zu stellen. Die zweite Abfrage läuft nur in genau diesem
+Fall – solange etwas zu sehen ist, wäre sie bei jedem Tastendruck Last ohne Nutzen. Der
+Bereich bleibt dabei stehen: Er ist kein Filter, sondern die Sammlung, in der man sich
+befindet – fiele er weg, zeigte der Haushalt Dokumente der DocBase.
+
 **Die Filter bleiben am Gerät stehen** (`localStorage`): Wer die Liste auf
 „Steuererklärung" eingestellt hat, kommt am nächsten Tag dorthin zurück, wo er aufgehört
 hat. Beim Lesen wird geprüft, was noch gilt – ein gespeicherter Status, den es nicht mehr
@@ -1175,6 +1185,17 @@ Kein eingehender Zugriff auf das NAS nötig, kein manueller Schritt.
 
 **Frontend:** Netlify baut bei jedem Push automatisch und veröffentlicht auf
 `manager.alae.app`.
+
+Zwei Fallen stecken darin, beide einmal erlebt. Erstens hält Netlify die Arbeitskopie
+zwischen zwei Builds; `dist/` ist nicht versioniert, und Vite räumt nur seine eigenen
+Ausgabeordner `dist/app` und `dist/docbase` auf. Alles, was daneben liegt, wandert
+ungefragt in jeden weiteren Deploy – nach dem Umzug von `/` nach `/app/` war das eine
+vollständige alte App. Zweitens zieht Netlify eine vorhandene Datei jeder Weiterleitung
+vor. Beides zusammen ergab einen Zustand, der wie ein Cache-Problem aussah, aber keines
+war: `manager.alae.app` lieferte die alte Fassung aus, während die installierte PWA über
+ihre Startadresse `/app/` die neue bekam – derselbe Deploy, zwei Fassungen. Seither
+leert der Build `dist/` zu Beginn (`apps/web/scripts/dist-leeren.mjs`), und die
+Weiterleitung auf `/` steht auf `force`.
 
 **Ergebnis:** Ich sage "das ist umgesetzt", und fünf Minuten später läuft es bei dir –
 ohne dass du dich am QNAP anmelden musst.

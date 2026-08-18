@@ -98,10 +98,30 @@ export function countFilters(filters: DocumentFilters): number {
   return count
 }
 
-export function useDocuments(filters: DocumentFilters) {
+/**
+ * Dieselbe Abfrage ohne die gesetzten Filter.
+ *
+ * Suchbegriff und Bereich bleiben stehen. Der Bereich ist kein Filter, den man
+ * setzt oder zurücksetzt, sondern die Sammlung, in der man sich befindet –
+ * fiele er weg, zeigte der Haushalt Dokumente der DocBase.
+ */
+export function withoutFilters(filters: DocumentFilters): DocumentFilters {
+  const ohne: DocumentFilters = {}
+  if (filters.bereich) ohne.bereich = filters.bereich
+  if (filters.q) ohne.q = filters.q
+  return ohne
+}
+
+/**
+ * `enabled` ist für die zweite, ungefilterte Abfrage da: Sie läuft erst, wenn
+ * die gefilterte Liste leer bleibt – sonst holte jeder Tastendruck im Suchfeld
+ * zwei Listen statt einer.
+ */
+export function useDocuments(filters: DocumentFilters, enabled = true) {
   return useQuery({
     queryKey: ['documents', filters],
     queryFn: () => api.listDocuments(toQueryString(filters)),
+    enabled,
     // Beim Tippen im Suchfeld die vorherige Liste stehen lassen, statt sie
     // durch einen Ladezustand zu ersetzen – das flackert sonst bei jedem Zeichen.
     placeholderData: (previous) => previous,
