@@ -320,8 +320,9 @@ export const api = {
       method: 'DELETE',
     }),
 
-  listNotes: (search = '') =>
-    request<{ notes: Note[] }>(`/api/notes${search ? `?q=${encodeURIComponent(search)}` : ''}`),
+  // Wie bei den Dokumenten kommt die fertige Abfrage von aussen – hier steht
+  // nur, wohin sie geht.
+  listNotes: (query = '') => request<{ notes: Note[] }>(`/api/notes${query}`),
 
   createNote: (note: UpsertNoteInput) =>
     request<{ note: Note }>('/api/notes', { method: 'POST', body: JSON.stringify(note) }),

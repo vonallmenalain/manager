@@ -59,10 +59,19 @@ export function DocumentTile({
         </span>
 
         <span className="min-w-0 flex-1 p-2">
-          <span className="line-clamp-2 block text-sm font-medium leading-snug">
+          {/* break-words: Bei vier Kacheln nebeneinander ist eine Kachel auf
+              dem Handy keine achtzig Bildpunkte breit, und „Antibiotikatherapie"
+              passt in keine Zeile. Ohne den Umbruch im Wort steht die zweite
+              Hälfte ausserhalb der Kachel und ist einfach weg.
+
+              Kein `block` daneben: `line-clamp` bringt seine eigene Anzeigeart
+              mit, und `block` gewinnt – dann würde gar nicht mehr abgeschnitten
+              und eine Kachel mit langem Titel zöge ihre ganze Reihe in die
+              Höhe. */}
+          <span className="line-clamp-2 break-words text-sm font-medium leading-snug">
             {document.title}
           </span>
-          <span className="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400">
+          <span className="mt-0.5 line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
             {document.docDate}
             {categoryName ? ` · ${categoryName}` : ''}
           </span>

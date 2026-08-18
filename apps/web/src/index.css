@@ -120,6 +120,21 @@
 }
 
 @layer utilities {
+  /*
+   * Derselbe Gedanke wie bei der Navigationsleiste, für ein aufgeklapptes
+   * Menü: Der runde Knopf unten rechts klebt am Bildschirmrand und liegt über
+   * allem. Auf einem kurzen Bildschirm deckte er die untersten Einträge des
+   * Kategorienfilters zu – und ein Griff darauf öffnete das Hinzufügen, statt
+   * die Auswahl zu schliessen. Solange ein Menü offen ist, ist Hinzufügen
+   * ohnehin nicht die Frage.
+   *
+   * Steht in der Ebene `utilities` und nicht in `base`: Der Knopf trägt
+   * `grid`, und eine Grundregel verliert gegen jede Hilfsklasse.
+   */
+  html[data-menue] [data-hinzufuegen] {
+    display: none;
+  }
+
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }

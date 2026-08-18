@@ -276,7 +276,7 @@ function ShoppingCard() {
  * Liste aller Notizen.
  */
 function NotesCard() {
-  const notes = useNotes('')
+  const notes = useNotes({})
   if (notes.isLoading) return <Ladeplatz />
 
   const angeheftet = (notes.data?.notes ?? []).filter((note) => note.pinned)

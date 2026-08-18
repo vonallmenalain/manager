@@ -5,6 +5,7 @@ import {
   UNCATEGORIZED_LABEL,
   type Category,
   type ManagedDocument,
+  type Note,
 } from '@manager/shared'
 import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -16,7 +17,11 @@ import { SearchSnippet } from '../../components/SearchSnippet'
 import { UploadControls } from '../../components/UploadControls'
 import { useLocalJson, useLocalSetting } from '../../lib/einstellungen'
 import { useCategories, useDocuments, withoutFilters } from '../../lib/documents'
-import { useEscape } from '../../lib/overlay'
+import { useNotes } from '../../lib/household'
+import { useEscape, useOpenPanel } from '../../lib/overlay'
+import { mische, type Eintrag } from '../../lib/sammlung'
+import { NoteEditor } from '../NoteEditor'
+import { NoteRow, NoteTile } from '../NoteTile'
 
 /**
  * Wie die Sammlung angezeigt wird.
@@ -65,6 +70,8 @@ export function Library() {
   )
   const [ansicht, setAnsicht] = useLocalSetting<Ansicht>('docbase.ansicht', ANSICHTEN, 'liste')
   const [spalten, setSpalten] = useLocalSetting<Spalten>('docbase.spalten', SPALTEN, '2')
+  /** 'neu' heisst: Das Fenster geht auf, die Notiz gibt es noch nicht. */
+  const [notiz, setNotiz] = useState<Note | 'neu' | null>(null)
 
   const categories = useCategories('docbase')
   const gesucht = {
@@ -73,27 +80,54 @@ export function Library() {
     categoryId: kategorien.length > 0 ? kategorien : undefined,
   }
   const query = useDocuments(gesucht)
+  // Dieselbe Suche und derselbe Kategorienfilter über den Notizen: Sie stehen
+  // in derselben Liste und müssen deshalb auf dasselbe Häkchen hin
+  // verschwinden und wieder auftauchen wie die Dokumente daneben.
+  const notesQuery = useNotes({
+    bereich: 'docbase',
+    q: search || undefined,
+    categoryId: kategorien.length > 0 ? kategorien : undefined,
+  })
 
   const documents = query.data?.documents ?? []
+  const notes = notesQuery.data?.notes ?? []
   const alleKategorien = categories.data?.categories ?? []
+
+  const laedt = query.isLoading || notesQuery.isLoading
 
   // Bleibt die Sammlung leer, obwohl Kategorien angehakt sind, läuft dieselbe
   // Suche ein zweites Mal ohne sie. Erst dann: Solange etwas zu sehen ist,
   // holte sie bei jedem Tastendruck eine zweite Liste ohne Nutzen.
-  const leer = !query.isLoading && documents.length === 0
-  const ohneFilter = useDocuments(withoutFilters(gesucht), leer && kategorien.length > 0)
-  const ausgeblendet = leer ? (ohneFilter.data?.documents ?? []) : []
+  const leer = !laedt && documents.length === 0 && notes.length === 0
+  const nochmals = leer && kategorien.length > 0
+  const ohneFilter = useDocuments(withoutFilters(gesucht), nochmals)
+  const notizenOhneFilter = useNotes({ bereich: 'docbase', q: search || undefined }, nochmals)
+
+  const ausgeblendeteDokumente = leer ? (ohneFilter.data?.documents ?? []) : []
+  const ausgeblendeteNotizen = leer ? (notizenOhneFilter.data?.notes ?? []) : []
+  const ausgeblendet = mische(ausgeblendeteDokumente, ausgeblendeteNotizen)
 
   /** „Notfall › Medikamente" – ohne die Hauptkategorie fehlt die Hälfte. */
-  function kategorieName(document: ManagedDocument): string | undefined {
-    return document.categoryId ? categoryLabel(alleKategorien, document.categoryId) : undefined
+  function kategorieName(categoryId: string | null): string | undefined {
+    return categoryId ? categoryLabel(alleKategorien, categoryId) : undefined
   }
+
+  const eintraege = mische(documents, notes)
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Sammlung</h1>
-        <div className="flex items-center gap-2">
+        {/* Die Gruppe ist der Bezugspunkt, an dem sich beide Menüs ausrichten –
+            nicht der Knopf, unter dem sie stehen. Auf einem schmalen Handy
+            steht „Kategorie" weit links, und ein Feld von 16rem darunter ragte
+            über den linken Bildschirmrand hinaus: Die halbe Kategorienliste
+            war dann nicht zu sehen und nicht zu treffen.
+
+            `ml-auto` zieht die Gruppe auch dann an den rechten Rand, wenn sie
+            unter den Titel rutscht: Ohne das stünde sie dort links, und die
+            Menüs klappten wieder ins Leere neben dem Bildschirm. */}
+        <div className="relative ml-auto flex items-center gap-2">
           <CategoryFilter
             categories={alleKategorien}
             gewaehlt={kategorien}
@@ -110,9 +144,9 @@ export function Library() {
 
       <SearchField value={search} onChange={setSearch} />
 
-      {query.isLoading ? (
+      {laedt ? (
         <ListSkeleton />
-      ) : documents.length === 0 ? (
+      ) : eintraege.length === 0 ? (
         <>
           <EmptyState
             gefiltert={Boolean(search) || kategorien.length > 0}
@@ -120,27 +154,43 @@ export function Library() {
           />
           {ausgeblendet.length > 0 ? (
             <AusgeblendetVomFilter
-              documents={ausgeblendet}
-              total={ohneFilter.data?.total ?? ausgeblendet.length}
+              eintraege={ausgeblendet}
+              total={
+                (ohneFilter.data?.total ?? ausgeblendeteDokumente.length) +
+                ausgeblendeteNotizen.length
+              }
               ansicht={ansicht}
               spalten={spalten}
               kategorieName={kategorieName}
+              onNotiz={setNotiz}
               onReset={() => setKategorien([])}
             />
           ) : null}
         </>
       ) : (
         <Sammlung
-          documents={documents}
+          eintraege={eintraege}
           ansicht={ansicht}
           spalten={spalten}
           kategorieName={kategorieName}
+          onNotiz={setNotiz}
         />
       )}
 
-      {/* Dieselben Wege wie im Manager – Scannen, Foto, Datei –, aber nur mit
-          der Kategorie als Angabe. */}
-      <UploadControls bereich="docbase" felder={['kategorie']} akzent="bg-teal-700" />
+      {/* Wie im Manager – Scannen und Datei wählen –, dazu die Notiz an der
+          Stelle, an der dort die Kamera steht: Was man in eine Sammlung legt,
+          ist entweder ein Blatt Papier oder ein eigener Gedanke dazu. Ein Foto
+          ist hier beides nicht. Angaben gibt es nur eine, die Kategorie. */}
+      <UploadControls
+        bereich="docbase"
+        felder={['kategorie']}
+        akzent="bg-teal-700"
+        onNotiz={() => setNotiz('neu')}
+      />
+
+      {notiz ? (
+        <NoteEditor note={notiz === 'neu' ? null : notiz} onClose={() => setNotiz(null)} />
+      ) : null}
     </div>
   )
 }
@@ -201,8 +251,10 @@ function CategoryFilter({
 
   const gruppen = groupCategories(categories)
 
+  // Ohne `relative`: Das aufgeklappte Feld richtet sich an der Gruppe beider
+  // Knöpfe aus, siehe oben.
   return (
-    <div className="relative">
+    <div>
       <FilterButton
         label="Kategorie"
         open={open}
@@ -299,7 +351,7 @@ function ViewMenu({
   useEscape(open, useCallback(() => setOpen(false), []))
 
   return (
-    <div className="relative">
+    <div>
       <FilterButton label="Ansicht" open={open} onClick={() => setOpen((value) => !value)}>
         <path
           d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"
@@ -405,6 +457,9 @@ function Panel({
   onClose: () => void
   children: React.ReactNode
 }) {
+  // Solange dieses Feld offen ist, tritt der runde Knopf unten rechts zurück.
+  useOpenPanel()
+
   return (
     <>
       <button
@@ -415,7 +470,9 @@ function Panel({
       <div
         role="dialog"
         aria-label={label}
-        className="absolute right-0 top-12 z-30 max-h-[70dvh] w-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+        // max-w: Auf einem sehr schmalen Gerät ist der Bildschirm die Grenze,
+        // nicht die Wunschbreite – sonst stünde die Liste zur Hälfte daneben.
+        className="absolute right-0 top-12 z-30 max-h-[70dvh] w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
       >
         {children}
       </div>
@@ -481,35 +538,59 @@ function Radio({
  * Hälfte erwischte, wäre schwer zu erklären.
  */
 function Sammlung({
-  documents,
+  eintraege,
   ansicht,
   spalten,
   kategorieName,
+  onNotiz,
 }: {
-  documents: ManagedDocument[]
+  eintraege: Eintrag[]
   ansicht: Ansicht
   spalten: Spalten
-  kategorieName: (document: ManagedDocument) => string | undefined
+  kategorieName: (categoryId: string | null) => string | undefined
+  onNotiz: (note: Note) => void
 }) {
   if (ansicht === 'kacheln') {
     return (
       <ul className={`grid gap-2 ${SPALTEN_KLASSE[spalten]}`}>
-        {documents.map((document) => (
-          <DocumentTile
-            key={document.id}
-            document={document}
-            categoryName={kategorieName(document)}
-          />
-        ))}
+        {eintraege.map((eintrag) =>
+          eintrag.art === 'notiz' ? (
+            <NoteTile
+              key={eintrag.id}
+              note={eintrag.note}
+              categoryName={kategorieName(eintrag.note.categoryId)}
+              onOpen={() => onNotiz(eintrag.note)}
+            />
+          ) : (
+            <DocumentTile
+              key={eintrag.id}
+              document={eintrag.document}
+              categoryName={kategorieName(eintrag.document.categoryId)}
+            />
+          ),
+        )}
       </ul>
     )
   }
 
   return (
     <ul className="space-y-2">
-      {documents.map((document) => (
-        <Row key={document.id} document={document} categoryName={kategorieName(document)} />
-      ))}
+      {eintraege.map((eintrag) =>
+        eintrag.art === 'notiz' ? (
+          <NoteRow
+            key={eintrag.id}
+            note={eintrag.note}
+            categoryName={kategorieName(eintrag.note.categoryId)}
+            onOpen={() => onNotiz(eintrag.note)}
+          />
+        ) : (
+          <Row
+            key={eintrag.id}
+            document={eintrag.document}
+            categoryName={kategorieName(eintrag.document.categoryId)}
+          />
+        ),
+      )}
     </ul>
   )
 }
@@ -523,22 +604,24 @@ function Sammlung({
  * einsortiert ist.
  */
 function AusgeblendetVomFilter({
-  documents,
+  eintraege,
   total,
   ansicht,
   spalten,
   kategorieName,
+  onNotiz,
   onReset,
 }: {
-  documents: ManagedDocument[]
+  eintraege: Eintrag[]
   total: number
   ansicht: Ansicht
   spalten: Spalten
-  kategorieName: (document: ManagedDocument) => string | undefined
+  kategorieName: (categoryId: string | null) => string | undefined
+  onNotiz: (note: Note) => void
   onReset: () => void
 }) {
   // Mehr Treffer als Zeilen: Der Server liefert höchstens fünfzig auf einmal.
-  const weitere = total - documents.length
+  const weitere = total - eintraege.length
 
   return (
     <section className="space-y-2">
@@ -560,10 +643,11 @@ function AusgeblendetVomFilter({
       </p>
 
       <Sammlung
-        documents={documents}
+        eintraege={eintraege}
         ansicht={ansicht}
         spalten={spalten}
         kategorieName={kategorieName}
+        onNotiz={onNotiz}
       />
 
       {weitere > 0 ? (
@@ -621,7 +705,7 @@ function ListSkeleton() {
  */
 function EmptyState({ gefiltert, ausgeblendet }: { gefiltert: boolean; ausgeblendet: number }) {
   const hinweis = !gefiltert
-    ? 'Unten rechts hinzufügen – PDF, Foto oder Scan. Gesucht wird danach im ganzen Text.'
+    ? 'Unten rechts hinzufügen – Scan, Datei oder Notiz. Gesucht wird danach im ganzen Text.'
     : ausgeblendet > 0
       ? 'Nicht in den angehakten Kategorien. Weiter unten steht, was ohne sie da wäre.'
       : 'Andere Suche oder Kategorie zurücksetzen.'

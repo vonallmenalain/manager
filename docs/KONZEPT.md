@@ -181,10 +181,10 @@ erDiagram
 * `documents` – id, title, storage_path, mime, size_bytes, sha256, **uploaded_by**,
   **uploaded_at**, doc_date, category_id, **assigned_to**, **status**, due_date,
   amount_chf, vendor, ocr_status, ocr_text, notes, deleted_at, **bereich**
-* `documents.bereich` / `categories.bereich` – `manager` (der Haushalt) oder `docbase`
-  (die medizinische Sammlung, siehe 6.1a). Die einzige Trennlinie zwischen den beiden
-  Apps: Jede Liste filtert zuerst danach, und ohne Angabe gilt der Haushalt – eine
-  Abfrage, die den Bereich vergisst, zeigt nichts aus der DocBase statt alles aus beiden.
+* `documents.bereich` / `categories.bereich` / `notes.bereich` – `manager` (der Haushalt)
+  oder `docbase` (die medizinische Sammlung, siehe 6.1a). Die einzige Trennlinie zwischen
+  den beiden Apps: Jede Liste filtert zuerst danach, und ohne Angabe gilt der Haushalt –
+  eine Abfrage, die den Bereich vergisst, zeigt nichts aus der DocBase statt alles aus beiden.
   Texterkennung, Vorschau und Papierkorb bleiben ein einziger Mechanismus
 * `categories` – id, name, icon, sort_order (Steuererklärung, Kinder, Rechnungen,
   Wichtige Dokumente, Sonstiges). „Unsortiert" steht bewusst nicht darin: Das ist das
@@ -222,6 +222,12 @@ erDiagram
   bleibt dieselbe, samt allem, was darin liegt
 * `notes` – Notizen mit Art (Text oder Checkliste), Sichtbarkeit (`shared`), Farbe,
   Anheftung und eigener Suchspalte
+* `notes.bereich` / `notes.category_id` – wie bei den Dokumenten: `manager` oder
+  `docbase`, und in der DocBase dazu die Schublade. Dieselbe Spalte, dieselbe Wirkung –
+  eine Notiz des Haushalts taucht nie in der Sammlung auf und umgekehrt. Die Kategorie
+  fragt nur die DocBase ab; dort steht die Notiz zwischen den Dokumenten und muss deshalb
+  demselben Filter folgen wie sie, samt Unterkategorien. Eine Kategorie aus dem anderen
+  Bereich wird beim Speichern verworfen: Sie wäre über keinen Filter mehr erreichbar
 * `finance_years` – Steuerbetrag je Jahr. Mehr wird zu einem Jahr nicht eingestellt
 * `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
 * `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum, den abgerechneten
@@ -575,12 +581,33 @@ man gerade schaut. Die Vorschaubilder holt der Server als eigenes, kleines JPEG
 nur die, die tatsächlich in die Nähe des Bildschirms geraten. Ohne beides lüde eine
 Sammlung mit fünfzig Einträgen fünfzig grosse Bilder, von denen man vier sieht.
 
+**Hinzufügen: scannen, Datei wählen, Notiz erstellen.** Wo im Haushalt „Foto aufnehmen"
+steht, steht hier die Notiz. Der Grund ist derselbe wie beim fehlenden Statusfeld: Was in
+eine Fachsammlung kommt, ist entweder ein Blatt Papier – dafür gibt es den Scanner – oder
+ein eigener Gedanke dazu. Ein Schnappschuss ist keins von beidem; die Kinderzeichnung und
+das Zeugnis an der Wand, für die es den Kameraweg gibt, gehören in den Haushalt.
+
+**Die Notiz der Sammlung** ist dieselbe wie im Manager – Autospeichern, Farbe, Anheften,
+geteilt oder privat, anklickbare Verweise –, mit zwei Unterschieden. Sie hat **eine
+Kategorie**, und das ist der eigentliche Punkt: Was man sich zu einer Studie notiert,
+gehört in dieselbe Schublade wie die Studie und taucht unter demselben Häkchen wieder
+auf. Und sie ist immer Fliesstext: Eine Liste zum Abhaken beantwortet in einer Sammlung,
+die man nachschlägt, keine Frage.
+
+Notiz und Dokument stehen **in einer Liste**, nicht in zwei nebeneinander – als Kachel
+wie als Zeile, mit derselben Suche und demselben Kategorienfilter darüber. Zwei Listen
+hiessen, an zwei Orten zu suchen und die Antwort auf „was habe ich zu diesem Thema?" erst
+im Kopf zusammenzusetzen. Sortiert wird nach dem Datum – beim Dokument das Datum darauf,
+bei der Notiz der Tag der letzten Änderung –, angeheftete Notizen stehen zuoberst.
+Erkennbar bleibt eine Notiz an ihrer Farbe und ihrem Zeichen; geöffnet wird sie als
+Fenster über der Sammlung, wie im Manager, und nicht als eigene Seite.
+
 **Geteilt wird alles darunter:** dieselbe Anmeldung (ein Haushalt, ein Passwort, ein
 Cookie), derselbe Server, dieselbe Texterkennung, derselbe Scanner samt Randerkennung und
-Kamerawahl. Getrennt wird an genau zwei Stellen – einer Spalte `bereich` in `documents`
-und `categories`, und einem eigenen Wurzelordner in der Ablage. Zwei Sätze Tabellen und
-zwei OCR-Warteschlangen wären dieselbe Sache zweimal, und die zweite hinkte der ersten ab
-dem ersten Tag hinterher.
+Kamerawahl. Getrennt wird an genau drei Stellen – einer Spalte `bereich` in `documents`,
+`categories` und `notes`, und einem eigenen Wurzelordner in der Ablage. Zwei Sätze
+Tabellen und zwei OCR-Warteschlangen wären dieselbe Sache zweimal, und die zweite hinkte
+der ersten ab dem ersten Tag hinterher.
 
 **Zwei installierbare Apps auf einer Adresse** brauchen zwei Manifeste, zwei Service
 Worker und zwei Geltungsbereiche – und die beiden Bereiche dürfen sich nicht

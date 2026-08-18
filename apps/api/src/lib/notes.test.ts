@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { parseChecklist, serializeChecklist, sortChecklist, splitLinks } from '@manager/shared'
+import {
+  noteQuerySchema,
+  parseChecklist,
+  serializeChecklist,
+  sortChecklist,
+  splitLinks,
+  upsertNoteSchema,
+} from '@manager/shared'
 
 describe('parseChecklist', () => {
   it('liest offene und erledigte Einträge', () => {
@@ -148,5 +155,51 @@ describe('splitLinks', () => {
       teile.filter((teil) => teil.href).map((teil) => teil.text),
       ['www.eins.ch', 'https://zwei.ch'],
     )
+  })
+})
+
+describe('Eine Notiz gehört in genau eine App', () => {
+  it('landet ohne Angabe im Haushalt', () => {
+    // Der Weg über „Teilen" und jede ältere App schicken keinen Bereich mit.
+    // Fiele der Standard anders aus, tauchten deren Notizen in der Sammlung
+    // auf – dort, wo sie niemand hingelegt hat.
+    const notiz = upsertNoteSchema.parse({ title: 'Einkauf', body: 'Milch' })
+    assert.equal(notiz.bereich, 'manager')
+    assert.equal(notiz.categoryId, null)
+  })
+
+  it('nimmt Bereich und Kategorie der DocBase an', () => {
+    const notiz = upsertNoteSchema.parse({
+      title: 'Betablocker',
+      body: 'Nie abrupt absetzen.',
+      bereich: 'docbase',
+      categoryId: 'kat-1',
+    })
+    assert.equal(notiz.bereich, 'docbase')
+    assert.equal(notiz.categoryId, 'kat-1')
+  })
+
+  it('verlangt weiterhin Titel oder Text', () => {
+    assert.equal(upsertNoteSchema.safeParse({ bereich: 'docbase' }).success, false)
+  })
+})
+
+describe('Wonach eine Notizliste gefragt wird', () => {
+  it('zeigt ohne Angabe den Haushalt', () => {
+    assert.equal(noteQuerySchema.parse({}).bereich, 'manager')
+  })
+
+  it('liest die angehakten Kategorien als eine Liste', () => {
+    // Dieselbe Schreibweise wie bei den Dokumenten: ein Parameter, Kommas
+    // dazwischen – nicht derselbe Parameter mehrfach.
+    const abfrage = noteQuerySchema.parse({
+      bereich: 'docbase',
+      categoryId: 'kat-1, kat-2 ,unsortiert',
+    })
+    assert.deepEqual(abfrage.categoryId, ['kat-1', 'kat-2', 'unsortiert'])
+  })
+
+  it('lässt die Kategorie weg, wenn nichts angehakt ist', () => {
+    assert.equal(noteQuerySchema.parse({ bereich: 'docbase' }).categoryId, undefined)
   })
 })

@@ -1,4 +1,5 @@
 import type {
+  Bereich,
   CreateShoppingItemInput,
   Note,
   ShoppingItem,
@@ -189,10 +190,39 @@ export function useReorderShoppingSections() {
 
 const NOTES_KEY = 'notes'
 
-export function useNotes(search: string) {
+/**
+ * Wonach eine Notizliste gefragt wird.
+ *
+ * Der Haushalt fragt nur nach dem Suchbegriff; die DocBase zusätzlich nach der
+ * Kategorie, weil ihre Notizen zwischen den Dokumenten stehen und demselben
+ * Filter folgen müssen wie sie.
+ */
+export interface NoteFilters {
+  bereich?: Bereich
+  q?: string
+  categoryId?: string[]
+}
+
+function noteQueryString(filters: NoteFilters): string {
+  const params = new URLSearchParams()
+  if (filters.bereich) params.set('bereich', filters.bereich)
+  if (filters.q) params.set('q', filters.q)
+  if (filters.categoryId && filters.categoryId.length > 0) {
+    params.set('categoryId', filters.categoryId.join(','))
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+/**
+ * `enabled` ist – wie bei den Dokumenten – für die zweite, ungefilterte
+ * Abfrage da: Sie läuft erst, wenn die gefilterte Liste leer bleibt.
+ */
+export function useNotes(filters: NoteFilters, enabled = true) {
   return useQuery({
-    queryKey: [NOTES_KEY, search],
-    queryFn: () => api.listNotes(search),
+    queryKey: [NOTES_KEY, filters],
+    queryFn: () => api.listNotes(noteQueryString(filters)),
+    enabled,
     placeholderData: (previous) => previous,
   })
 }
