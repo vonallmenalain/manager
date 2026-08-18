@@ -409,6 +409,16 @@ aus gutem Grund nicht zeigt.
 Vorher stand dort eine Reihe von Chips (Pendent, jede Person, jede Kategorie). Sie lief
 waagrecht aus dem Bild und liess immer nur eines davon gelten.
 
+**„Nichts gefunden" sagt, was der Filter zurückhält.** Bleibt die Liste leer, obwohl
+Filter gesetzt sind, läuft dieselbe Suche ein zweites Mal ohne sie; was dabei
+herauskommt, steht unter dem Kasten, samt Knopf zum Zurücksetzen. Der Grund ist der
+Filter von vorgestern: Man sucht eine Rechnung, bekommt nichts und schaut in dem Moment
+nicht auf die Zahl am Filterknopf. Die zurückgehaltenen Treffer zu zeigen beantwortet die
+Frage sofort, statt sie erst zu stellen. Die zweite Abfrage läuft nur in genau diesem
+Fall – solange etwas zu sehen ist, wäre sie bei jedem Tastendruck Last ohne Nutzen. Der
+Bereich bleibt dabei stehen: Er ist kein Filter, sondern die Sammlung, in der man sich
+befindet – fiele er weg, zeigte der Haushalt Dokumente der DocBase.
+
 **Die Filter bleiben am Gerät stehen** (`localStorage`): Wer die Liste auf
 „Steuererklärung" eingestellt hat, kommt am nächsten Tag dorthin zurück, wo er aufgehört
 hat. Beim Lesen wird geprüft, was noch gilt – ein gespeicherter Status, den es nicht mehr
