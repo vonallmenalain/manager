@@ -48,6 +48,10 @@ export function Share() {
         note: {
           ...noteFromShare(shared),
           kind: 'text',
+          // Geteilt wird in den Haushalt: Von hier führt kein Weg in die
+          // DocBase, und eine Kategorie hat der Haushalt für Notizen nicht.
+          bereich: 'manager',
+          categoryId: null,
           pinned: false,
           shared: false,
           color: 'default',

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { DocumentScanner } from './DocumentScanner'
+import { NoteIcon } from './icons'
 import { ALLE_TRAY_FELDER, PageTray, type TrayDetails, type TrayField } from './PageTray'
 import { ApiRequestError } from '../lib/api'
 import {
@@ -52,7 +53,8 @@ const EMPTY_DETAILS: TrayDetails = {
  *    Datei ab, auf `/teilen` wird das Ziel gewählt, und von dort führt
  *    `?geteilt=n` hierher
  *  - Dokument scannen – der eingebaute Scanner mit Randerkennung
- *  - Foto aufnehmen – die Kamera geht sofort auf, das Bild bleibt wie es ist
+ *  - Foto aufnehmen – die Kamera geht sofort auf, das Bild bleibt wie es ist;
+ *    in der DocBase steht an dieser Stelle „Notiz erstellen", siehe `onNotiz`
  *  - Datei wählen – PDFs und Screenshots
  *  - App-Verknüpfung `?aufnehmen=1` – langer Druck auf das App-Symbol
  *
@@ -71,6 +73,7 @@ export function UploadControls({
   bereich = DEFAULT_BEREICH,
   felder = ALLE_TRAY_FELDER,
   akzent = 'bg-brand-800',
+  onNotiz,
 }: {
   /** In welche Sammlung das Hochgeladene gehört. */
   bereich?: Bereich
@@ -82,6 +85,15 @@ export function UploadControls({
    * Haushalt, petrol in der DocBase.
    */
   akzent?: string
+  /**
+   * Wo eine Notiz statt eines Fotos gehört, steht sie an dessen Platz.
+   *
+   * Die DocBase reicht das durch: Sie sammelt Wissen, keine Schnappschüsse –
+   * ein Foto ist dort weder ein Blatt Papier (dafür gibt es den Scanner) noch
+   * ein Gedanke dazu (dafür jetzt die Notiz). Fehlt die Angabe, bleibt es beim
+   * Foto, so wie im Haushalt.
+   */
+  onNotiz?: () => void
 } = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const upload = useUploadDocument()
@@ -437,17 +449,29 @@ export function UploadControls({
                 </g>
               </svg>
             </MenuAction>
-            <MenuAction label="Foto aufnehmen" onClick={openPhotoCamera}>
-              <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                />
-                <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-              </svg>
-            </MenuAction>
+            {onNotiz ? (
+              <MenuAction
+                label="Notiz erstellen"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onNotiz()
+                }}
+              >
+                <NoteIcon className="size-5" />
+              </MenuAction>
+            ) : (
+              <MenuAction label="Foto aufnehmen" onClick={openPhotoCamera}>
+                <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+                </svg>
+              </MenuAction>
+            )}
             <MenuAction label="Datei wählen" onClick={() => fileRef.current?.click()}>
               <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
@@ -466,6 +490,9 @@ export function UploadControls({
       <button
         onClick={() => setMenuOpen((open) => !open)}
         disabled={busy}
+        // data-hinzufuegen: Der Knopf weicht einem aufgeklappten Menü, siehe
+        // useOpenPanel und die Regel dazu in index.css.
+        data-hinzufuegen=""
         className={`fixed bottom-20 right-4 z-30 grid size-14 place-items-center rounded-full text-white shadow-lg transition active:scale-95 disabled:opacity-70 ${akzent}`}
         aria-label={busy ? 'Wird hochgeladen' : 'Dokument hinzufügen'}
         aria-expanded={menuOpen}

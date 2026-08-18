@@ -322,6 +322,21 @@ export const notes = sqliteTable(
      * geteilten Paket.
      */
     kind: text('kind').notNull().default('text'),
+    /**
+     * Zu welcher App die Notiz gehört: 'manager' (der Haushalt) oder 'docbase'
+     * (die medizinische Sammlung). Dieselbe Spalte wie bei den Dokumenten und
+     * mit derselben Wirkung – die beiden Listen begegnen einander nirgends.
+     */
+    bereich: text('bereich').notNull().default('manager'),
+    /**
+     * Die Schublade, in der die Notiz liegt – null heisst unsortiert.
+     *
+     * Gefragt wird danach nur in der DocBase: Dort steht die Notiz zwischen
+     * den Dokumenten und muss deshalb demselben Kategorienfilter folgen wie
+     * sie. `set null` wie bei den Dokumenten: Eine gelöschte Kategorie nimmt
+     * nicht mit, was darin lag.
+     */
+    categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
     /** Angeheftete stehen immer oben. */
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /**
@@ -345,6 +360,9 @@ export const notes = sqliteTable(
   (table) => [
     index('notes_pinned_idx').on(table.pinned, table.updatedAt),
     index('notes_search_idx').on(table.searchText),
+    // Wie bei den Dokumenten filtert jede Abfrage zuerst nach der App.
+    index('notes_bereich_idx').on(table.bereich),
+    index('notes_category_idx').on(table.categoryId),
     // Jede Abfrage filtert danach, wem die Notiz gehört und ob sie geteilt ist.
     index('notes_visibility_idx').on(table.createdBy, table.shared),
   ],

@@ -402,7 +402,7 @@ export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>
  * je nach Anzahl mal als Zeichenkette und mal als Liste an, und genau daran
  * scheitern solche Schnittstellen dann im Einzelfall.
  */
-const commaSeparated = z
+export const commaSeparatedIds = z
   .string()
   .max(1000)
   .transform((value) =>
@@ -422,9 +422,9 @@ export const documentQuerySchema = z.object({
   /** Freitext über Titel, Absender und Notizen. Ab Etappe 3 auch über OCR-Text. */
   q: z.string().trim().max(200).optional(),
   /** Eine oder mehrere Zuständigkeiten; `beide` steht für „niemandem zugeteilt". */
-  status: commaSeparated.optional(),
-  categoryId: commaSeparated.optional(),
-  assignedTo: commaSeparated.optional(),
+  status: commaSeparatedIds.optional(),
+  categoryId: commaSeparatedIds.optional(),
+  assignedTo: commaSeparatedIds.optional(),
   year: z.coerce.number().int().min(1900).max(2200).optional(),
   /** Hochgeladen ab / bis, jeweils einschliesslich. */
   uploadedFrom: isoDate.optional(),

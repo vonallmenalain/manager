@@ -2,19 +2,21 @@ import { randomUUID } from 'node:crypto'
 
 import {
   normalizeForSearch,
+  noteQuerySchema,
   parseChecklist,
   upsertNoteSchema,
+  type Bereich,
   type Note,
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
 import { and, desc, eq, like, or, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
-import { z } from 'zod'
 
 import { db } from '../db/index.js'
-import { notes, type NoteRow } from '../db/schema.js'
+import { categories, notes, type NoteRow } from '../db/schema.js'
 import { notFound, unauthorized, validationError } from '../lib/errors.js'
+import { categoryCondition } from '../lib/filters.js'
 
 function toApi(row: NoteRow): Note {
   return {
@@ -22,6 +24,8 @@ function toApi(row: NoteRow): Note {
     title: row.title,
     body: row.body,
     kind: row.kind as NoteKind,
+    bereich: row.bereich as Bereich,
+    categoryId: row.categoryId,
     pinned: row.pinned,
     shared: row.shared,
     color: row.color as NoteColor,
@@ -31,10 +35,6 @@ function toApi(row: NoteRow): Note {
     updatedAt: row.updatedAt,
   }
 }
-
-const querySchema = z.object({
-  q: z.string().trim().max(200).optional(),
-})
 
 /**
  * Wer eine Notiz sehen darf: wer sie angelegt hat, und bei geteilten alle.
@@ -66,6 +66,27 @@ function searchTextFor(kind: NoteKind, title: string, body: string): string {
   return normalizeForSearch(`${title} ${text}`)
 }
 
+/**
+ * Prüft, ob die gewünschte Kategorie in denselben Bereich gehört wie die Notiz.
+ *
+ * Eine Notiz der DocBase in einer Schublade des Haushalts wäre über keinen
+ * Filter mehr erreichbar – sie läge in einer Liste, die diese Kategorie gar
+ * nicht anzeigt. Unbekannte Kennungen fallen aus demselben Grund weg.
+ */
+async function resolveCategory(
+  categoryId: string | null,
+  bereich: Bereich,
+): Promise<string | null> {
+  if (!categoryId) return null
+  const rows = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(eq(categories.id, categoryId), eq(categories.bereich, bereich)))
+    .limit(1)
+
+  return rows[0]?.id ?? null
+}
+
 const noteRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
 
@@ -73,15 +94,23 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const user = request.user
     if (!user) return reply.status(401).send(unauthorized())
 
-    const parsed = querySchema.safeParse(request.query)
+    const parsed = noteQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const conditions: SQL[] = [visibleTo(user.id)]
+    // Der Bereich steht wie bei den Dokumenten zuerst und hat keinen Ausweg:
+    // Der Haushalt sieht nie eine Notiz der DocBase und umgekehrt.
+    const conditions: SQL[] = [visibleTo(user.id), eq(notes.bereich, parsed.data.bereich)]
     if (parsed.data.q) {
       // Dieselbe Vereinheitlichung wie bei den Dokumenten – „PRÄMIE" und
       // „praemie" sollen überall dasselbe finden.
       conditions.push(like(notes.searchText, `%${normalizeForSearch(parsed.data.q)}%`))
     }
+
+    // Derselbe Filter wie über den Dokumenten daneben, samt Unterkategorien:
+    // In der DocBase stehen Notiz und Dokument in einer Liste, und ein Häkchen
+    // darf nicht die Hälfte davon anders behandeln.
+    const kategorien = await categoryCondition(notes.categoryId, parsed.data.categoryId)
+    if (kategorien) conditions.push(kategorien)
 
     const rows = await db
       .select()
@@ -100,7 +129,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, kind, pinned, shared, color } = parsed.data
+    const { title, body, kind, bereich, categoryId, pinned, shared, color } = parsed.data
     const inserted = await db
       .insert(notes)
       .values({
@@ -108,6 +137,8 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
         title,
         body,
         kind,
+        bereich,
+        categoryId: await resolveCategory(categoryId, bereich),
         pinned,
         shared,
         color,
@@ -130,13 +161,15 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, kind, pinned, shared, color } = parsed.data
+    const { title, body, kind, bereich, categoryId, pinned, shared, color } = parsed.data
     const updated = await db
       .update(notes)
       .set({
         title,
         body,
         kind,
+        bereich,
+        categoryId: await resolveCategory(categoryId, bereich),
         pinned,
         shared,
         color,

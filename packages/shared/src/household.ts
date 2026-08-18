@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
-import { normalizeForSearch } from './documents.js'
+import {
+  bereichSchema,
+  commaSeparatedIds,
+  DEFAULT_BEREICH,
+  normalizeForSearch,
+} from './documents.js'
 
 /**
  * Die Abteilungen, mit denen eine frische Einkaufsliste beginnt – in der
@@ -437,6 +442,20 @@ export const noteSchema = z.object({
   title: z.string(),
   body: z.string(),
   kind: noteKindSchema,
+  /**
+   * In welcher App die Notiz liegt: im Haushalt oder in der DocBase. Dieselbe
+   * Trennung wie bei den Dokumenten und aus demselben Grund – ein Merkzettel
+   * für den Einkauf hat in einer medizinischen Sammlung nichts verloren.
+   */
+  bereich: bereichSchema,
+  /**
+   * Die Schublade, in der die Notiz liegt – null heisst unsortiert.
+   *
+   * Nur die DocBase fragt danach: Dort steht die Notiz zwischen den Dokumenten
+   * und wird über denselben Filter gesucht wie sie. Im Haushalt liegen Notizen
+   * in einer eigenen Liste, die nach nichts sortiert wird ausser nach der Zeit.
+   */
+  categoryId: z.string().nullable(),
   pinned: z.boolean(),
   /**
    * false heisst „nur für mich". Eine Notiz ist zunächst privat und wird
@@ -458,6 +477,8 @@ export const upsertNoteSchema = z
     title: z.string().trim().max(120).default(''),
     body: z.string().max(20_000).default(''),
     kind: noteKindSchema.default('text'),
+    bereich: bereichSchema.default(DEFAULT_BEREICH),
+    categoryId: z.string().max(60).nullable().default(null),
     pinned: z.boolean().default(false),
     shared: z.boolean().default(false),
     color: noteColorSchema.default('default'),
@@ -467,3 +488,18 @@ export const upsertNoteSchema = z
   })
 
 export type UpsertNoteInput = z.infer<typeof upsertNoteSchema>
+
+/**
+ * Wonach eine Notizliste gefragt wird.
+ *
+ * Der Bereich steht wie bei den Dokumenten zuerst und hat keinen Ausweg: Eine
+ * Abfrage, die ihn vergisst, zeigt den Haushalt – nie beides zusammen. Die
+ * Kategorie kennt dieselbe Mehrfachauswahl wie dort, samt `unsortiert`.
+ */
+export const noteQuerySchema = z.object({
+  bereich: bereichSchema.default(DEFAULT_BEREICH),
+  q: z.string().trim().max(200).optional(),
+  categoryId: commaSeparatedIds.optional(),
+})
+
+export type NoteQuery = z.infer<typeof noteQuerySchema>

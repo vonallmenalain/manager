@@ -11,7 +11,6 @@ import {
   normalizeForSearch,
   OPEN_STATUSES,
   UNASSIGNED,
-  UNCATEGORIZED,
   updateDocumentSchema,
   type Bereich,
   type DocumentStatus,
@@ -27,7 +26,6 @@ import {
   isNull,
   like,
   lte,
-  or,
   sql,
   type SQL,
 } from 'drizzle-orm'
@@ -35,9 +33,10 @@ import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
 import { ocrWorker } from '../ocr/index.js'
-import { categories, documents, users, type DocumentRow } from '../db/schema.js'
+import { documents, users, type DocumentRow } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
 import { categoryFolderNames } from '../lib/categories.js'
+import { auswahl, categoryCondition, oderNichts } from '../lib/filters.js'
 import { intakeDocument } from '../lib/document-intake.js'
 import {
   countPdfPages,
@@ -76,49 +75,9 @@ import {
 
 const allowedMimeTypes = new Set<string>(ALLOWED_MIME_TYPES)
 
-/**
- * Trennt eine Mehrfachauswahl in echte Kennungen und das „ohne" darin – etwa
- * `unsortiert` bei den Kategorien. Leere Auswahl heisst „kein Filter" und gibt
- * null zurück, nicht eine Bedingung, die nichts durchlässt.
- */
-function auswahl(werte: string[] | undefined, ohneWert: string) {
-  if (!werte || werte.length === 0) return null
-  return {
-    ohne: werte.includes(ohneWert),
-    ids: werte.filter((wert) => wert !== ohneWert),
-  }
-}
-
-/** Verknüpft die Teile eines Filters mit „oder" – fehlende Teile fallen weg. */
-function oderNichts(...teile: (SQL | undefined)[]): SQL {
-  const vorhanden = teile.filter((teil): teil is SQL => teil !== undefined)
-  // Mit einem Teil ist `or` überflüssig, mit keinem gäbe es nichts zu prüfen –
-  // dann steht hier eine Bedingung, die nie zutrifft (die Auswahl war leer).
-  if (vorhanden.length === 1) return vorhanden[0] as SQL
-  return or(...vorhanden) ?? sql`1 = 0`
-}
-
 function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
-
-/**
- * Erweitert eine Kategorienauswahl um die Unterkategorien darin.
- *
- * Wer „Notfall" anhakt, meint alles, was darunter liegt – „Notfall ohne seine
- * Unterschubladen" ist keine Frage, die im Alltag jemand stellt. Umgekehrt
- * bleibt die Auswahl einer einzelnen Unterkategorie genau diese eine.
- */
-async function withSubcategories(ids: readonly string[]): Promise<string[]> {
-  if (ids.length === 0) return []
-  const children = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(inArray(categories.parentId, [...ids]))
-
-  return [...new Set([...ids, ...children.map((child) => child.id)])]
-}
-
 
 const documentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
@@ -260,19 +219,11 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
     }
     if (pending) conditions.push(inArray(documents.status, [...OPEN_STATUSES]))
 
-    const kategorien = auswahl(categoryId, UNCATEGORIZED)
-    if (kategorien) {
-      // Eine Hauptkategorie steht für alles, was darunter liegt – sonst wäre
-      // ein Dokument in „Notfall › Medikamente" beim Filtern auf „Notfall"
-      // nicht dabei, obwohl es genau dort einsortiert wurde.
-      const ids = await withSubcategories(kategorien.ids)
-      conditions.push(
-        oderNichts(
-          kategorien.ohne ? isNull(documents.categoryId) : undefined,
-          ids.length > 0 ? inArray(documents.categoryId, ids) : undefined,
-        ),
-      )
-    }
+    // Eine Hauptkategorie steht für alles, was darunter liegt – sonst wäre ein
+    // Dokument in „Notfall › Medikamente" beim Filtern auf „Notfall" nicht
+    // dabei, obwohl es genau dort einsortiert wurde.
+    const kategorien = await categoryCondition(documents.categoryId, categoryId)
+    if (kategorien) conditions.push(kategorien)
 
     const zustaendig = auswahl(assignedTo, UNASSIGNED)
     if (zustaendig) {

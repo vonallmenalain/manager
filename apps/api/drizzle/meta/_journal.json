@@ -127,6 +127,13 @@
       "when": 1787007756549,
       "tag": "0017_haus_sparten",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1787061335725,
+      "tag": "0018_notizen_in_der_docbase",
+      "breakpoints": true
     }
   ]
 }

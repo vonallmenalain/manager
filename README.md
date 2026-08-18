@@ -53,6 +53,11 @@ Vite-Konfigurationen), haben je ein eigenes Manifest und einen eigenen Service
 Worker und lassen sich deshalb einzeln auf den Startbildschirm legen. Vom
 Manager führt bewusst kein Weg in die DocBase.
 
+In die Sammlung der DocBase kommt man auf drei Wegen: **Dokument scannen**,
+**Datei wählen** und **Notiz erstellen**. Die Notiz ist dieselbe wie im Manager,
+nur mit einer **Kategorie** – sie steht als Kachel zwischen den Dokumenten und
+folgt demselben Filter wie sie.
+
 ## Lokal entwickeln
 
 ```sh
