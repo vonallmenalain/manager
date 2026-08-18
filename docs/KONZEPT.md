@@ -539,6 +539,13 @@ bleiben Titel, Datum, Kategorie und eine Notiz; dazu die Dateigrösse und der er
 Text. Die Suche steht ganz oben statt hinter einem Knopf: Sie ist hier nicht ein Weg zum
 Dokument, sondern der Grund für die ganze Seite.
 
+**„Nichts gefunden" sagt auch hier, was die Kategorie zurückhält** – wie in der
+Dokumentenliste des Haushalts, und hier wiegt es schwerer: Die angehakten Kategorien
+bleiben am Gerät stehen, und wer in einer Sammlung sucht, sucht quer durch alles. „Nicht
+gefunden" hiesse sonst leicht „gibt es nicht", obwohl es nur woanders einsortiert ist.
+Die zurückgehaltenen Treffer stehen unter dem Kasten, in derselben Ansicht wie das
+Ergebnis – Liste oder Kacheln, je nach Einstellung.
+
 **Kategorien fangen bei null an.** Nur „Sonstiges" wird angelegt. Welche Schubladen eine
 Fachsammlung braucht, zeigt sich am ersten Dutzend Dokumente; vorgegebene Kategorien
 wären Rateversuche, an denen man sich beim Einsortieren dann entlanghangelt. Angelegt
