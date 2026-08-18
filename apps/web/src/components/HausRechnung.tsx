@@ -10,18 +10,27 @@ import {
   formatMenge,
   formatPeriod,
   formatRappen,
-  parseAmountToCents,
-  TARIFF_LABELS,
+  readingLabel,
+  tariffName,
   type BillInput,
   type BillKind,
-  type BillSection,
-  type CostGroup,
   type Division,
   type MeterReading,
   type UtilityBill,
 } from '@manager/shared'
 import { useId, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
+import {
+  neueSektion,
+  readAmount,
+  readCount,
+  sectionCents,
+  tariffsOf,
+  toBill,
+  toDraft,
+  type Draft,
+  type SectionDraft,
+} from '../lib/hausFormular'
 import { Button } from './Button'
 
 /**
@@ -37,188 +46,6 @@ import { Button } from './Button'
  * werden gerechnet – aus den Sparten und dem Akontoabzug. Zwei Zahlen, die
  * auseinanderlaufen können, wären eine Fehlerquelle ohne Gegenwert.
  */
-
-interface SectionDraft {
-  division: Division
-  /** Nur bei Sparten ohne Blöcke: der Betrag der Sparte. */
-  amount: string
-  /** Nur beim Strom: die drei Blöcke. */
-  groups: Record<CostGroup, string>
-  /** Menge je Tarif – beim Strom zwei, sonst eine. */
-  quantities: Record<string, string>
-  starts: Record<string, string>
-  ends: Record<string, string>
-  /** Was aus dem PDF kam und unverändert bleibt. */
-  positions: BillSection['positions']
-  meterPoint: string | null
-  meterNumber: string | null
-}
-
-interface Draft {
-  kind: BillKind
-  invoiceNumber: string
-  invoiceDate: string
-  periodStart: string
-  periodEnd: string
-  customerNumber: string
-  akonto: string
-  mwst: string
-  note: string
-  sections: SectionDraft[]
-}
-
-/** Welche Tarife eine Sparte kennt. Wasser hat nur einen Zähler. */
-function tariffsOf(division: Division): Array<MeterReading['tariff']> {
-  if (DIVISION_UNITS[division] === null) return []
-  return division === 'strom' ? ['hoch', 'nieder'] : ['einzel']
-}
-
-/** Rappen als schlichte Eingabe: „1090.15", ohne Tausendertrennung. */
-function toAmountInput(cents: number): string {
-  return cents === 0 ? '' : (cents / 100).toFixed(2)
-}
-
-function readAmount(input: string): number {
-  return parseAmountToCents(input) ?? 0
-}
-
-function readCount(input: string): number | null {
-  const cleaned = input.replace(/['’\s]/g, '')
-  if (!cleaned) return null
-  const value = Number(cleaned)
-  return Number.isFinite(value) && value >= 0 ? Math.round(value) : null
-}
-
-function emptyGroups(): Record<CostGroup, string> {
-  return { energie: '', netznutzung: '', abgaben: '' }
-}
-
-function toSectionDraft(section: BillSection): SectionDraft {
-  const quantities: Record<string, string> = {}
-  const starts: Record<string, string> = {}
-  const ends: Record<string, string> = {}
-
-  for (const tariff of tariffsOf(section.division)) {
-    const reading = section.readings.find((entry) => entry.tariff === tariff)
-    quantities[tariff] = reading ? String(reading.quantity) : ''
-    starts[tariff] = reading?.startValue === null || reading?.startValue === undefined ? '' : String(reading.startValue)
-    ends[tariff] = reading?.endValue === null || reading?.endValue === undefined ? '' : String(reading.endValue)
-  }
-
-  const groups = emptyGroups()
-  for (const entry of section.groups) groups[entry.group] = toAmountInput(entry.amountCents)
-
-  return {
-    division: section.division,
-    amount: toAmountInput(section.amountCents),
-    groups,
-    quantities,
-    starts,
-    ends,
-    positions: section.positions,
-    meterPoint: section.meterPoint,
-    meterNumber: section.meterNumber,
-  }
-}
-
-function neueSektion(division: Division): SectionDraft {
-  const quantities: Record<string, string> = {}
-  const starts: Record<string, string> = {}
-  const ends: Record<string, string> = {}
-  for (const tariff of tariffsOf(division)) {
-    quantities[tariff] = ''
-    starts[tariff] = ''
-    ends[tariff] = ''
-  }
-
-  return {
-    division,
-    amount: '',
-    groups: emptyGroups(),
-    quantities,
-    starts,
-    ends,
-    positions: [],
-    meterPoint: null,
-    meterNumber: null,
-  }
-}
-
-function toDraft(bill: BillInput | null): Draft {
-  return {
-    kind: bill?.kind ?? 'abrechnung',
-    invoiceNumber: bill?.invoiceNumber ?? '',
-    invoiceDate: bill?.invoiceDate ?? '',
-    periodStart: bill?.periodStart ?? '',
-    periodEnd: bill?.periodEnd ?? '',
-    customerNumber: bill?.customerNumber ?? '',
-    akonto: toAmountInput(bill?.prepaidCents ?? 0),
-    mwst: toAmountInput(bill?.vatCents ?? 0),
-    note: bill?.note ?? '',
-    sections: bill?.sections.map(toSectionDraft) ?? [neueSektion('strom')],
-  }
-}
-
-/** Der Betrag einer Sparte: beim Strom die Summe der Blöcke, sonst das Feld. */
-function sectionCents(section: SectionDraft): number {
-  if (section.division === 'strom') {
-    return COST_GROUPS.reduce((sum, group) => sum + readAmount(section.groups[group]), 0)
-  }
-  return readAmount(section.amount)
-}
-
-function toBill(draft: Draft, vorlage: BillInput | null): BillInput {
-  const sections: BillSection[] = draft.sections.map((section) => {
-    const readings: MeterReading[] = []
-    for (const tariff of tariffsOf(section.division)) {
-      const quantity = readCount(section.quantities[tariff] ?? '')
-      if (quantity === null) continue
-      readings.push({
-        tariff,
-        label: TARIFF_LABELS[tariff],
-        unit: DIVISION_UNITS[section.division] ?? '',
-        startValue: readCount(section.starts[tariff] ?? ''),
-        endValue: readCount(section.ends[tariff] ?? ''),
-        quantity,
-      })
-    }
-
-    return {
-      division: section.division,
-      amountCents: sectionCents(section),
-      groups:
-        section.division === 'strom'
-          ? COST_GROUPS.map((group) => ({ group, amountCents: readAmount(section.groups[group]) }))
-          : [],
-      readings,
-      // Die einzelnen Zeilen der Rechnung kommen aus dem PDF und bleiben, wie
-      // sie sind: Sie sind das Abbild des Papiers. Von Hand ändert man die Summen.
-      positions: section.positions,
-      meterPoint: section.meterPoint,
-      meterNumber: section.meterNumber,
-    }
-  })
-
-  const subtotalCents = sections.reduce((sum, section) => sum + section.amountCents, 0)
-  const prepaidCents = readAmount(draft.akonto)
-
-  return {
-    kind: draft.kind,
-    invoiceNumber: draft.invoiceNumber.trim(),
-    invoiceDate: draft.invoiceDate,
-    periodStart: draft.periodStart,
-    periodEnd: draft.periodEnd,
-    customerNumber: draft.customerNumber.trim() || null,
-    sections,
-    subtotalCents,
-    prepaidCents,
-    totalCents: Math.max(0, subtotalCents - prepaidCents),
-    vatCents: readAmount(draft.mwst),
-    documentId: vorlage?.documentId ?? null,
-    sourceFile: vorlage?.sourceFile ?? null,
-    note: draft.note.trim(),
-  }
-}
 
 export function RechnungFormular({
   bill,
@@ -430,6 +257,10 @@ function SektionsFelder({
   const einheit = DIVISION_UNITS[section.division]
   const tarife = tariffsOf(section.division)
   const menge = tarife.reduce((sum, tariff) => sum + (readCount(section.quantities[tariff] ?? '') ?? 0), 0)
+  // Beschriftet wird nach der Rechnung: Wer „Tagtarif" sucht, soll nicht vor
+  // einem Feld namens „Hochtarif" stehen und rätseln, ob es dasselbe ist.
+  const tarifName = (tariff: MeterReading['tariff']): string =>
+    tariffName(section.labels[tariff] ?? '', tariff)
 
   return (
     <fieldset className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
@@ -462,7 +293,7 @@ function SektionsFelder({
             {tarife.map((tariff) => (
               <Feld
                 key={tariff}
-                label={`${tarife.length > 1 ? TARIFF_LABELS[tariff] : 'Verbrauch'} ${einheit}`}
+                label={`${tarife.length > 1 ? tarifName(tariff) : 'Verbrauch'} ${einheit}`}
                 inputMode="numeric"
                 value={section.quantities[tariff] ?? ''}
                 onChange={(value) =>
@@ -483,13 +314,13 @@ function SektionsFelder({
               {tarife.map((tariff) => (
                 <div key={tariff} className="contents">
                   <Feld
-                    label={`${tarife.length > 1 ? TARIFF_LABELS[tariff] : 'Stand'} alt`}
+                    label={`${tarife.length > 1 ? tarifName(tariff) : 'Stand'} alt`}
                     inputMode="numeric"
                     value={section.starts[tariff] ?? ''}
                     onChange={(value) => onChange({ starts: { ...section.starts, [tariff]: value } })}
                   />
                   <Feld
-                    label={`${tarife.length > 1 ? TARIFF_LABELS[tariff] : 'Stand'} neu`}
+                    label={`${tarife.length > 1 ? tarifName(tariff) : 'Stand'} neu`}
                     inputMode="numeric"
                     value={section.ends[tariff] ?? ''}
                     onChange={(value) => onChange({ ends: { ...section.ends, [tariff]: value } })}
@@ -635,7 +466,7 @@ export function RechnungDetail({ bill }: { bill: UtilityBill }) {
             <Tabelle
               kopf={['Tarif', 'Stand alt', 'Stand neu', 'Menge']}
               zeilen={section.readings.map((reading) => [
-                TARIFF_LABELS[reading.tariff],
+                readingLabel(reading),
                 reading.startValue === null ? '–' : formatMenge(reading.startValue),
                 reading.endValue === null ? '–' : formatMenge(reading.endValue),
                 `${formatMenge(reading.quantity)} ${reading.unit}`,

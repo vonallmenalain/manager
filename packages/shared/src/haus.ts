@@ -63,20 +63,31 @@ export const DIVISION_KEYWORDS: Record<Division, readonly string[]> = {
 }
 
 /**
- * Die drei Blöcke, in die der Versorger den Strom teilt.
+ * Die Blöcke, in die der Versorger den Strom teilt.
  *
  * Nur beim Strom: Wasser, Abwasser und Kehricht kennen keine solche
  * Unterteilung, dort ist die Sparte selbst schon der Block. An ihnen lässt
  * sich ablesen, woher eine Verteuerung kommt – steigt der Netzanteil, hilft
  * kein Sparen an der Energie.
+ *
+ * Die Liste ist die einzige Stelle, an der steht, welche Blöcke es gibt:
+ * Formular, Diagramm, Aufteilung und CSV leiten ihre Spalten daraus ab. Der
+ * Versorger hat auf 2026 die „Messung" aus der Netznutzung herausgelöst – ein
+ * vierter Block, der vorher nicht existierte. Wer solche Blöcke an mehreren
+ * Stellen aufzählt, verliert bei jedem neuen einen Teil der Rechnung, ohne
+ * dass es auffällt: Die Summe bleibt plausibel, sie ist nur zu klein.
+ *
+ * Die Reihenfolge ist die der Rechnung – so stehen die Blöcke im Formular,
+ * im Diagramm und in der CSV so untereinander wie auf dem Papier daneben.
  */
-export const COST_GROUPS = ['energie', 'netznutzung', 'abgaben'] as const
+export const COST_GROUPS = ['energie', 'netznutzung', 'abgaben', 'messung'] as const
 export type CostGroup = (typeof COST_GROUPS)[number]
 
 export const COST_GROUP_LABELS: Record<CostGroup, string> = {
   energie: 'Energie',
   netznutzung: 'Netznutzung',
   abgaben: 'Abgaben & Förderbeiträge',
+  messung: 'Messung',
 }
 
 /** Kurzform für enge Stellen – Diagrammlegende, Tabellenkopf. */
@@ -84,6 +95,17 @@ export const COST_GROUP_SHORT: Record<CostGroup, string> = {
   energie: 'Energie',
   netznutzung: 'Netz',
   abgaben: 'Abgaben',
+  messung: 'Messung',
+}
+
+/** Ein Betrag je Block, jeder Block gesetzt – was die Rechnung nicht kennt, steht auf 0. */
+export type CostGroupCents = Record<CostGroup, number>
+
+/** Baut die Blockbeträge aus dem, was auf einer Sparte steht. */
+export function costGroupCents(groups: readonly CostGroupTotal[]): CostGroupCents {
+  const betraege = Object.fromEntries(COST_GROUPS.map((group) => [group, 0])) as CostGroupCents
+  for (const entry of groups) betraege[entry.group] += entry.amountCents
+  return betraege
 }
 
 export const BILL_KINDS = ['abrechnung', 'akonto'] as const
@@ -105,6 +127,35 @@ export const TARIFF_LABELS: Record<Tariff, string> = {
   hoch: 'Hochtarif',
   nieder: 'Niedertarif',
   einzel: 'Verbrauch',
+}
+
+/**
+ * Wie eine Ablesung heissen soll: so wie auf der Rechnung, sonst nach Tarif.
+ *
+ * Der Versorger nennt dieselben zwei Tarife seit 2026 „Tagtarif" und
+ * „Nachttarif" statt „Hochtarif" und „Niedertarif". Ausgewertet werden sie
+ * gleich – angezeigt wird, was auf dem Papier steht, sonst behauptet die App
+ * über den Beleg etwas, das sich dort nicht nachlesen lässt.
+ */
+export function readingLabel(reading: Pick<MeterReading, 'label' | 'tariff'>): string {
+  return reading.label.trim() || TARIFF_LABELS[reading.tariff]
+}
+
+/**
+ * Der Tarifname allein, für enge Stellen wie Formularbeschriftungen.
+ *
+ * „Wirkstrom Tagtarif" → „Tagtarif". Gesucht wird das letzte Wort, das auf
+ * „tarif" endet; findet sich keines, bleibt es beim eigenen Namen. So heisst
+ * das Feld wie die Zeile auf dem Papier, ohne dass die Liste der möglichen
+ * Namen hier ein zweites Mal gepflegt werden müsste.
+ */
+export function tariffName(label: string, tariff: Tariff): string {
+  const wort = label
+    .trim()
+    .split(/\s+/)
+    .filter((teil) => /tarif$/i.test(teil))
+    .at(-1)
+  return wort ? wort.charAt(0).toUpperCase() + wort.slice(1) : TARIFF_LABELS[tariff]
 }
 
 // ------------------------------------------------------------------ Schemas
@@ -323,10 +374,8 @@ export interface DivisionEntry {
 
   /** Kosten dieser Sparte in der Periode. */
   costCents: number
-  /** Nur beim Strom: die drei Blöcke. */
-  energyCents: number | null
-  gridCents: number | null
-  leviesCents: number | null
+  /** Nur beim Strom: die Blöcke, je Block ein Betrag. null bei den übrigen Sparten. */
+  groupCents: CostGroupCents | null
 
   /**
    * Der Preis, um den es geht: Kosten je Einheit, in Hundertstelrappen.
@@ -346,11 +395,6 @@ export function computeDivisionEntry(bill: UtilityBill, section: BillSection): D
   const { high, low, total } = sectionQuantity(section)
   const costCents = section.amountCents
 
-  const gruppe = (group: CostGroup): number | null => {
-    if (section.division !== 'strom') return null
-    return section.groups.find((entry) => entry.group === group)?.amountCents ?? 0
-  }
-
   return {
     id: `${bill.id}:${section.division}`,
     bill,
@@ -362,9 +406,7 @@ export function computeDivisionEntry(bill: UtilityBill, section: BillSection): D
     highQuantity: high,
     lowQuantity: low,
     costCents,
-    energyCents: gruppe('energie'),
-    gridCents: gruppe('netznutzung'),
-    leviesCents: gruppe('abgaben'),
+    groupCents: section.division === 'strom' ? costGroupCents(section.groups) : null,
     pricePerUnitHundredths: total && total > 0 ? Math.round((costCents * 100) / total) : null,
     quantityPerDay: total !== null && days > 0 ? total / days : null,
     costPerDayCents: days > 0 ? Math.round(costCents / days) : 0,
@@ -405,13 +447,30 @@ function sectionQuantity(section: BillSection): {
 
   // Ersatzweise aus den Positionen: Nur Zeilen in der Einheit der Sparte
   // zählen – der Regenabwasser-Ansatz je Quadratmeter ist kein Verbrauch.
+  //
+  // Und nur die Zeilen eines einzigen Blocks. Dieselben Kilowattstunden
+  // stehen beim Strom in jedem Block noch einmal: Der Netzzuschlag rechnet
+  // mit ihnen wie die Energielieferung, und die gesetzlichen Abgaben bringen
+  // sie gleich fünfmal mit. Über alle Blöcke summiert kommt ein Vielfaches
+  // des Verbrauchs heraus – 5'220 kWh werden so zu 36'540. Gezählt wird
+  // deshalb der Block, der die gelieferte Menge ausweist, und sonst keiner.
   const unit = DIVISION_UNITS[section.division]
-  for (const position of section.positions) {
-    if (position.unit !== unit) continue
+  const passend = section.positions.filter((position) => position.unit === unit)
+  const block =
+    COST_GROUPS.find((group) => passend.some((position) => position.group === group)) ?? null
+  const zaehlbar = block === null
+    ? passend.filter((position) => position.group === null)
+    : passend.filter((position) => position.group === block)
+
+  for (const position of zaehlbar) {
     const label = position.label.toLowerCase()
-    if (label.includes('hochtarif')) high = (high ?? 0) + Math.round(position.quantity)
-    else if (label.includes('niedertarif')) low = (low ?? 0) + Math.round(position.quantity)
-    else einzel = (einzel ?? 0) + Math.round(position.quantity)
+    if (label.includes('hochtarif') || label.includes('tagtarif')) {
+      high = (high ?? 0) + Math.round(position.quantity)
+    } else if (label.includes('niedertarif') || label.includes('nachttarif')) {
+      low = (low ?? 0) + Math.round(position.quantity)
+    } else {
+      einzel = (einzel ?? 0) + Math.round(position.quantity)
+    }
   }
 
   if (high === null && low === null && einzel === null) return { high: null, low: null, total: null }
@@ -529,10 +588,8 @@ export interface PeriodSummary {
   pricePerUnitHundredths: number | null
   quantityPerDay: number | null
 
-  /** Nur wenn ausschliesslich Strom einbezogen ist. */
-  energyCents: number | null
-  gridCents: number | null
-  leviesCents: number | null
+  /** Nur wenn ausschliesslich Strom einbezogen ist: die Blöcke, je Block ein Betrag. */
+  groupCents: CostGroupCents | null
 }
 
 export const EMPTY_SUMMARY: PeriodSummary = {
@@ -549,9 +606,7 @@ export const EMPTY_SUMMARY: PeriodSummary = {
   lowQuantity: null,
   pricePerUnitHundredths: null,
   quantityPerDay: null,
-  energyCents: null,
-  gridCents: null,
-  leviesCents: null,
+  groupCents: null,
 }
 
 /**
@@ -578,9 +633,7 @@ export function summarize(entries: readonly DivisionEntry[]): PeriodSummary {
   let high: number | null = null
   let low: number | null = null
   let menge: number | null = null
-  let energyCents: number | null = nurStrom ? 0 : null
-  let gridCents: number | null = nurStrom ? 0 : null
-  let leviesCents: number | null = nurStrom ? 0 : null
+  const groupCents: CostGroupCents | null = nurStrom ? costGroupCents([]) : null
 
   let von = Number.POSITIVE_INFINITY
   let bis = Number.NEGATIVE_INFINITY
@@ -603,10 +656,8 @@ export function summarize(entries: readonly DivisionEntry[]): PeriodSummary {
       if (entry.highQuantity !== null) high = (high ?? 0) + entry.highQuantity
       if (entry.lowQuantity !== null) low = (low ?? 0) + entry.lowQuantity
     }
-    if (nurStrom) {
-      energyCents = (energyCents ?? 0) + (entry.energyCents ?? 0)
-      gridCents = (gridCents ?? 0) + (entry.gridCents ?? 0)
-      leviesCents = (leviesCents ?? 0) + (entry.leviesCents ?? 0)
+    if (groupCents && entry.groupCents) {
+      for (const group of COST_GROUPS) groupCents[group] += entry.groupCents[group]
     }
 
     const start = Date.parse(`${entry.bill.periodStart}T00:00:00Z`)
@@ -640,9 +691,7 @@ export function summarize(entries: readonly DivisionEntry[]): PeriodSummary {
     pricePerUnitHundredths:
       menge && menge > 0 ? Math.round((totalCostCents * 100) / menge) : null,
     quantityPerDay: menge !== null && days > 0 ? menge / days : null,
-    energyCents,
-    gridCents,
-    leviesCents,
+    groupCents,
   }
 }
 
