@@ -38,6 +38,7 @@ import { ocrWorker } from '../ocr/index.js'
 import { categories, documents, users, type DocumentRow } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
 import { categoryFolderNames } from '../lib/categories.js'
+import { intakeDocument } from '../lib/document-intake.js'
 import {
   countPdfPages,
   PREVIEW_MAX_PAGES,
@@ -118,45 +119,6 @@ async function withSubcategories(ids: readonly string[]): Promise<string[]> {
   return [...new Set([...ids, ...children.map((child) => child.id)])]
 }
 
-/**
- * Prüft die Angaben aus dem Formular gegen die Datenbank.
- *
- * Eine Kennung, hinter der keine Kategorie und keine Person steht, wird still
- * verworfen: Das Dokument liegt dann unsortiert beziehungsweise bei beiden – im
- * Normalfall die Folge einer veralteten Kategorienliste im Browser, und dafür
- * ist ein abgewiesener Upload die falsche Antwort. Beim Fremdschlüssel der
- * Datenbank wäre er eine abgebrochene Anfrage mitten im Ablegen.
- */
-async function verifyUploadMetadata(wanted: UploadMetadata): Promise<{
-  categoryId: string | null
-  categoryName: string | null
-  parentCategoryName: string | null
-  assignedTo: string | null
-  status: DocumentStatus
-}> {
-  const { categoryName, parentCategoryName } = await categoryFolderNames(
-    wanted.bereich,
-    wanted.categoryId,
-  )
-
-  let assignedTo: string | null = null
-  if (wanted.assignedTo) {
-    const rows = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, wanted.assignedTo))
-      .limit(1)
-    assignedTo = rows[0]?.id ?? null
-  }
-
-  return {
-    categoryId: categoryName === null ? null : wanted.categoryId,
-    categoryName,
-    parentCategoryName,
-    assignedTo,
-    status: wanted.status,
-  }
-}
 
 const documentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
@@ -243,49 +205,20 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Kommt kein Titel mit, bleibt es beim Dateinamen.
     const title = titleFromFields(upload.fields) ?? titleFromFilename(upload.filename)
-    const metadata = await verifyUploadMetadata(gewuenscht)
-    const docDate = today()
-    // Der Kategoriename gehört von Anfang an in den Pfad: Wer die Kategorie
-    // schon im Stapel festlegt, soll die Datei nicht erst unter „Unsortiert"
-    // ablegen und beim ersten Bearbeiten dorthin verschieben lassen.
-    const storagePath = buildStoragePath({
-      docDate,
-      categoryName: metadata.categoryName,
-      parentCategoryName: metadata.parentCategoryName,
-      title,
+
+    const row = await intakeDocument({
+      bereich,
       documentId,
-      extension: extensionFor(upload.mimetype, upload.filename),
+      stored,
+      mimeType: upload.mimetype,
+      filename: upload.filename,
+      title,
+      docDate: today(),
+      categoryId: gewuenscht.categoryId,
+      assignedTo: gewuenscht.assignedTo,
+      status: gewuenscht.status,
+      userId: user.id,
     })
-
-    await commitUpload(bereich, stored.tempPath, storagePath)
-
-    const inserted = await db
-      .insert(documents)
-      .values({
-        id: documentId,
-        title,
-        storagePath,
-        mimeType: upload.mimetype,
-        sizeBytes: stored.sizeBytes,
-        sha256: stored.sha256,
-        uploadedBy: user.id,
-        bereich,
-        docDate,
-        categoryId: metadata.categoryId,
-        assignedTo: metadata.assignedTo,
-        status: metadata.status,
-        searchText: buildSearchText({ title }),
-      })
-      .returning()
-
-    const row = inserted[0]
-    if (!row) throw new Error('Dokument konnte nicht gespeichert werden')
-
-    await logActivity(documentId, user.id, 'upload', `„${title}" hochgeladen`)
-
-    // Sofort wecken statt bis zum nächsten Durchlauf zu warten: Ein Dokument
-    // soll durchsuchbar sein, bevor man es überhaupt fertig kategorisiert hat.
-    ocrWorker?.notify()
 
     request.log.info({ documentId, sizeBytes: stored.sizeBytes }, 'Dokument hochgeladen')
     return reply.status(201).send({ document: toApiDocument(row) })

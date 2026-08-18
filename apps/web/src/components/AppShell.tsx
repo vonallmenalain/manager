@@ -11,7 +11,7 @@ const TABS = [
   { to: '/einkauf', label: 'Einkauf', Icon: CartIcon, end: false },
   { to: '/notizen', label: 'Notizen', Icon: NoteIcon, end: false },
   { to: '/finanzen', label: 'Finanzen', Icon: CoinIcon, end: false },
-  { to: '/strom', label: 'Strom', Icon: BoltIcon, end: false },
+  { to: '/haus', label: 'Haus', Icon: BoltIcon, end: false },
 ] as const
 
 export function AppShell({ user }: { user: PublicUser }) {

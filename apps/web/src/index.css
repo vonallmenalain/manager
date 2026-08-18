@@ -22,41 +22,57 @@
 }
 
 /*
- * Farben der Diagramme im Bereich Strom.
+ * Farben der Diagramme im Bereich Haus.
  *
- * Getrennt von der Markenfarbe und bewusst nicht „irgendwie passend" gewählt:
+ * Zwei Gruppen, die nie im selben Balken übereinanderliegen: die vier Sparten
+ * (Strom, Wasser, Abwasser, Kehricht) und – wenn nur der Strom gewählt ist –
+ * seine drei Blöcke. Deshalb dürfen sich zwei Farbtöne zwischen den Gruppen
+ * wiederholen, ohne dass etwas verwechselbar wird.
+ *
  * Die Reihenfolge ist auf Farbfehlsichtigkeit geprüft (Abstand ΔE ≥ 8 im
- * OKLab-Raum für jedes Paar, das im selben Balken übereinanderliegt), und für
- * den dunklen Hintergrund stehen eigene Stufen statt einer automatischen
+ * OKLab-Raum für jedes Paar, das im selben Balken benachbart ist), und für den
+ * dunklen Hintergrund stehen eigene Stufen statt einer automatischen
  * Aufhellung. Wer hier eine Farbe austauscht, prüft das bitte nach.
  *
- * Der Ø-Preis ist die einzige Linie in ihrem Feld und trägt deshalb kein
- * eigenes Kennfarbe, sondern die Markenfarbe: Es gibt nichts, wovon sie sich
+ * Der Ø Preis ist die einzige Linie in seinem Feld und trägt deshalb keine
+ * eigene Kennfarbe, sondern die Markenfarbe: Es gibt nichts, wovon er sich
  * unterscheiden müsste.
  */
 :root {
-  --strom-flaeche: #ffffff;
-  --strom-hochtarif: #2a78d6;
-  --strom-niedertarif: #1baf7a;
-  --strom-energie: #eb6834;
-  --strom-netznutzung: #4a3aa7;
-  --strom-abgaben: #e87ba4;
-  --strom-preis: #1e3a5f;
-  --strom-gitter: #e2e8f0;
-  --strom-achse: #94a3b8;
+  --haus-flaeche: #ffffff;
+
+  --haus-strom: #2a78d6;
+  --haus-wasser: #1baf7a;
+  --haus-abwasser: #4a3aa7;
+  --haus-kehricht: #eb6834;
+
+  --haus-hochtarif: #2a78d6;
+  --haus-niedertarif: #1baf7a;
+  --haus-energie: #eb6834;
+  --haus-netznutzung: #4a3aa7;
+  --haus-abgaben: #e87ba4;
+
+  --haus-preis: #1e3a5f;
+  --haus-gitter: #e2e8f0;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --strom-flaeche: #0f172a;
-    --strom-hochtarif: #3987e5;
-    --strom-niedertarif: #199e70;
-    --strom-energie: #d95926;
-    --strom-netznutzung: #9085e9;
-    --strom-abgaben: #d55181;
-    --strom-preis: #8ab0d6;
-    --strom-gitter: #1e293b;
-    --strom-achse: #475569;
+    --haus-flaeche: #0f172a;
+
+    --haus-strom: #3987e5;
+    --haus-wasser: #199e70;
+    --haus-abwasser: #9085e9;
+    --haus-kehricht: #d95926;
+
+    --haus-hochtarif: #3987e5;
+    --haus-niedertarif: #199e70;
+    --haus-energie: #d95926;
+    --haus-netznutzung: #9085e9;
+    --haus-abgaben: #d55181;
+
+    --haus-preis: #8ab0d6;
+    --haus-gitter: #1e293b;
   }
 }
 
