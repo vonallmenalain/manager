@@ -55,10 +55,20 @@
 
 # Die Wurzel gehört keiner App mehr und führt zum Manager – wer die Adresse
 # ohne Zusatz eintippt, landet dort, wo er vorher landete.
+#
+# force: Auch dann umleiten, wenn im Ausgabeordner eine Datei auf `/` liegt.
+# Ohne das zieht Netlify die Datei der Weiterleitung vor – und genau daran
+# hing die App seit dem Umzug fest: Im Ausgabeordner lag noch ein `index.html`
+# aus der Zeit vor dem Umzug, das jeden Aufruf von `manager.alae.app` mit der
+# alten App beantwortete, während die installierte PWA über ihre Startadresse
+# `/app/` längst die neue bekam. Der Ausgabeordner wird inzwischen vor jedem
+# Build geleert (siehe apps/web/scripts/dist-leeren.mjs); dieser Riegel hier
+# sorgt dafür, dass eine verirrte Datei auf `/` die Adresse nie wieder kapert.
 [[redirects]]
   from = "/"
   to = "/app/"
   status = 301
+  force = true
 
 # Alles Übrige stammt aus der Zeit, als der Manager auf `/` lag: alte
 # Lesezeichen, alte Verknüpfungen, der Startpunkt einer alten Installation.

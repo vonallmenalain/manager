@@ -1176,6 +1176,17 @@ Kein eingehender Zugriff auf das NAS nötig, kein manueller Schritt.
 **Frontend:** Netlify baut bei jedem Push automatisch und veröffentlicht auf
 `manager.alae.app`.
 
+Zwei Fallen stecken darin, beide einmal erlebt. Erstens hält Netlify die Arbeitskopie
+zwischen zwei Builds; `dist/` ist nicht versioniert, und Vite räumt nur seine eigenen
+Ausgabeordner `dist/app` und `dist/docbase` auf. Alles, was daneben liegt, wandert
+ungefragt in jeden weiteren Deploy – nach dem Umzug von `/` nach `/app/` war das eine
+vollständige alte App. Zweitens zieht Netlify eine vorhandene Datei jeder Weiterleitung
+vor. Beides zusammen ergab einen Zustand, der wie ein Cache-Problem aussah, aber keines
+war: `manager.alae.app` lieferte die alte Fassung aus, während die installierte PWA über
+ihre Startadresse `/app/` die neue bekam – derselbe Deploy, zwei Fassungen. Seither
+leert der Build `dist/` zu Beginn (`apps/web/scripts/dist-leeren.mjs`), und die
+Weiterleitung auf `/` steht auf `force`.
+
 **Ergebnis:** Ich sage "das ist umgesetzt", und fünf Minuten später läuft es bei dir –
 ohne dass du dich am QNAP anmelden musst.
 
