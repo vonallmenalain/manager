@@ -4,6 +4,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { ConnectionBanner } from './ConnectionBanner'
 import { BoltIcon, CartIcon, CoinIcon, DocumentIcon, HomeIcon, NoteIcon } from './icons'
 import { ProfileMenu } from './ProfileMenu'
+import { UpdateBanner } from './UpdateBanner'
 
 const TABS = [
   { to: '/', label: 'Start', Icon: HomeIcon, end: true },
@@ -62,6 +63,8 @@ export function AppShell({ user }: { user: PublicUser }) {
           ))}
         </ul>
       </nav>
+
+      <UpdateBanner />
     </div>
   )
 }

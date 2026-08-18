@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 
 import { buildSearchText, type Bereich } from '@manager/shared'
-import { and, asc, eq, isNull, lt, or } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -9,6 +9,7 @@ import { documents, type DocumentRow } from '../db/schema.js'
 import { env } from '../env.js'
 import { resolveInStorage, textSidecarPath } from '../lib/storage.js'
 import { extractText, resolveLanguages, tidyText } from './extract.js'
+import { MAX_PRIVATE_USE_SHARE, privateUseShare } from './text-quality.js'
 
 /** Nach drei erfolglosen Anläufen bringt ein vierter erfahrungsgemäss nichts. */
 const MAX_ATTEMPTS = 3
@@ -33,6 +34,8 @@ export class OcrWorker {
   }
 
   async start(): Promise<void> {
+    await this.#repariereUnlesbaren()
+
     try {
       this.#languages = await resolveLanguages(env.OCR_LANGUAGES)
       this.#log.info({ languages: this.#languages }, 'Texterkennung bereit')
@@ -47,6 +50,42 @@ export class OcrWorker {
     }
 
     void this.#loop()
+  }
+
+  /**
+   * Schickt Dokumente erneut durch die Erkennung, deren Text unlesbar ist.
+   *
+   * Eine Zeit lang hat `pdftotext` bei Rechnungen mit eigenwilligen Schriften
+   * Zeichen aus dem privaten Unicode-Bereich geliefert, und die galten als
+   * gelesen. Diese Dokumente sind über ihren Inhalt nicht auffindbar, und von
+   * selbst würde sich das nie ändern: Ihr Zustand steht auf „fertig".
+   *
+   * Läuft bei jedem Start und ist danach ein Leerlauf – ein Dokument, das
+   * einmal richtig gelesen wurde, fällt hier nie wieder auf.
+   */
+  async #repariereUnlesbaren(): Promise<void> {
+    // Die ersten paar hundert Zeichen genügen für das Urteil; den ganzen Text
+    // aller Dokumente in den Speicher zu holen wäre Aufwand ohne Gewinn.
+    const kandidaten = await db
+      .select({ id: documents.id, probe: sql<string>`substr(${documents.ocrText}, 1, 400)` })
+      .from(documents)
+      .where(and(eq(documents.ocrStatus, 'done'), isNotNull(documents.ocrText)))
+
+    const betroffen = kandidaten
+      .filter((zeile) => zeile.probe && privateUseShare(zeile.probe) > MAX_PRIVATE_USE_SHARE)
+      .map((zeile) => zeile.id)
+
+    if (betroffen.length === 0) return
+
+    await db
+      .update(documents)
+      .set({ ocrStatus: 'pending', ocrText: null, ocrMethod: null, ocrError: null, ocrAttempts: 0 })
+      .where(inArray(documents.id, betroffen))
+
+    this.#log.info(
+      { anzahl: betroffen.length },
+      'Dokumente mit unlesbarem Text werden erneut gelesen',
+    )
   }
 
   /** Nach einem Upload aufrufen, damit nicht bis zum nächsten Durchlauf gewartet wird. */

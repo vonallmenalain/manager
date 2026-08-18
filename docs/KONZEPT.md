@@ -988,11 +988,13 @@ Beträgen, die einzelnen Positionen und die Zählerstände.
 
 ```mermaid
 flowchart LR
-    A["Upload"] --> B{"PDF mit<br/>Textebene?"}
+    A["Upload"] --> B{"Textebene<br/>lesbar?"}
     B -->|ja| C["pdftotext<br/>≈0.2 s"]
-    B -->|nein| D["pdftoppm + Tesseract<br/>deu+fra+eng"]
+    B -->|unlesbar| E["eigener PDF-Leser<br/>≈0.05 s"]
+    B -->|keine| D["pdftoppm + Tesseract<br/>deu+fra+eng"]
     D --> E[".txt neben dem Original"]
     C --> F["search_text<br/>vereinheitlicht"]
+    E --> F
     E --> F
     F --> G["Suche über Titel,<br/>Absender, Notiz, Inhalt"]
 ```
@@ -1012,6 +1014,29 @@ flowchart LR
 
 Fehlgeschlagene Jobs werden dreimal mit wachsendem Abstand wiederholt und danach im
 Dokument sichtbar markiert ("Texterkennung fehlgeschlagen – erneut versuchen").
+
+---
+
+**„Lesbar" heisst mehr als „vorhanden".** Eine Textebene gilt erst dann als
+brauchbar, wenn sie lang genug **und** lesbar ist. Beides allein täuscht: Ein paar
+Zeichen Kopfzeile machen kein Dokument auffindbar, und zweitausend Zeichen aus dem
+privaten Unicode-Bereich sind lang genug und trotzdem wertlos. Genau das liefert
+`pdftotext` bei den Rechnungen der Energie- und Wasserversorgung – deren Schriften
+bilden ihre Zeichen auf U+E000 aufwärts ab.
+
+Für diesen Fall gibt es den zweiten Weg: den eigenen PDF-Leser aus dem Bereich Haus
+(`lib/pdf-text.ts`). Er wertet das Encoding der Schrift aus und kommt damit an den
+Text heran, den `pdftotext` nur als Kästchen ausgibt. Für ein echtes, nie
+fotografiertes PDF ist das die richtige Reihenfolge: Er liefert den Text
+buchstabengetreu und in Sekundenbruchteilen, während die Rasterung ihn nur nachbildet
+– und die Rasterung bleibt für das, wofür sie gedacht ist, nämlich eingescanntes
+Papier.
+
+**Was einmal falsch gelesen wurde, wird nachgeholt.** Beim Start sucht der Worker
+Dokumente, deren erkannter Text aus dem privaten Bereich stammt, und schickt sie
+erneut durch die Erkennung. Von selbst würde sich das nie ändern: Ihr Zustand steht
+auf „fertig". Danach ist der Schritt ein Leerlauf – ein Dokument, das einmal richtig
+gelesen wurde, fällt nie wieder auf.
 
 ---
 
@@ -1040,6 +1065,39 @@ Eine echte Warteschlange (lokale Änderungen zwischenspeichern und bei Verbindun
 nachschicken) ist bewusst auf **Etappe 6** verschoben. Sie bringt Konfliktfälle mit sich
 – zwei Personen ändern dieselbe Zeile, beide offline –, die eine eigene Runde verdienen,
 statt nebenbei mitgebaut zu werden.
+
+**Die App sagt Bescheid, wenn sie sich erneuern kann.** Eine installierte PWA lädt
+ihr Programm aus dem Zwischenspeicher des Service Workers. Kommt ein Deploy, merkt die
+offene App davon nichts – sie läuft mit dem Programm weiter, das beim Start geladen
+wurde. Auch ein Neuladen im Browser half nicht zuverlässig, weil die Seite selbst aus
+demselben Zwischenspeicher kam. Übrig blieb: App vollständig schliessen und neu
+öffnen.
+
+Ursache war eine Einstellung, die das Gegenteil ihres Namens tat. `registerType:
+'autoUpdate'` klingt nach „aktualisiert sich selbst"; das eingebaute Anmeldeskript
+meldet den Worker aber bloss an – es fragt nie nach einer neuen Fassung und lädt die
+Seite nie neu. Der neue Worker übernahm im Hintergrund, das laufende Programm blieb
+das alte.
+
+Jetzt gilt `registerType: 'prompt'`, und die App macht beides selbst
+(`lib/appUpdate.ts`):
+
+* **Aktiv nachfragen.** Von sich aus prüft der Browser nur bei einer Navigation, ob es
+  einen neuen Worker gibt – eine App, die tagelang offen bleibt, erführe es nie.
+  Gefragt wird deshalb alle dreissig Minuten und immer dann, wenn die App wieder in
+  den Vordergrund kommt.
+* **Fragen statt tauschen.** Liegt eine neue Fassung bereit, wartet sie, und unten
+  erscheint ein Hinweis mit einem Knopf. Ein Austausch mitten im Ausfüllen eines
+  Formulars wäre die schlechtere Überraschung.
+
+Das Neuladen nach dem Tippen macht die App selbst, statt es dem Anmeldeskript zu
+überlassen: Dessen eingebaute Fassung hängt an einem Merkmal von workbox, das nur
+gesetzt ist, wenn die Seite beim Anmelden schon von einem Worker bedient wurde. Beim
+allerersten Besuch trifft das nicht zu – der Knopf hätte dort nichts getan.
+`controllerchange` dagegen sagt genau das, worauf es ankommt: Der neue Worker hat
+übernommen.
+
+---
 
 ### 8.2 Das Teilen-Thema – ehrlich betrachtet
 
@@ -1223,6 +1281,8 @@ nichts davon hält den täglichen Gebrauch auf.
 | Berechnungsbasis | **Kein Schalter, keine drei Modi** | „brutto" und „netto" sind dieselbe Rechnung mit einer anderen Zahl im Feld; wie viel Steuern abgezogen werden, entscheidet die Zahlung |
 | Verrechenbare Steuern | **Ein Zehntel des Steuerbetrags** | Steuern mindern das Einkommen, nicht die Zahlung – von CHF 15 000 sind es CHF 1 500 |
 | Zahlung erfassen | **Monate abhaken, Beträge rechnen lassen** | Der Zehnte steht im Einkommen; ein Eingabefeld dafür wäre nur eine Gelegenheit, sich zu vertippen |
+| App-Aktualisierung | **Hinweis mit Knopf statt stillem Tausch** | 'autoUpdate' meldete den Worker nur an; die offene App lief bis zum vollständigen Schliessen mit dem alten Programm weiter |
+| Textebene prüfen | **Lang genug *und* lesbar** | Zweitausend Zeichen aus dem privaten Unicode-Bereich sehen nach Text aus und sind keiner |
 | Jahresexport | **CSV, kein eigenes PDF** | Das Handy druckt jede Ansicht als PDF; eine eigene Erzeugung wäre Aufwand ohne Gewinn |
 | Rechnungen lesen | **Eigener PDF-Leser statt `pdftotext`** | Die Schriften dieser Rechnungen bilden auf den privaten Unicode-Bereich ab; das fertige Werkzeug liefert dafür 2000 Zeichen Buchstabensalat |
 | Sparten und Beleg | **Rechnung als Zeile, Sparte als Auswertungseinheit** | Eine Wasserrechnung trägt drei Sparten, aber nur einen Akontoabzug – je Sparte aufgeteilt bräuchte es einen erfundenen Verteilschlüssel |

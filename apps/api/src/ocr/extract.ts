@@ -1,19 +1,13 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
-const run = promisify(execFile)
+import { extractPdfText } from '../lib/pdf-text.js'
+import { isUsableTextLayer } from './text-quality.js'
 
-/**
- * Ab wie vielen Zeichen eine vorhandene Textebene als brauchbar gilt.
- *
- * Gescannte PDFs enthalten oft ein paar Zeichen Kopfzeile oder Metadaten,
- * ohne dass der Inhalt lesbar wäre. Zu niedrig angesetzt, würde die
- * Texterkennung übersprungen und das Dokument bliebe unauffindbar.
- */
-const MIN_TEXT_LAYER_CHARS = 120
+const run = promisify(execFile)
 
 /** Mehr Seiten braucht kein Haushaltsdokument – und begrenzt die Laufzeit. */
 const MAX_PAGES = 25
@@ -71,31 +65,6 @@ export async function resolveLanguages(requested: string): Promise<string> {
   )
 }
 
-/**
- * Wie viel einer Textebene aus dem privaten Unicode-Bereich stammen darf,
- * bevor sie als unbrauchbar gilt.
- *
- * Manche Rechnungen – die der Energie- und Wasserversorgung etwa – betten
- * Schriften ein, die ihre Zeichen auf U+E000 aufwärts abbilden. `pdftotext`
- * gibt das brav so aus: seitenweise Zeichen, die kein Mensch und keine Suche
- * lesen kann. Ohne diese Prüfung sähe das nach „genug Text" aus, die
- * Texterkennung liefe nie an, und im Suchindex stünde Buchstabensalat.
- */
-const MAX_PRIVATE_USE_SHARE = 0.2
-
-/** Zeichen aus dem privaten Bereich – dort steht nie echter Text. */
-export function privateUseShare(text: string): number {
-  let privat = 0
-  let gesamt = 0
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0
-    if (code <= 32) continue
-    gesamt += 1
-    if (code >= 0xe000 && code <= 0xf8ff) privat += 1
-  }
-  return gesamt === 0 ? 0 : privat / gesamt
-}
-
 /** Liest eine bereits vorhandene Textebene aus einem PDF. */
 async function readTextLayer(file: string): Promise<string> {
   const { stdout } = await run(
@@ -151,8 +120,10 @@ async function recognizePdfPages(file: string, languages: string): Promise<Extra
  * Der Reihe nach:
  *   1. PDF mit Textebene → pdftotext, praktisch ohne Rechenaufwand. Das trifft
  *      auf die Mehrheit der Dokumente aus E-Mails zu.
- *   2. PDF ohne Textebene → Seiten rastern, dann Tesseract je Seite.
- *   3. Bild → direkt Tesseract.
+ *   2. PDF, dessen Textebene pdftotext nicht deuten kann → der eigene Leser,
+ *      der das Encoding der Schrift auswertet. Immer noch ohne Rasterung.
+ *   3. PDF ohne Textebene (eingescannt) → Seiten rastern, dann Tesseract.
+ *   4. Bild → direkt Tesseract.
  */
 export async function extractText(
   absolutePath: string,
@@ -164,17 +135,27 @@ export async function extractText(
     try {
       layer = await readTextLayer(absolutePath)
     } catch (error) {
-      // Ein beschädigtes PDF soll nicht hier enden – der Weg über die
-      // Rasterung kommt manchmal trotzdem noch zu einem Ergebnis.
+      // Ein beschädigtes PDF soll nicht hier enden – die Wege darunter kommen
+      // manchmal trotzdem noch zu einem Ergebnis.
       layer = ''
       void error
     }
 
-    if (
-      layer.trim().length >= MIN_TEXT_LAYER_CHARS &&
-      privateUseShare(layer) <= MAX_PRIVATE_USE_SHARE
-    ) {
-      return { text: layer, method: 'textebene' }
+    if (isUsableTextLayer(layer)) return { text: layer, method: 'textebene' }
+
+    // Zweiter Anlauf mit dem eigenen Leser.
+    //
+    // Er kennt das Encoding der Schrift (`/Differences`) und kommt damit an
+    // Text heran, den pdftotext nur als Zeichen aus dem privaten Bereich
+    // ausgibt – genau der Fall bei den Rechnungen des Energieversorgers. Für
+    // ein echtes, nie fotografiertes PDF ist das der richtige Weg: Er liefert
+    // den Text buchstabengetreu, während die Rasterung ihn nur nachbildet.
+    try {
+      const eigener = extractPdfText(await readFile(absolutePath))
+      if (isUsableTextLayer(eigener)) return { text: eigener, method: 'textebene' }
+    } catch (error) {
+      // Kein PDF, das sich zerlegen lässt – dann eben rastern.
+      void error
     }
 
     return recognizePdfPages(absolutePath, languages)
