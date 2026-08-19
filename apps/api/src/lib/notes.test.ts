@@ -182,6 +182,24 @@ describe('Eine Notiz gehört in genau eine App', () => {
   it('verlangt weiterhin Titel oder Text', () => {
     assert.equal(upsertNoteSchema.safeParse({ bereich: 'docbase' }).success, false)
   })
+
+  it('macht jede Notiz der DocBase geteilt', () => {
+    // In der Sammlung gibt es kein „nur für mich": Wer sie öffnen darf, sieht
+    // alles darin. Eine ältere App – oder ein Aufruf von Hand – schickt
+    // trotzdem `shared: false`; entschieden wird es hier und nicht dort.
+    const notiz = upsertNoteSchema.parse({
+      title: 'Betablocker',
+      body: 'Nie abrupt absetzen.',
+      bereich: 'docbase',
+      shared: false,
+    })
+    assert.equal(notiz.shared, true)
+  })
+
+  it('lässt die Notiz des Haushalts privat, solange sie es sein will', () => {
+    const notiz = upsertNoteSchema.parse({ title: 'Einkauf', body: 'Milch' })
+    assert.equal(notiz.shared, false)
+  })
 })
 
 describe('Wonach eine Notizliste gefragt wird', () => {

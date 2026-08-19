@@ -56,7 +56,8 @@ Manager führt bewusst kein Weg in die DocBase.
 In die Sammlung der DocBase kommt man auf drei Wegen: **Dokument scannen**,
 **Datei wählen** und **Notiz erstellen**. Die Notiz ist dieselbe wie im Manager,
 nur mit einer **Kategorie** – sie steht als Kachel zwischen den Dokumenten und
-folgt demselben Filter wie sie.
+folgt demselben Filter wie sie. Ein „nur für mich" gibt es in der Sammlung
+nicht: Wer sie öffnen darf, sieht alles darin.
 
 ## Lokal entwickeln
 

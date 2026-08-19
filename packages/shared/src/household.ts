@@ -458,9 +458,12 @@ export const noteSchema = z.object({
   categoryId: z.string().nullable(),
   pinned: z.boolean(),
   /**
-   * false heisst „nur für mich". Eine Notiz ist zunächst privat und wird
-   * bewusst freigegeben – umgekehrt hätte man Geteiltes, das nie jemand
-   * teilen wollte.
+   * false heisst „nur für mich". Im Haushalt ist eine Notiz zunächst privat
+   * und wird bewusst freigegeben – umgekehrt hätte man Geteiltes, das nie
+   * jemand teilen wollte.
+   *
+   * In der DocBase steht hier immer true: Die Sammlung gehört allen, die sie
+   * öffnen dürfen (siehe `upsertNoteSchema`).
    */
   shared: z.boolean(),
   color: noteColorSchema,
@@ -486,6 +489,16 @@ export const upsertNoteSchema = z
   .refine((note) => note.title.trim() !== '' || note.body.trim() !== '', {
     message: 'Titel oder Text ausfüllen',
   })
+  /**
+   * Eine Notiz der DocBase ist immer geteilt.
+   *
+   * Die Sammlung ist eine gemeinsame: Wer sie öffnen darf, sieht alles darin,
+   * und eine Notiz zu einer Studie, die neben der Studie liegt und trotzdem
+   * nur einem gehört, beantwortet niemandes Frage. Die Regel steht hier und
+   * nicht nur im Fenster der App: Was der Server annimmt, entscheidet, wer
+   * eine Notiz später sieht – nicht, welche Knöpfe gerade angezeigt werden.
+   */
+  .transform((note) => ({ ...note, shared: note.bereich === 'docbase' ? true : note.shared }))
 
 export type UpsertNoteInput = z.infer<typeof upsertNoteSchema>
 
