@@ -221,7 +221,9 @@ erDiagram
   Eintrag und Gedächtnis zeigen mit `section_id` darauf: Eine umbenannte Abteilung
   bleibt dieselbe, samt allem, was darin liegt
 * `notes` – Notizen mit Art (Text oder Checkliste), Sichtbarkeit (`shared`), Farbe,
-  Anheftung und eigener Suchspalte
+  Anheftung und eigener Suchspalte. Die Sichtbarkeit ist nur im Haushalt eine Wahl: In
+  der DocBase steht `shared` immer auf `true` – die Sammlung gehört allen, die sie öffnen
+  dürfen (siehe 6.1a)
 * `notes.bereich` / `notes.category_id` – wie bei den Dokumenten: `manager` oder
   `docbase`, und in der DocBase dazu die Schublade. Dieselbe Spalte, dieselbe Wirkung –
   eine Notiz des Haushalts taucht nie in der Sammlung auf und umgekehrt. Die Kategorie
@@ -588,11 +590,27 @@ ein eigener Gedanke dazu. Ein Schnappschuss ist keins von beidem; die Kinderzeic
 das Zeugnis an der Wand, für die es den Kameraweg gibt, gehören in den Haushalt.
 
 **Die Notiz der Sammlung** ist dieselbe wie im Manager – Autospeichern, Farbe, Anheften,
-geteilt oder privat, anklickbare Verweise –, mit zwei Unterschieden. Sie hat **eine
-Kategorie**, und das ist der eigentliche Punkt: Was man sich zu einer Studie notiert,
-gehört in dieselbe Schublade wie die Studie und taucht unter demselben Häkchen wieder
-auf. Und sie ist immer Fliesstext: Eine Liste zum Abhaken beantwortet in einer Sammlung,
-die man nachschlägt, keine Frage.
+anklickbare Verweise –, mit drei Unterschieden. Sie hat **eine Kategorie**, und das ist
+der eigentliche Punkt: Was man sich zu einer Studie notiert, gehört in dieselbe Schublade
+wie die Studie und taucht unter demselben Häkchen wieder auf. Und sie ist immer
+Fliesstext: Eine Liste zum Abhaken beantwortet in einer Sammlung, die man nachschlägt,
+keine Frage.
+
+**Und sie ist immer für alle da.** Den Schalter „nur für mich / geteilt" gibt es hier
+nicht: Die Sammlung ist eine gemeinsame, und eine Notiz, die neben der Studie liegt und
+trotzdem nur einem gehört, beantwortet niemandes Frage – gesucht wird sie von dem, der
+die Studie aufschlägt. Entschieden wird das nicht im Fenster, sondern beim Annehmen
+(`upsertNoteSchema` setzt `shared` für den Bereich `docbase` auf `true`): Was der Server
+speichert, entscheidet, wer eine Notiz später sieht, und nicht, welche Knöpfe die App
+gerade anzeigt. Die Notizen, die vor dieser Entscheidung entstanden sind, holt eine
+Migration nach – privat abgelegt wären sie für alle ausser ihrem Verfasser unsichtbar,
+und freigeben kann man nur, was man sieht.
+
+**Kein „Titel oder Text ausfüllen" mehr.** Der Satz stand oben links, solange beide
+Felder leer waren – also genau in dem Moment, in dem man eine Notiz anfängt und ohnehin
+gerade zu tippen beginnt. Er mahnte etwas an, das niemand vergessen hatte, an der Stelle,
+an der sonst „Gespeichert" steht. Die Regel dahinter bleibt: Angelegt wird eine Notiz
+erst mit Inhalt, und wer das Fenster leer wieder schliesst, hinterlässt keine.
 
 Notiz und Dokument stehen **in einer Liste**, nicht in zwei nebeneinander – als Kachel
 wie als Zeile, mit derselben Suche und demselben Kategorienfilter darüber. Zwei Listen
@@ -709,8 +727,9 @@ tun", und die steht dann oben statt zwischen Durchgestrichenem. Sortiert wird de
 gespeicherte Inhalt selbst, nicht nur die Anzeige – so sieht die Liste auf jedem Gerät
 gleich aus und die Vorschau in der Übersicht zeigt dieselben offenen Punkte.
 
-**Nur für mich oder geteilt.** Jede Notiz gehört zunächst dem, der sie anlegt, und wird
-über einen Schalter im Fenster bewusst freigegeben. Umgekehrt herum wäre es die falsche
+**Nur für mich oder geteilt.** Im Haushalt gehört jede Notiz zunächst dem, der sie
+anlegt, und wird über einen Schalter im Fenster bewusst freigegeben – in der DocBase
+gibt es diesen Schalter nicht, dort ist jede Notiz für alle da (siehe 6.1a). Umgekehrt herum wäre es die falsche
 Voreinstellung: Ein Freigeben lässt sich zurücknehmen, ein Gelesenwerden nicht. Geteilte
 Notizen sind für beide da – wer sie sieht, darf sie auch ändern und löschen, wie bei den
 Dokumenten. Die Prüfung steht serverseitig in jeder Abfrage, auch beim Ändern und
@@ -1371,6 +1390,7 @@ nichts davon hält den täglichen Gebrauch auf.
 | Preis je Einheit | **Aus dem Total der Sparte, nicht aus dem Rechnungsbetrag** | Der Akontoabzug ist eine Vorauszahlung und kein Preis |
 | Akontorechnungen | **Neben der Verbrauchsauswertung, nicht darin** | Sie sind Vorauszahlungen auf denselben Strom und verdoppelten jede Summe |
 | Diagramme | **Mehrere Felder mit gemeinsamer Zeitachse, nie zwei Achsen** | kWh, m³, Franken und Preise je Einheit auf einer Skala erfinden einen Zusammenhang, den die Zahlen nicht hergeben |
+| Sichtbarkeit in der DocBase | **Kein Schalter – jede Notiz gehört allen** | Die Sammlung ist eine gemeinsame; eine Notiz neben einer Studie, die der andere nicht sieht, beantwortet niemandes Frage |
 
 ## 14. Noch offen
 

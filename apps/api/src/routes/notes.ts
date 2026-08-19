@@ -42,6 +42,10 @@ function toApi(row: NoteRow): Note {
  * Steht bewusst in jeder Abfrage, auch beim Ändern und Löschen. Sonst liesse
  * sich eine fremde Notiz über ihre Kennung erreichen, ohne dass sie je in
  * einer Liste aufgetaucht wäre.
+ *
+ * Eine Notiz der DocBase kommt immer geteilt an (`upsertNoteSchema`) und fällt
+ * damit schon über `shared` an jeden, der die Sammlung öffnen darf – dort gibt
+ * es kein „nur für mich", das hier noch einen eigenen Zweig bräuchte.
  */
 function visibleTo(userId: string): SQL {
   const condition = or(eq(notes.createdBy, userId), eq(notes.shared, true))

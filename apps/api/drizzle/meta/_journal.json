@@ -134,6 +134,13 @@
       "when": 1787061335725,
       "tag": "0018_notizen_in_der_docbase",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1787123249111,
+      "tag": "0019_docbase_notizen_immer_geteilt",
+      "breakpoints": true
     }
   ]
 }
