@@ -10,7 +10,6 @@ import type {
   DocumentDetail,
   DocumentStatus,
   Donation,
-  FinanceSettings,
   Health,
   ImportResult,
   IncomeEntry,
@@ -20,9 +19,12 @@ import type {
   PreviewInfo,
   PublicUser,
   SaveMonthInput,
+  SaveTaxesInput,
   SetupInput,
   ShoppingItem,
   ShoppingSection,
+  TaxEntry,
+  TaxYearFigures,
   UpdateCategoryInput,
   UpdateDocumentInput,
   UpdateShoppingItemInput,
@@ -334,10 +336,10 @@ export const api = {
 
   getFinanceYear: (year: number) => request<FinanceYear>(`/api/finanzen/${year}`),
 
-  saveFinanceSettings: (year: number, settings: FinanceSettings) =>
-    request<FinanceYear>(`/api/finanzen/${year}/einstellungen`, {
+  saveTaxes: (year: number, input: SaveTaxesInput) =>
+    request<FinanceYear>(`/api/finanzen/${year}/steuern`, {
       method: 'PUT',
-      body: JSON.stringify(settings),
+      body: JSON.stringify(input),
     }),
 
   saveFinanceMonth: (year: number, month: number, input: SaveMonthInput) =>
@@ -409,8 +411,11 @@ export interface HausBills {
 
 export interface FinanceYear {
   year: number
-  settings: FinanceSettings
   entries: IncomeEntry[]
   donations: Donation[]
+  /** Die Steuern dieses Jahres, etwa Bundessteuer und Staatssteuer. */
+  taxEntries: TaxEntry[]
+  /** Alle Steuerjahre mit dem, was darin noch offen ist – das älteste zuerst. */
+  taxYears: TaxYearFigures[]
   figures: YearFigures
 }

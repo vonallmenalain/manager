@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -371,22 +372,33 @@ export const notes = sqliteTable(
 export type NoteRow = typeof notes.$inferSelect
 
 /**
- * Einstellungen pro Jahr: Steuerbetrag, Zehnten-Satz und der Stand der
- * Abrechnung. Eine Zeile je Jahr, angelegt beim ersten Zugriff.
+ * Die Steuern je Steuerjahr – eine Zeile je Betrag, etwa Bundessteuer und
+ * Staats- und Gemeindesteuer. Verrechenbar ist ein Zehntel ihrer Summe; wann,
+ * entscheidet sich bei jeder Zahlung.
+ *
+ * Löst `finance_years` ab, das genau einen Steuerbetrag je Jahr kannte.
  */
-export const financeYears = sqliteTable('finance_years', {
-  year: integer('year').primaryKey(),
-  /**
-   * Steuerbetrag für das ganze Jahr, in Rappen. Das Einzige, was zu einem
-   * Jahr eingestellt wird – wie viel davon abgezogen wird, entscheidet sich
-   * bei jeder Zahlung, und der Satz ist immer ein Zehntel.
-   */
-  taxCents: integer('tax_cents').notNull().default(0),
-  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
-  updatedAt: text('updated_at').notNull().default(now),
-})
+export const taxEntries = sqliteTable(
+  'tax_entries',
+  {
+    id: text('id').primaryKey(),
+    /** Das Steuerjahr, für das der Betrag geschuldet ist. */
+    year: integer('year').notNull(),
+    /** z. B. „Bundessteuer". Leer, wenn der Betrag keinen Namen braucht. */
+    label: text('label').notNull().default(''),
+    amountCents: integer('amount_cents').notNull(),
+    /**
+     * Die Reihenfolge im Fenster. Gespeichert wird das Jahr in einem Zug –
+     * alle Zeilen tragen denselben Zeitstempel, der deshalb keine Ordnung hält.
+     */
+    position: integer('position').notNull().default(0),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (table) => [index('tax_entries_year_idx').on(table.year)],
+)
 
-export type FinanceYearRow = typeof financeYears.$inferSelect
+export type TaxEntryRow = typeof taxEntries.$inferSelect
 
 /**
  * Einnahmen, eine Zeile je Person und Monat – plus optional weitere Zeilen
@@ -434,7 +446,10 @@ export const donations = sqliteTable(
      * Monat gesucht, sondern immer die ganze Zahlung geladen.
      */
     coversMonths: text('covers_months').notNull().default(''),
-    /** Nur beim Zehnten: wie viel Steuerguthaben diese Zahlung verrechnet. */
+    /**
+     * Nur beim Zehnten: wie viel Steuerguthaben diese Zahlung verrechnet. Aus
+     * welchen Steuerjahren es stammt, steht in `donation_tax_credits`.
+     */
     taxAppliedCents: integer('tax_applied_cents').notNull().default(0),
     createdBy: text('created_by')
       .notNull()
@@ -445,6 +460,31 @@ export const donations = sqliteTable(
 )
 
 export type DonationRow = typeof donations.$inferSelect
+
+/**
+ * Aus welchem Steuerjahr das Guthaben stammt, das eine Zahlung verrechnet –
+ * eine Zeile je Zahlung und Steuerjahr. Die Summe steht zusätzlich in
+ * `donations.tax_applied_cents`; beides entsteht im selben Zug und ändert
+ * sich danach nicht mehr.
+ *
+ * Anders als die Monate in `covers_months` eine eigene Tabelle: Hier wird
+ * über alle Zahlungen aller Jahre zusammengezählt, was aus einem Steuerjahr
+ * schon verrechnet ist. Eine gelöschte Zahlung nimmt ihre Zeilen mit und gibt
+ * das Guthaben damit wieder frei.
+ */
+export const donationTaxCredits = sqliteTable(
+  'donation_tax_credits',
+  {
+    donationId: text('donation_id')
+      .notNull()
+      .references(() => donations.id, { onDelete: 'cascade' }),
+    taxYear: integer('tax_year').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.donationId, table.taxYear] })],
+)
+
+export type DonationTaxCreditRow = typeof donationTaxCredits.$inferSelect
 
 /**
  * Rechnungen der Energie- und Wasserversorgung – je Zeile eine Rechnung.

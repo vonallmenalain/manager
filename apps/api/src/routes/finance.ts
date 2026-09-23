@@ -2,20 +2,21 @@ import { randomUUID } from 'node:crypto'
 
 import {
   computePayment,
+  computeTaxYears,
   computeYear,
   createPaymentSchema,
-  DEFAULT_FINANCE_SETTINGS,
   DONATION_LABELS,
-  financeSettingsSchema,
   formatAmount,
   monthListLabel,
   monthName,
   normalizeMonths,
   saveMonthSchema,
+  saveTaxesSchema,
   sumDonations,
   type Donation,
-  type FinanceSettings,
   type IncomeEntry,
+  type TaxCredit,
+  type TaxEntry,
 } from '@manager/shared'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
@@ -24,13 +25,15 @@ import { z } from 'zod'
 import { db } from '../db/index.js'
 import {
   donations,
-  financeYears,
+  donationTaxCredits,
   incomeEntries,
+  taxEntries,
   type DonationRow,
-  type FinanceYearRow,
   type IncomeEntryRow,
+  type TaxEntryRow,
 } from '../db/schema.js'
 import { notFound, unauthorized, validationError } from '../lib/errors.js'
+import { legacySettingsSchema, legacyTaxEntries, taxYearsOfPayment } from '../lib/finance-compat.js'
 
 /** Nur Jahre, die ein Haushalt realistisch erfasst. */
 const yearParamSchema = z.object({
@@ -40,10 +43,6 @@ const yearParamSchema = z.object({
 const monthParamSchema = yearParamSchema.extend({
   month: z.coerce.number().int().min(1).max(12),
 })
-
-function toSettings(row: FinanceYearRow): FinanceSettings {
-  return { taxCents: row.taxCents }
-}
 
 function toIncome(row: IncomeEntryRow): IncomeEntry {
   return {
@@ -56,7 +55,11 @@ function toIncome(row: IncomeEntryRow): IncomeEntry {
   }
 }
 
-function toDonation(row: DonationRow): Donation {
+function toTaxEntry(row: TaxEntryRow): TaxEntry {
+  return { id: row.id, year: row.year, label: row.label, amountCents: row.amountCents }
+}
+
+function toDonation(row: DonationRow, taxCredits: TaxCredit[]): Donation {
   return {
     id: row.id,
     year: row.year,
@@ -65,6 +68,7 @@ function toDonation(row: DonationRow): Donation {
     paidOn: row.paidOn,
     coversMonths: parseMonths(row.coversMonths),
     taxAppliedCents: row.taxAppliedCents,
+    taxCredits,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
   }
@@ -75,23 +79,8 @@ function parseMonths(raw: string): number[] {
   return normalizeMonths(raw.split(',').map((part) => Number(part.trim())))
 }
 
-/**
- * Liefert die Einstellungen des Jahres und legt sie beim ersten Zugriff mit
- * den Standardwerten an – so muss niemand ein Jahr "eröffnen", bevor er die
- * erste Zahl eintippen kann.
- */
-async function loadSettings(year: number): Promise<FinanceSettings> {
-  const rows = await db.select().from(financeYears).where(eq(financeYears.year, year)).limit(1)
-  const row = rows[0]
-  if (row) return toSettings(row)
-
-  await db.insert(financeYears).values({ year }).onConflictDoNothing()
-  return { ...DEFAULT_FINANCE_SETTINGS }
-}
-
 async function loadYear(year: number) {
-  const [settings, entryRows, donationRows] = await Promise.all([
-    loadSettings(year),
+  const [entryRows, donationRows, taxRows, creditRows] = await Promise.all([
     db
       .select()
       .from(incomeEntries)
@@ -102,17 +91,67 @@ async function loadYear(year: number) {
       .from(donations)
       .where(eq(donations.year, year))
       .orderBy(desc(donations.paidOn), desc(donations.createdAt)),
+    // Die Steuern und Verrechnungen aller Jahre, nicht nur dieses einen: Eine
+    // Zahlung darf verrechnen, was in einem anderen Jahr an Steuern anfiel,
+    // und muss dafür sehen, was dort noch offen ist. Es sind eine Handvoll
+    // Zeilen je Jahr.
+    db.select().from(taxEntries).orderBy(asc(taxEntries.year), asc(taxEntries.position)),
+    db.select().from(donationTaxCredits).orderBy(asc(donationTaxCredits.taxYear)),
   ])
 
+  const creditsOf = (donationId: string): TaxCredit[] =>
+    creditRows
+      .filter((credit) => credit.donationId === donationId)
+      .map((credit) => ({ taxYear: credit.taxYear, amountCents: credit.amountCents }))
+
   const entries = entryRows.map(toIncome)
-  const paid = donationRows.map(toDonation)
+  const paid = donationRows.map((row) => toDonation(row, creditsOf(row.id)))
+  const taxYears = computeTaxYears(taxRows, creditRows)
+  const tax = taxYears.find((candidate) => candidate.year === year)
+
   return {
     year,
-    settings,
     entries,
     donations: paid,
-    figures: computeYear(entries, paid, settings),
+    /** Die Steuern dieses Jahres, in ihrer Reihenfolge – für das Fenster „Steuern". */
+    taxEntries: taxRows.filter((row) => row.year === year).map(toTaxEntry),
+    /** Alle Steuerjahre mit dem, was dort offen ist – für die Zahlung. */
+    taxYears,
+    figures: computeYear(entries, paid, tax),
+    // Für Apps von vor den Steuerjahren, siehe finance-compat.ts.
+    settings: { taxCents: tax?.taxCents ?? 0 },
   }
+}
+
+/**
+ * Ersetzt die Steuern eines Jahres. In einer Transaktion: Ein Jahr, dem
+ * zwischen Löschen und Schreiben die Steuern abhandenkämen, gäbe jeder
+ * späteren Zahlung ein falsches Guthaben.
+ */
+function replaceTaxEntries(
+  year: number,
+  entries: readonly { label: string; amountCents: number }[],
+  userId: string,
+): void {
+  // better-sqlite3 arbeitet synchron; siehe die Monatsroute weiter unten.
+  db.transaction((tx) => {
+    tx.delete(taxEntries).where(eq(taxEntries.year, year)).run()
+
+    if (entries.length > 0) {
+      tx.insert(taxEntries)
+        .values(
+          entries.map((entry, position) => ({
+            id: randomUUID(),
+            year,
+            label: entry.label,
+            amountCents: entry.amountCents,
+            position,
+            updatedBy: userId,
+          })),
+        )
+        .run()
+    }
+  })
 }
 
 const financeRoutes: FastifyPluginAsync = async (fastify) => {
@@ -125,6 +164,26 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.send(await loadYear(params.data.year))
   })
 
+  /**
+   * Die Steuern eines Jahres, als Ganzes gespeichert: Was nicht mitkommt, ist
+   * gelöscht. Was davon schon verrechnet ist, bleibt verrechnet – die
+   * Zahlungen sind geschehen, auch wenn ein Betrag nachträglich sinkt.
+   */
+  fastify.put('/api/finanzen/:year/steuern', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const params = yearParamSchema.safeParse(request.params)
+    if (!params.success) return reply.status(400).send(validationError(params.error))
+
+    const parsed = saveTaxesSchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
+
+    replaceTaxEntries(params.data.year, parsed.data.entries, user.id)
+    return reply.send(await loadYear(params.data.year))
+  })
+
+  /** Hier speichert eine alte App ihren einen Steuerbetrag, siehe finance-compat.ts. */
   fastify.put('/api/finanzen/:year/einstellungen', async (request, reply) => {
     const user = request.user
     if (!user) return reply.status(401).send(unauthorized())
@@ -132,18 +191,27 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     const params = yearParamSchema.safeParse(request.params)
     if (!params.success) return reply.status(400).send(validationError(params.error))
 
-    const parsed = financeSettingsSchema.safeParse(request.body)
+    const parsed = legacySettingsSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    await db
-      .insert(financeYears)
-      .values({ year: params.data.year, ...parsed.data, updatedBy: user.id })
-      .onConflictDoUpdate({
-        target: financeYears.year,
-        set: { ...parsed.data, updatedBy: user.id, updatedAt: new Date().toISOString() },
-      })
+    const { year } = params.data
+    const existing = await db
+      .select()
+      .from(taxEntries)
+      .where(eq(taxEntries.year, year))
+      .orderBy(asc(taxEntries.position))
 
-    return reply.send(await loadYear(params.data.year))
+    const next = legacyTaxEntries(existing, parsed.data.taxCents)
+    if (next === 'mehrdeutig') {
+      request.log.warn(
+        { year, taxCents: parsed.data.taxCents },
+        'Alte App wollte Steuern aus mehreren Beträgen als eine Summe speichern – nicht übernommen',
+      )
+    } else if (next !== 'unverändert') {
+      replaceTaxEntries(year, next, user.id)
+    }
+
+    return reply.send(await loadYear(year))
   })
 
   /**
@@ -188,20 +256,18 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
       }
     })
 
-    // Das Jahr wird angelegt, falls es das noch nicht gibt – sonst stünde
-    // gleich danach ein Monat ohne Einstellungen da.
-    await loadSettings(year)
     return reply.send(await loadYear(year))
   })
 
   /**
    * Eine Zahlung: die abgehakten Monate, das Fastopfer je Monat und das
-   * verrechnete Steuerguthaben.
+   * verrechnete Steuerguthaben samt den Steuerjahren, aus denen es stammt.
    *
    * Der Zehnte kommt nicht aus dem Formular, sondern aus dem erfassten
    * Einkommen dieser Monate – gerechnet mit derselben Funktion wie die
    * Vorschau im Fenster. Ein Betrag, den der Server selbst kennt, soll nicht
-   * über das Netz gereicht werden können.
+   * über das Netz gereicht werden können. Dasselbe gilt für das Guthaben: Was
+   * in einem Steuerjahr noch offen ist, weiss der Server.
    */
   fastify.post('/api/finanzen/:year/zahlungen', async (request, reply) => {
     const user = request.user
@@ -215,7 +281,11 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
 
     const { year } = params.data
     const stand = await loadYear(year)
-    const rechnung = computePayment(stand.entries, parsed.data, stand.figures.taxCreditOpenCents)
+    const rechnung = computePayment(
+      stand.entries,
+      { ...parsed.data, taxYears: taxYearsOfPayment(parsed.data.taxYears, year) },
+      stand.taxYears,
+    )
 
     const gemeinsam = {
       year,
@@ -224,21 +294,34 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
       createdBy: user.id,
     }
 
-    // Beide Zeilen entstehen in einer Transaktion: Eine halbe Zahlung wäre
+    // Alle Zeilen entstehen in einer Transaktion: Eine halbe Zahlung wäre
     // schlimmer als keine.
     db.transaction((tx) => {
       // Der Zehnte wird immer festgehalten, auch mit 0 – er ist es, der die
       // abgehakten Monate abrechnet, und ein Monat ohne Lohn will genauso
       // abgehakt werden wie einer mit.
+      const zehntenId = randomUUID()
       tx.insert(donations)
         .values({
           ...gemeinsam,
-          id: randomUUID(),
+          id: zehntenId,
           kind: 'zehnten',
           amountCents: rechnung.netTithingCents,
           taxAppliedCents: rechnung.taxAppliedCents,
         })
         .run()
+
+      if (rechnung.taxCredits.length > 0) {
+        tx.insert(donationTaxCredits)
+          .values(
+            rechnung.taxCredits.map((credit) => ({
+              donationId: zehntenId,
+              taxYear: credit.taxYear,
+              amountCents: credit.amountCents,
+            })),
+          )
+          .run()
+      }
 
       if (rechnung.fastOfferingCents > 0) {
         tx.insert(donations)
@@ -271,7 +354,9 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     if (deleted.length === 0) return reply.status(404).send(notFound('Zahlung nicht gefunden.'))
 
     // Abrechnungsstand und verrechnete Steuern folgen den Zahlungen: Mit der
-    // gelöschten Zeile verschwindet auch, was sie abgedeckt hat.
+    // gelöschten Zeile verschwindet auch, was sie abgedeckt hat – ihre
+    // Verrechnungen gehen per Fremdschlüssel mit, und das Guthaben steht in
+    // seinem Steuerjahr wieder offen.
     return reply.send(await loadYear(params.data.year))
   })
 
@@ -283,7 +368,9 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
     const params = yearParamSchema.safeParse(request.params)
     if (!params.success) return reply.status(400).send(validationError(params.error))
 
-    const { year, figures, settings, donations: paid } = await loadYear(params.data.year)
+    const { year, figures, taxEntries: steuern, donations: paid } = await loadYear(
+      params.data.year,
+    )
 
     const rows = [
       ['Monat', 'Einkommen', 'Zehnter (10 %)'],
@@ -297,21 +384,28 @@ const financeRoutes: FastifyPluginAsync = async (fastify) => {
       [],
       ['Einkommen', formatAmount(figures.totalIncomeCents)],
       ['Zehnter geschuldet', formatAmount(figures.owedTithingCents)],
-      ['Steuern ganzes Jahr', formatAmount(settings.taxCents)],
-      ['Davon verrechenbar (10 %)', formatAmount(figures.taxCreditTotalCents)],
       ['Steuern verrechnet', formatAmount(figures.taxCreditAppliedCents)],
       ['Zehnter bezahlt', formatAmount(figures.paidTithingCents)],
       ['Noch offen', formatAmount(figures.openTithingCents)],
       ['Abgerechnete Monate', monthListLabel(figures.settledMonths) || '–'],
       [],
+      // Die Steuern dieses Jahres mit ihren Beträgen – verrechnet werden sie
+      // womöglich erst mit den Zahlungen eines späteren Jahres.
+      [`Steuern ${year}`, 'Betrag'],
+      ...steuern.map((entry) => [entry.label || 'Steuern', formatAmount(entry.amountCents)]),
+      ['Total', formatAmount(figures.taxTotalCents)],
+      ['Davon verrechenbar (10 %)', formatAmount(figures.taxCreditTotalCents)],
+      ['Davon noch nicht verrechnet', formatAmount(figures.taxCreditOpenCents)],
+      [],
       // Die Belege gehören in dieselbe Datei – sonst muss man fürs
       // Jahresgespräch zwei Sachen zusammensuchen.
-      ['Zahlungen', 'Datum', 'Betrag', 'Steuern verrechnet', 'Rechnet ab für'],
+      ['Zahlungen', 'Datum', 'Betrag', 'Steuern verrechnet', 'Aus Steuerjahr', 'Rechnet ab für'],
       ...paid.map((donation) => [
         DONATION_LABELS[donation.kind],
         donation.paidOn,
         formatAmount(donation.amountCents),
         donation.taxAppliedCents > 0 ? formatAmount(donation.taxAppliedCents) : '',
+        donation.taxCredits.map((credit) => credit.taxYear).join(', '),
         monthListLabel(donation.coversMonths),
       ]),
       [],

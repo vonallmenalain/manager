@@ -230,11 +230,18 @@ erDiagram
   fragt nur die DocBase ab; dort steht die Notiz zwischen den Dokumenten und muss deshalb
   demselben Filter folgen wie sie, samt Unterkategorien. Eine Kategorie aus dem anderen
   Bereich wird beim Speichern verworfen: Sie wäre über keinen Filter mehr erreichbar
-* `finance_years` – Steuerbetrag je Jahr. Mehr wird zu einem Jahr nicht eingestellt
+* `tax_entries` – die Steuern je Steuerjahr, eine Zeile je Betrag mit Bezeichnung
+  („Bundessteuer", „Staats- und Gemeindesteuer") und Reihenfolge. Verrechenbar ist ein
+  Zehntel ihrer Summe. Löst `finance_years` ab, das genau einen Betrag je Jahr kannte
 * `income_entries` – Einnahmen je Person und Monat, plus benannte Zusatzeinnahmen
 * `donations` – Zehnten, Fastopfer und weitere Spenden mit Datum, den abgerechneten
   Monaten (`covers_months`, z. B. `3,4,5`) und – beim Zehnten – dem damit verrechneten
   Steuerguthaben
+* `donation_tax_credits` – aus welchem Steuerjahr das verrechnete Guthaben einer Zahlung
+  stammt, eine Zeile je Zahlung und Steuerjahr. Anders als die Monate eine eigene Tabelle:
+  Hier wird über alle Zahlungen aller Jahre zusammengezählt, was aus einem Steuerjahr schon
+  verrechnet ist. Eine gelöschte Zahlung nimmt ihre Zeilen mit (`cascade`) und gibt das
+  Guthaben damit wieder frei
 * `utility_bills` – eine Zeile je Rechnung der Energie- und Wasserversorgung: Art
   (`abrechnung` oder `akonto`), Nummer, Datum, Periode, Zwischentotal, Akontoabzug,
   Rechnungsbetrag und MWST. Die **Sparten** liegen als JSON in einer Spalte: je Eintrag
@@ -829,9 +836,28 @@ Die Beträge werden so gelesen, wie man sie in der Schweiz schreibt: `8'450.00`,
 mit typografischem Apostroph, `8450,50` mit Komma. Gespeichert wird in Rappen, damit
 keine Gleitkommazahl je einen Rappen verliert.
 
-**Steuern:** Zum Jahr wird genau eine Zahl hinterlegt – der Steuerbetrag. Der Satz steht
-nicht mehr zur Wahl (ein Zehntel ist ein Zehntel), und einen Abrechnungsstand von Hand
-gibt es auch nicht mehr; er folgt den Zahlungen.
+**Steuern:** Zu einem Jahr gehören so viele Steuerbeträge, wie es Rechnungen gibt – jeder
+mit einer Bezeichnung, etwa „Bundessteuer" und „Staats- und Gemeindesteuer". Verrechnet
+wird ein Zehntel ihrer Summe. Der Satz steht nicht mehr zur Wahl (ein Zehntel ist ein
+Zehntel), und einen Abrechnungsstand von Hand gibt es auch nicht mehr; er folgt den
+Zahlungen.
+
+```
+Steuern 2025                              Gespeichert
+  Bundessteuer                   CHF  2'000.00
+  Staats- und Gemeindesteuer     CHF 13'000.00
+  + weiterer Betrag
+
+  Steuern 2025                      15'000.00
+  Verrechenbar (10 %)                1'500.00
+  davon schon verrechnet             1'100.00
+```
+
+**Das Guthaben gehört dem Steuerjahr, nicht dem Jahr der Zahlung.** Die Steuern eines
+Jahres stehen meist erst im nächsten fest; die Steuern 2025 werden deshalb oft mit einer
+Zahlung von 2026 verrechnet. Was eine Zahlung verrechnet, merkt sie sich je Steuerjahr
+(`donation_tax_credits`) – so fehlt es danach genau dort und nirgends sonst, und das
+Fenster der Zahlung kann jedes Jahr zeigen, das noch etwas offen hat.
 
 Das Konzept sah ursprünglich drei Berechnungsbasen vor (`brutto`, `brutto_minus_steuern`,
 `netto`). Alle drei laufen auf dasselbe hinaus: Ob man das Bruttoeinkommen ohne Abzug
@@ -866,12 +892,13 @@ Einkommen (alle erfassten Monate)   CHF 16 000.00
 
 Der Monatswert in der Liste ist damit schlicht ein Zehntel des Monatseinkommens. Was das
 Steuerguthaben davon abzieht, steht in der Kachel zuoberst, zusammen mit dem Stand: wie
-viel verrechenbar ist, wie viel schon verrechnet wurde und wie viel noch offen.
+viel verrechenbar ist, wie viel schon verrechnet wurde und wie viel noch offen – für das
+Steuerjahr gleicher Zahl und, wo noch etwas offen ist, für die anderen Jahre.
 
 **Abrechnungsstand:** In `donations` werden geleistete Zahlungen erfasst (Datum, Betrag,
 Art: Zehnten / Fastopfer / andere Spende, dazu die abgerechneten Monate und – beim
-Zehnten – das verrechnete Steuerguthaben). Abgerechnet ist, was eine Zahlung abgehakt
-hat. Eine gelöschte Zahlung gibt ihre Monate wieder frei, und es gibt keine zweite
+Zehnten – das verrechnete Steuerguthaben samt den Steuerjahren, aus denen es stammt).
+Abgerechnet ist, was eine Zahlung abgehakt hat. Eine gelöschte Zahlung gibt ihre Monate wieder frei, und es gibt keine zweite
 Stelle, an der von Hand nachzuführen wäre.
 
 Das Dashboard zeigt daraus dauerhaft:
@@ -892,20 +919,31 @@ Monate abrechnen        [x] Januar   5 000.00   500.00
                         [x] April    5 000.00   500.00
 Fastopfer pro Monat     CHF     50.00
 Steuern verrechnen      CHF  1 500.00
+                        [x] Steuern 2025                       1 500.00
+                            Bundessteuer, Staats- und Gemeindesteuer · 10 % von 15 000.00
+                        [ ] Steuern 2026                         300.00
 Bezahlt am              01.05.2026
 
   Zu bezahlen                        CHF  700.00
   Zehnter (4 Monate)                    2 000.00
-  - Steuern verrechnet                  1 500.00
+  - Steuern 2025 verrechnet             1 500.00
   Fastopfer (4 Monate × 50.00)            200.00
 ```
+
+Unter dem Feld „Steuern verrechnen" stehen die Steuerjahre, in denen noch etwas offen ist,
+mit dem offenen Betrag. **Ein Häkchen verrechnet das Jahr ganz:** Ins Feld kommt, was die
+angehakten Jahre zusammen noch offen haben. Wer weniger verrechnen will, ändert danach den
+Betrag – er kommt dann weiter aus den angehakten Jahren. **Ohne Häkchen** kommt ein Betrag
+von Hand aus dem ältesten offenen Jahr zuerst; unter der Liste steht, aus welchem. Ein
+angehaktes Jahr, das inzwischen aufgebraucht ist, verrechnet nichts – die Zahlung weicht
+nicht still auf ein anderes Jahr aus.
 
 Gespeichert werden zwei Zeilen, weil die Kirche Zehnten und Fastopfer getrennt ausweist.
 Die Zeile für den Zehnten entsteht immer – auch über 0. Sie ist es, die die Monate
 abrechnet, und ein Monat ohne Lohn will genauso abgehakt werden wie einer mit.
 
 Was sich nicht verrechnen lässt, wird gedeckelt statt abgewiesen: höchstens das
-verbleibende Guthaben und höchstens der Zehnte dieser Zahlung. Der Rest bleibt stehen
+verbleibende Guthaben (der angehakten Jahre) und höchstens der Zehnte dieser Zahlung. Der Rest bleibt stehen
 und wartet auf die nächste – ein Beleg über einen negativen Betrag wäre keine Zahlung.
 Gerechnet wird mit derselben Funktion (`computePayment`) in der Vorschau und auf dem
 Server; am Bildschirm kann so keine andere Zahl stehen als gleich danach in der Liste.
@@ -917,7 +955,8 @@ abgehakter Monate.
 **Jahresübersicht:** Zuoberst die Kachel mit dem Stand – offener Zehnter, Einkommen,
 verrechnete Steuern, bezahlt. Darunter die Monatsliste und die Zahlungen. Export als CSV, mit Semikolon und einem
 BOM voran, damit Excel die Datei ohne Import-Dialog und mit richtigen Umlauten öffnet.
-Die Zahlungen stehen in derselben Datei – fürs Jahresgespräch soll man nicht zwei Sachen
+Die Zahlungen stehen in derselben Datei, samt dem Steuerjahr, aus dem sie verrechnet haben,
+und ebenso die Steuerbeträge des Jahres – fürs Jahresgespräch soll man nicht zwei Sachen
 zusammensuchen müssen. **Kein PDF-Export:** Das Handy druckt jede Ansicht über
 „Teilen → Drucken → Als PDF sichern"; eine eigene PDF-Erzeugung im Container wäre
 Aufwand für etwas, das das Betriebssystem schon kann.
@@ -1378,6 +1417,8 @@ nichts davon hält den täglichen Gebrauch auf.
 | Zehnten-Rechnung | **Jahresrechnung, Steuern bei der Zahlung verrechnet** | Wer zahlt, weiss am besten, wie viel Steuern bis dahin angefallen sind – ein Zwölftel je Monat war bloss eine Annahme |
 | Berechnungsbasis | **Kein Schalter, keine drei Modi** | „brutto" und „netto" sind dieselbe Rechnung mit einer anderen Zahl im Feld; wie viel Steuern abgezogen werden, entscheidet die Zahlung |
 | Verrechenbare Steuern | **Ein Zehntel des Steuerbetrags** | Steuern mindern das Einkommen, nicht die Zahlung – von CHF 15 000 sind es CHF 1 500 |
+| Steuern je Jahr | **Mehrere Beträge mit Bezeichnung, verrechnet wird ihre Summe** | Bundes- und Staatssteuer kommen als getrennte Rechnungen; ein einziges Feld zwang dazu, sie vorher von Hand zusammenzuzählen |
+| Steuern verrechnen | **Je Steuerjahr – anhaken oder Betrag von Hand** | Die Steuern eines Jahres stehen meist erst im nächsten fest; das Guthaben gehört deshalb dem Steuerjahr und nicht dem Jahr der Zahlung |
 | Zahlung erfassen | **Monate abhaken, Beträge rechnen lassen** | Der Zehnte steht im Einkommen; ein Eingabefeld dafür wäre nur eine Gelegenheit, sich zu vertippen |
 | App-Aktualisierung | **Hinweis mit Knopf statt stillem Tausch** | 'autoUpdate' meldete den Worker nur an; die offene App lief bis zum vollständigen Schliessen mit dem alten Programm weiter |
 | Textebene prüfen | **Lang genug *und* lesbar** | Zweitausend Zeichen aus dem privaten Unicode-Bereich sehen nach Text aus und sind keiner |

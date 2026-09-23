@@ -14,7 +14,9 @@ Reihenfolge des eigenen Rundgangs gebracht – und merkt sich Korrekturen
 dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
 mit Autospeichern, Anheften, Farben und Suche –, und die **Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet
-sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Der
+sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Die Steuern
+stehen je Jahr in beliebig vielen Beträgen – Bundessteuer, Staatssteuer –, und
+bei der Zahlung hakt man an, welches Steuerjahr sie verrechnet. Der
 Bereich **Haus** liest die Rechnungen der Energie- und Wasserversorgung direkt
 aus dem PDF – Strom, Wasser, Abwasser und Kehricht, mit Verbrauch, Ø Preis je
 Einheit und dem Vergleich mit dem Vorjahr, alles zusammen oder je Sparte

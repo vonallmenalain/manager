@@ -5,8 +5,11 @@ import {
   monthListLabel,
   monthName,
   parseAmountToCents,
+  taxCreditFor,
+  type Donation,
   type IncomeEntry,
   type MonthFigures,
+  type TaxYearFigures,
 } from '@manager/shared'
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react'
 
@@ -20,7 +23,7 @@ import {
   useDeleteDonation,
   useFinanceYear,
   useSaveFinanceMonth,
-  useSaveFinanceSettings,
+  useSaveTaxes,
 } from '../lib/finance'
 
 export function Finance() {
@@ -129,6 +132,8 @@ function YearPicker({ year, onChange }: { year: number; onChange: (year: number)
  */
 function StatusCard({ data, onPay }: { data: FinanceYear; onPay: () => void }) {
   const { figures } = data
+  const steuerjahr = data.taxYears.find((tax) => tax.year === data.year)
+  const andereOffen = data.taxYears.filter((tax) => tax.year !== data.year && tax.openCents > 0)
 
   return (
     <section className="rounded-2xl bg-brand-800 p-4 text-white">
@@ -152,8 +157,13 @@ function StatusCard({ data, onPay }: { data: FinanceYear; onPay: () => void }) {
 
       <p className="mt-3 text-xs text-white/70">
         {figures.taxTotalCents > 0
-          ? `Steuern CHF ${formatAmount(figures.taxTotalCents)}, davon verrechenbar CHF ${formatAmount(figures.taxCreditTotalCents)} (10 %): CHF ${formatAmount(figures.taxCreditAppliedCents)} verrechnet, CHF ${formatAmount(figures.taxCreditOpenCents)} noch offen.`
-          : 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'}
+          ? `Steuern ${data.year} CHF ${formatAmount(figures.taxTotalCents)}, davon verrechenbar CHF ${formatAmount(figures.taxCreditTotalCents)} (10 %): CHF ${formatAmount(steuerjahr?.appliedCents ?? 0)} verrechnet, CHF ${formatAmount(figures.taxCreditOpenCents)} noch offen.`
+          : `Für ${data.year} sind noch keine Steuern hinterlegt – unter „Steuern" eintragen.`}
+        {andereOffen.length > 0
+          ? ` Aus anderen Steuerjahren noch zu verrechnen: ${andereOffen
+              .map((tax) => `${tax.year} CHF ${formatAmount(tax.openCents)}`)
+              .join(', ')}.`
+          : ''}
         {figures.paidFastOfferingCents > 0
           ? ` Fastopfer bezahlt: CHF ${formatAmount(figures.paidFastOfferingCents)}.`
           : ''}
@@ -261,9 +271,7 @@ function Payments({ data, year }: { data: FinanceYear; year: number }) {
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {formatDate(donation.paidOn)}
-                {donation.taxAppliedCents > 0
-                  ? ` · Steuern ${formatAmount(donation.taxAppliedCents)} verrechnet`
-                  : ''}
+                {donation.taxAppliedCents > 0 ? ` · ${taxAppliedLabel(donation)}` : ''}
               </p>
             </div>
             <span className="shrink-0 font-semibold tabular-nums">
@@ -288,6 +296,20 @@ function Payments({ data, year }: { data: FinanceYear; year: number }) {
 function formatDate(iso: string): string {
   const [year, month, day] = iso.split('-')
   return day && month && year ? `${day}.${month}.${year}` : iso
+}
+
+/** „Steuern 2025: 1'200.00 verrechnet" – samt den Steuerjahren, aus denen es stammt. */
+function taxAppliedLabel(donation: Donation): string {
+  const jahre = yearListLabel(donation.taxCredits.map((credit) => credit.taxYear))
+  return `Steuern ${jahre ? `${jahre}: ` : ''}${formatAmount(donation.taxAppliedCents)} verrechnet`
+}
+
+/** Jahre so, wie man sie ausspricht: „2025", „2024 und 2025", „2023, 2024 und 2025". */
+function yearListLabel(years: readonly number[]): string {
+  const sorted = [...new Set(years)].sort((a, b) => a - b).map(String)
+  const last = sorted.pop()
+  if (last === undefined) return ''
+  return sorted.length > 0 ? `${sorted.join(', ')} und ${last}` : last
 }
 
 // ---------------------------------------------------------------- Fenster
@@ -555,6 +577,11 @@ function computeMonth(entries: readonly IncomeEntry[], month: number): MonthFigu
  * Er ist ein Zehntel des erfassten Einkommens dieser Monate, und ein Feld
  * dafür wäre bloss eine Gelegenheit, sich zu vertippen.
  *
+ * Die Steuern lassen sich auf zwei Arten verrechnen: ein Steuerjahr anhaken,
+ * dann steht sein ganzes offenes Guthaben im Feld – oder einen Betrag von Hand
+ * eintragen, der dann aus dem ältesten offenen Jahr zuerst kommt. Ein Betrag
+ * bei angehakten Jahren bleibt in diesen Jahren.
+ *
  * Als Einziges hier ohne Autospeichern: Eine Zahlung ist ein Ereignis, kein
  * Text, an dem man arbeitet. Würde beim Tippen gespeichert, entstünde für
  * jeden Zwischenstand ein Beleg.
@@ -568,6 +595,7 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
   const [months, setMonths] = useState<number[]>(() => figures.openMonths)
   const [fastOffering, setFastOffering] = useState('')
   const [tax, setTax] = useState('')
+  const [taxYears, setTaxYears] = useState<number[]>([])
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
   const [error, setError] = useState<string | null>(null)
 
@@ -587,16 +615,37 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
           months,
           fastOfferingPerMonthCents: fastCents === 'fehler' ? 0 : (fastCents ?? 0),
           taxAppliedCents: taxCents === 'fehler' ? 0 : (taxCents ?? 0),
+          taxYears,
         },
-        figures.taxCreditOpenCents,
+        data.taxYears,
       ),
-    [data.entries, months, fastCents, taxCents, figures.taxCreditOpenCents],
+    [data.entries, months, fastCents, taxCents, taxYears, data.taxYears],
   )
+
+  /** Die Steuerjahre, in denen noch etwas zu verrechnen ist – das älteste zuerst. */
+  const offeneJahre = data.taxYears.filter((steuerjahr) => steuerjahr.openCents > 0)
 
   function toggleMonth(month: number) {
     setMonths((current) =>
       current.includes(month) ? current.filter((item) => item !== month) : [...current, month],
     )
+  }
+
+  /**
+   * Anhaken verrechnet ein Jahr ganz: Ins Feld kommt, was die angehakten
+   * Jahre zusammen noch offen haben. Wer weniger will, ändert danach den
+   * Betrag – er kommt dann weiter aus den angehakten Jahren.
+   */
+  function toggleTaxYear(year: number) {
+    const next = taxYears.includes(year)
+      ? taxYears.filter((item) => item !== year)
+      : [...taxYears, year]
+    const summe = offeneJahre
+      .filter((steuerjahr) => next.includes(steuerjahr.year))
+      .reduce((total, steuerjahr) => total + steuerjahr.openCents, 0)
+
+    setTaxYears(next)
+    setTax(summe > 0 ? formatAmount(summe) : '')
   }
 
   function handleSubmit(event: FormEvent) {
@@ -617,6 +666,10 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
         // Nach der Prüfung oben sind beide Felder lesbar; leer heisst 0.
         fastOfferingPerMonthCents: fastCents ?? 0,
         taxAppliedCents: rechnung.taxAppliedCents,
+        // Die Auswahl so, wie sie angehakt ist: Auch ein Jahr, das inzwischen
+        // aufgebraucht ist, gehört dazu. Fiele es weg, wäre die Liste leer –
+        // und leer hiesse beim Server „aus allen Jahren".
+        taxYears,
         paidOn,
       },
       { onSuccess: onClose },
@@ -688,20 +741,35 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
           }
         />
 
-        <AmountField
-          label="Steuern verrechnen"
-          value={tax}
-          onChange={setTax}
-          hint={
-            figures.taxTotalCents === 0
-              ? 'Noch kein Steuerbetrag hinterlegt – unter „Steuern" eintragen.'
-              : `Von CHF ${formatAmount(figures.taxTotalCents)} Steuern sind 10 % verrechenbar, also CHF ${formatAmount(figures.taxCreditTotalCents)}. Davon sind CHF ${formatAmount(figures.taxCreditOpenCents)} noch nicht verrechnet.${
-                  taxCents !== 'fehler' && (taxCents ?? 0) > rechnung.maxTaxCreditCents
-                    ? ` Diese Zahlung trägt höchstens CHF ${formatAmount(rechnung.maxTaxCreditCents)} – der Rest bleibt für die nächste stehen.`
-                    : ''
-                }`
-          }
-        />
+        <div>
+          <AmountField label="Steuern verrechnen" value={tax} onChange={setTax} />
+
+          {offeneJahre.length > 0 ? (
+            <ul
+              className="mt-2 space-y-1.5"
+              aria-label="Steuerjahre, die noch nicht verrechnet sind"
+            >
+              {offeneJahre.map((steuerjahr) => (
+                <TaxYearCheck
+                  key={steuerjahr.year}
+                  figures={steuerjahr}
+                  checked={taxYears.includes(steuerjahr.year)}
+                  onToggle={() => toggleTaxYear(steuerjahr.year)}
+                />
+              ))}
+            </ul>
+          ) : null}
+
+          <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+            {taxHint({
+              data,
+              rechnung,
+              wunschCents: taxCents === 'fehler' ? 0 : (taxCents ?? 0),
+              angehakt: taxYears.length > 0,
+              offen: offeneJahre.length > 0,
+            })}
+          </p>
+        </div>
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium">Bezahlt am</span>
@@ -714,6 +782,103 @@ function PaymentEditor({ data, onClose }: { data: FinanceYear; onClose: () => vo
         </label>
       </form>
     </Modal>
+  )
+}
+
+/**
+ * Was unter den Steuerjahren steht: woher das Verrechnete stammt, und warum
+ * es weniger ist als eingetragen, wenn es gedeckelt wurde.
+ */
+function taxHint({
+  data,
+  rechnung,
+  wunschCents,
+  angehakt,
+  offen,
+}: {
+  data: FinanceYear
+  rechnung: ReturnType<typeof computePayment>
+  wunschCents: number
+  angehakt: boolean
+  offen: boolean
+}): string {
+  if (!offen) {
+    return data.taxYears.some((steuerjahr) => steuerjahr.taxCents > 0)
+      ? 'Alle hinterlegten Steuern sind verrechnet.'
+      : 'Noch keine Steuern hinterlegt – unter „Steuern" eintragen.'
+  }
+  if (wunschCents === 0) {
+    return 'Ein Jahr anhaken verrechnet alles, was dort noch offen ist. Ein Betrag von Hand kommt aus dem ältesten Jahr zuerst.'
+  }
+
+  const saetze: string[] = []
+
+  // Mit angehakten Jahren sagen die Häkchen schon, woher es kommt. Von Hand
+  // wählt die App das Jahr – das soll man sehen, bevor man bezahlt.
+  if (!angehakt && rechnung.taxCredits.length > 0) {
+    const teile = rechnung.taxCredits.map(
+      (credit) => `${credit.taxYear} (CHF ${formatAmount(credit.amountCents)})`,
+    )
+    const letzter = teile.pop()
+    saetze.push(
+      `Verrechnet wird aus ${teile.length > 0 ? `${teile.join(', ')} und ${letzter}` : letzter}.`,
+    )
+  }
+
+  if (wunschCents > rechnung.taxAppliedCents) {
+    saetze.push(
+      rechnung.tithingCents < rechnung.availableTaxCreditCents
+        ? `Diese Zahlung trägt höchstens CHF ${formatAmount(rechnung.maxTaxCreditCents)} – der Rest bleibt für die nächste stehen.`
+        : angehakt
+          ? `In den angehakten Jahren sind nur CHF ${formatAmount(rechnung.availableTaxCreditCents)} offen.`
+          : `Offen sind insgesamt nur CHF ${formatAmount(rechnung.availableTaxCreditCents)}.`,
+    )
+  }
+
+  return saetze.join(' ')
+}
+
+/** Ein Steuerjahr zum Anhaken: woraus es besteht und was davon noch offen ist. */
+function TaxYearCheck({
+  figures,
+  checked,
+  onToggle,
+}: {
+  figures: TaxYearFigures
+  checked: boolean
+  onToggle: () => void
+}) {
+  const herkunft = [
+    figures.labels.join(', '),
+    `10 % von ${formatAmount(figures.taxCents)}`,
+    figures.appliedCents > 0 ? `${formatAmount(figures.appliedCents)} schon verrechnet` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <li>
+      <label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          className="size-5 shrink-0 accent-brand-700"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">Steuern {figures.year}</span>
+          {/* Umbrechen statt abschneiden: Hier steht, wovon die 10 % gerechnet
+              sind. Und eine Zeile ohne Umbruch machte das Fenster breiter als
+              den Bildschirm – das Raster des Fensters richtet sich nach ihr. */}
+          <span className="block text-xs break-words text-slate-500 dark:text-slate-400">
+            {herkunft}
+          </span>
+        </span>
+        <span className="shrink-0 text-right font-semibold tabular-nums">
+          {formatAmount(figures.openCents)}
+        </span>
+      </label>
+    </li>
   )
 }
 
@@ -775,7 +940,15 @@ function PaymentSummary({
 
       <dl className="mt-2 space-y-1 border-t border-white/20 pt-2 text-xs tabular-nums">
         <Row label={`Zehnter (${monatsWort})`} value={rechnung.tithingCents} tone="soft" />
-        <Row label="− Steuern verrechnet" value={rechnung.taxAppliedCents} tone="soft" />
+        <Row
+          label={
+            rechnung.taxCredits.length > 0
+              ? `− Steuern ${yearListLabel(rechnung.taxCredits.map((credit) => credit.taxYear))} verrechnet`
+              : '− Steuern verrechnet'
+          }
+          value={rechnung.taxAppliedCents}
+          tone="soft"
+        />
         <Row
           label={jeMonat > 0 ? `Fastopfer (${monatsWort} × ${formatAmount(jeMonat)})` : 'Fastopfer'}
           value={rechnung.fastOfferingCents}
@@ -786,28 +959,73 @@ function PaymentSummary({
   )
 }
 
+/** Eine Zeile im Fenster „Steuern", so wie sie getippt wird. */
+interface TaxRow {
+  label: string
+  amount: string
+  /** Eben mit „+ weiterer Betrag" angelegt – bekommt den Cursor. */
+  neu?: boolean
+}
+
 /**
- * Die Steuern des Jahres – das Einzige, was zu einem Jahr eingestellt wird.
+ * Die Steuern eines Jahres – ein Betrag je Zeile, etwa Bundessteuer und
+ * Staats- und Gemeindesteuer. Verrechenbar ist ein Zehntel ihrer Summe.
  *
  * Wann das Guthaben daraus verrechnet wird, steht hier bewusst nicht: Das
- * entscheidet sich bei jeder Zahlung.
+ * entscheidet sich bei jeder Zahlung – oft erst im Jahr danach, wenn die
+ * Steuerrechnung da ist.
  */
 function TaxEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }) {
-  const save = useSaveFinanceSettings(data.year)
-  const [tax, setTax] = useState(() => formatAmount(data.settings.taxCents))
+  const save = useSaveTaxes(data.year)
 
-  const cents = readAmount(tax)
-  const lesbar = cents !== 'fehler'
+  // Eine Zeile steht immer da: Wer „Steuern" öffnet, will einen Betrag
+  // eintragen und nicht zuerst eine Zeile anlegen.
+  const [rows, setRows] = useState<TaxRow[]>(() => {
+    const bestehend = data.taxEntries.map((entry) => ({
+      label: entry.label,
+      amount: formatAmount(entry.amountCents),
+    }))
+    return bestehend.length > 0 ? bestehend : [{ label: '', amount: '' }]
+  })
+
+  /** Die Zeilen, wie sie gespeichert würden – oder null bei Unlesbarem. */
+  const entries = useMemo(() => {
+    const result: { label: string; amountCents: number }[] = []
+
+    for (const row of rows) {
+      const cents = readAmount(row.amount)
+      if (cents === 'fehler') return null
+      // Ohne Betrag keine Steuer – eine Bezeichnung allein wird nicht
+      // gespeichert. Eine ausdrückliche 0 bleibt, wie beim Einkommen.
+      if (cents === null) continue
+      result.push({ label: row.label.trim(), amountCents: cents })
+    }
+
+    return result
+  }, [rows])
 
   const autosave = useAutosave(
-    { tax },
+    { entries },
     async (stand) => {
-      const wert = readAmount(stand.tax)
-      if (wert === 'fehler') return
-      await save.mutateAsync({ taxCents: wert ?? 0 })
+      if (!stand.entries) return
+      await save.mutateAsync({ entries: stand.entries })
     },
-    { savable: (stand) => readAmount(stand.tax) !== 'fehler' },
+    { savable: (stand) => stand.entries !== null },
   )
+
+  const summe = entries?.reduce((total, entry) => total + entry.amountCents, 0) ?? 0
+  const verrechnet = data.taxYears.find((tax) => tax.year === data.year)?.appliedCents ?? 0
+
+  function updateRow(index: number, patch: Partial<TaxRow>) {
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function removeRow(index: number) {
+    setRows((current) => {
+      const rest = current.filter((_, i) => i !== index)
+      return rest.length > 0 ? rest : [{ label: '', amount: '' }]
+    })
+  }
 
   return (
     <Modal
@@ -818,28 +1036,86 @@ function TaxEditor({ data, onClose }: { data: FinanceYear; onClose: () => void }
           <span className="text-sm font-semibold">Steuern {data.year}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              {saveStateLabel(autosave.state, lesbar ? undefined : 'Betrag nicht lesbar')}
+              {saveStateLabel(autosave.state, entries === null ? 'Betrag nicht lesbar' : undefined)}
             </span>
             <ModalCloseButton onClick={onClose} label="Fenster schliessen" />
           </div>
         </>
       }
+      footer={
+        summe > 0 || verrechnet > 0 ? (
+          <dl className="space-y-1 text-sm tabular-nums">
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500 dark:text-slate-400">Steuern {data.year}</dt>
+              <dd>{formatAmount(summe)}</dd>
+            </div>
+            <div className="flex justify-between gap-3 font-semibold">
+              <dt>Verrechenbar (10 %)</dt>
+              <dd>{formatAmount(taxCreditFor(summe))}</dd>
+            </div>
+            {verrechnet > 0 ? (
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500 dark:text-slate-400">davon schon verrechnet</dt>
+                <dd>{formatAmount(verrechnet)}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null
+      }
     >
       <div className="space-y-3">
-        <AmountField
-          label={`Steuern für das ganze Jahr ${data.year}`}
-          value={tax}
-          onChange={setTax}
-          autoFocus
-        />
+        {rows.map((row, index) => (
+          <div key={index} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <div className="mb-2 flex gap-2">
+              <input
+                value={row.label}
+                onChange={(event) => updateRow(index, { label: event.target.value })}
+                placeholder="Bezeichnung, z. B. Bundessteuer"
+                aria-label="Bezeichnung der Steuer"
+                // Mehr nimmt der Server nicht an – und ein Autospeichern, das
+                // immer wieder abgewiesen wird, speichert gar nichts mehr.
+                maxLength={60}
+                autoFocus={row.neu || (data.taxEntries.length === 0 && index === 0)}
+                className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40 dark:border-slate-700 dark:bg-slate-900"
+              />
+              {rows.length > 1 || row.label || row.amount ? (
+                <button
+                  type="button"
+                  onClick={() => removeRow(index)}
+                  className="shrink-0 px-2 text-slate-400"
+                  aria-label={row.label ? `${row.label} entfernen` : 'Betrag entfernen'}
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+            <input
+              value={row.amount}
+              onChange={(event) => updateRow(index, { amount: event.target.value })}
+              inputMode="decimal"
+              placeholder="0.00"
+              aria-label={row.label ? `Betrag ${row.label}` : 'Betrag'}
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-right text-lg tabular-nums outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40 dark:border-slate-700 dark:bg-slate-900"
+            />
+          </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={() => setRows((current) => [...current, { label: '', amount: '', neu: true }])}
+          className="text-left text-sm font-medium text-brand-700 dark:text-brand-400"
+        >
+          + weiterer Betrag
+        </button>
+
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Steuern mindern nicht die Zahlung, sondern das Einkommen, auf das der Zehnte gerechnet
-          wird. Verrechnen lässt sich davon deshalb ein Zehntel – von diesem Betrag also CHF{' '}
-          {formatAmount(data.figures.taxCreditTotalCents)}.
+          wird. Verrechnen lässt sich davon deshalb ein Zehntel – von der Summe aller Beträge
+          dieses Jahres.
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Beim Erfassen einer Zahlung wird bestimmt, wie viel davon verrechnet wird – ganz oder in
-          Teilen. Bisher verrechnet: CHF {formatAmount(data.figures.taxCreditAppliedCents)}.
+          Verrechnet wird beim Erfassen einer Zahlung, ganz oder in Teilen – auch mit einer
+          Zahlung im Jahr danach, wenn die Steuerrechnung erst dann kommt.
         </p>
       </div>
     </Modal>
