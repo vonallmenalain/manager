@@ -1,4 +1,4 @@
-import type { CreatePaymentInput, FinanceSettings, SaveMonthInput } from '@manager/shared'
+import type { CreatePaymentInput, SaveMonthInput, SaveTaxesInput } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type FinanceYear } from './api'
@@ -30,8 +30,8 @@ function useFinanceMutation<TVariables>(
   })
 }
 
-export function useSaveFinanceSettings(year: number) {
-  return useFinanceMutation((settings: FinanceSettings) => api.saveFinanceSettings(year, settings))
+export function useSaveTaxes(year: number) {
+  return useFinanceMutation((input: SaveTaxesInput) => api.saveTaxes(year, input))
 }
 
 export function useSaveFinanceMonth(year: number) {
