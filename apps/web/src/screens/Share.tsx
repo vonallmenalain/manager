@@ -47,6 +47,8 @@ export function Share() {
       const { note } = await save.mutateAsync({
         note: {
           ...noteFromShare(shared),
+          // Geteilter Text kommt als reiner Text an – formatiert wird danach.
+          bodyRich: null,
           kind: 'text',
           // Geteilt wird in den Haushalt: Von hier führt kein Weg in die
           // DocBase, und eine Kategorie hat der Haushalt für Notizen nicht.

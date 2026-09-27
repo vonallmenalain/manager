@@ -6,6 +6,7 @@ import {
   DEFAULT_BEREICH,
   normalizeForSearch,
 } from './documents.js'
+import { normalizeRich } from './richtext.js'
 
 /**
  * Die Abteilungen, mit denen eine frische Einkaufsliste beginnt – in der
@@ -441,6 +442,12 @@ export const noteSchema = z.object({
   id: z.string(),
   title: z.string(),
   body: z.string(),
+  /**
+   * Die Formatierung des Textes – Fett, Farben, Grössen, Aufzählungen – oder
+   * null für reinen Text. Sie steht neben `body` und nicht darin: `body` bleibt
+   * lesbarer Text für Suche, Vorschau und jede ältere App (siehe richtext.ts).
+   */
+  bodyRich: z.string().nullable(),
   kind: noteKindSchema,
   /**
    * In welcher App die Notiz liegt: im Haushalt oder in der DocBase. Dieselbe
@@ -479,6 +486,12 @@ export const upsertNoteSchema = z
   .object({
     title: z.string().trim().max(120).default(''),
     body: z.string().max(20_000).default(''),
+    /**
+     * Fehlt das Feld ganz, kommt die Anfrage von einer App, die noch nichts von
+     * Formatierung weiss – dann bleibt, was schon dasteht, solange es zum Text
+     * passt (siehe die Route). `null` heisst: bewusst unformatiert.
+     */
+    bodyRich: z.string().max(500_000).nullable().optional(),
     kind: noteKindSchema.default('text'),
     bereich: bereichSchema.default(DEFAULT_BEREICH),
     categoryId: z.string().max(60).nullable().default(null),
@@ -497,8 +510,21 @@ export const upsertNoteSchema = z
    * nur einem gehört, beantwortet niemandes Frage. Die Regel steht hier und
    * nicht nur im Fenster der App: Was der Server annimmt, entscheidet, wer
    * eine Notiz später sieht – nicht, welche Knöpfe gerade angezeigt werden.
+   *
+   * Aus demselben Grund wird hier auch die Formatierung geprüft: Abgelegt wird
+   * nur ein Formatfeld, das Zeichen für Zeichen zum Text passt, und eine
+   * Checkliste hat gar keins – ihre Zeilen sind Einträge, keine Absätze.
    */
-  .transform((note) => ({ ...note, shared: note.bereich === 'docbase' ? true : note.shared }))
+  .transform((note) => ({
+    ...note,
+    shared: note.bereich === 'docbase' ? true : note.shared,
+    bodyRich:
+      note.bodyRich === undefined
+        ? undefined
+        : note.kind === 'liste'
+          ? null
+          : normalizeRich(note.body, note.bodyRich),
+  }))
 
 export type UpsertNoteInput = z.infer<typeof upsertNoteSchema>
 

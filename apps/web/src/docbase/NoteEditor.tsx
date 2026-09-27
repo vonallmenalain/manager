@@ -1,4 +1,4 @@
-import type { Note, NoteColor } from '@manager/shared'
+import { richValueOf, type Note, type NoteColor, type RichValue } from '@manager/shared'
 import { useRef, useState } from 'react'
 
 import { CategorySelect } from '../components/CategoryPicker'
@@ -37,7 +37,8 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
   const categories = useCategories('docbase')
 
   const [title, setTitle] = useState(note?.title ?? '')
-  const [text, setText] = useState(note?.body ?? '')
+  // Text samt Formatierung daneben – siehe `richtext` im geteilten Paket.
+  const [text, setText] = useState<RichValue>(() => richValueOf(note?.body, note?.bodyRich))
   const [categoryId, setCategoryId] = useState(note?.categoryId ?? '')
   /** Sobald eine neue Notiz einmal gespeichert ist, lässt sie sich löschen. */
   const [savedId, setSavedId] = useState(note?.id)
@@ -54,7 +55,8 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
   const autosave = useAutosave(
     {
       title,
-      body: text,
+      body: text.text,
+      bodyRich: text.rich,
       kind: 'text' as const,
       bereich: 'docbase' as const,
       categoryId: categoryId || null,
@@ -144,7 +146,12 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
           />
         </div>
 
-        <NoteText value={text} onChange={setText} startInEditing={!note || text === ''} />
+        <NoteText
+          value={text}
+          onChange={setText}
+          startInEditing={!note || text.text === ''}
+          akzent="teal"
+        />
       </>
     </Modal>
   )

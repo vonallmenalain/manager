@@ -12,7 +12,8 @@ einzigen PDF, statt einzeln in der Ablage zu landen. Die
 **Einkaufsliste** sortiert nach Ladenabteilungen – selbst angelegt und in die
 Reihenfolge des eigenen Rundgangs gebracht – und merkt sich Korrekturen
 dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
-mit Autospeichern, Anheften, Farben und Suche –, und die **Finanzen** rechnen
+mit Autospeichern, Anheften, Farben und Suche; Text lässt sich wie in der BSS-App
+formatieren (Fett, Kursiv, Grösse, Farbe, Aufzählung) –, und die **Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet
 sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Die Steuern
 stehen je Jahr in beliebig vielen Beträgen – Bundessteuer, Staatssteuer –, und
