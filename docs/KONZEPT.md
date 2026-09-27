@@ -224,6 +224,10 @@ erDiagram
   Anheftung und eigener Suchspalte. Die Sichtbarkeit ist nur im Haushalt eine Wahl: In
   der DocBase steht `shared` immer auf `true` – die Sammlung gehört allen, die sie öffnen
   dürfen (siehe 6.1a)
+* `notes.body_rich` – die Formatierung des Textes (Fett, Kursiv, Farben, Grössen,
+  Aufzählungen) als JSON, `null` für reinen Text. Sie steht **neben** `body`, nicht darin:
+  `body` bleibt lesbarer Text, den Suche, Vorschau und eine ältere App unverändert lesen.
+  Abgelegt wird sie nur, wenn ihr Klartext Zeichen für Zeichen `body` entspricht (siehe 6.3)
 * `notes.bereich` / `notes.category_id` – wie bei den Dokumenten: `manager` oder
   `docbase`, und in der DocBase dazu die Schublade. Dieselbe Spalte, dieselbe Wirkung –
   eine Notiz des Haushalts taucht nie in der Sammlung auf und umgekehrt. Die Kategorie
@@ -597,7 +601,7 @@ ein eigener Gedanke dazu. Ein Schnappschuss ist keins von beidem; die Kinderzeic
 das Zeugnis an der Wand, für die es den Kameraweg gibt, gehören in den Haushalt.
 
 **Die Notiz der Sammlung** ist dieselbe wie im Manager – Autospeichern, Farbe, Anheften,
-anklickbare Verweise –, mit drei Unterschieden. Sie hat **eine Kategorie**, und das ist
+Formatierung, anklickbare Verweise –, mit drei Unterschieden. Sie hat **eine Kategorie**, und das ist
 der eigentliche Punkt: Was man sich zu einer Studie notiert, gehört in dieselbe Schublade
 wie die Studie und taucht unter demselben Häkchen wieder auf. Und sie ist immer
 Fliesstext: Eine Liste zum Abhaken beantwortet in einer Sammlung, die man nachschlägt,
@@ -794,6 +798,41 @@ eine Randnotiz, kein Formular. Das Fenster ist so hoch wie sein Inhalt und wäch
 bis kurz vor den Bildschirmrand – auch das Textfeld wächst beim Tippen mit, statt in sich
 selbst zu scrollen, während das Fenster darüber noch Platz hätte. Man soll nicht durch ein
 Guckloch schreiben. Der schmale Rand bleibt: Er zeigt, dass darunter die Seite liegt.
+
+**Man sieht, was man schreibt – auch in einer langen Notiz.** Das frühere Textfeld wuchs,
+indem es bei jedem Tastendruck kurz auf seine Mindesthöhe schrumpfte und dann nachgemessen
+wurde. In diesem Augenblick war der Inhalt des Fensters kürzer als der Ausschnitt, der
+Browser setzte den Ausschnitt an den Anfang – und wer am Ende einer langen Notiz schrieb,
+sah plötzlich ihre erste Zeile. Beim Antippen kam dazu, dass der Cursor ans Ende sprang,
+während das Fenster nach oben rollte. Heute wächst das Feld von selbst (ein bearbeitbarer
+Block, kein `textarea`), der Cursor landet dort, wo getippt wurde, das Fenster bleibt
+dabei stehen, und nach jeder Eingabe wird geprüft, ob der Cursor noch im Bild ist – auch
+dann, wenn die Bildschirmtastatur aufgeht und den sichtbaren Teil verkleinert.
+
+**Formatieren wie in der BSS-App.** Solange geschrieben wird, steht oben rechts ein
+kleiner Knopf; er klebt am oberen Rand des Ausschnitts und rollt deshalb auch in einer
+langen Notiz nicht aus dem Bild. Dahinter: Fett, Kursiv, Unterstrichen und Aufzählung in
+einer Zeile, vier Textgrössen, acht Textfarben und sechs Hintergrundfarben, Ein- und
+Ausrücken innerhalb einer Liste und „Formatierung entfernen". Ohne Auswahl wirkt alles auf
+das Wort unter dem Cursor, die Aufzählung auf die Zeile; `- ` am Zeilenanfang beginnt eine
+Aufzählung, `Tab` rückt ein, `Ctrl+B/I/U` wie gewohnt. Bewusst nur die Grundlagen – eine
+feste Palette statt freier Farben, feste Stufen statt freier Grössen: Mehr braucht eine
+Notiz nicht, und jede freie Zahl hiesse in jeder Notiz eine andere Typografie. Eingefügt
+wird als reiner Text; was aus Word oder einer Webseite kommt, brächte Schriften und
+Tabellen mit, die hier niemand gewählt hat. Die Übersicht zeigt die Formatierung mit – was
+rot oder als Aufzählung geschrieben wurde, erkennt man auch dort.
+
+Gespeichert wird die Formatierung **neben** dem Text (`body_rich`), nicht in ihm: In
+`body` stehen weiterhin nur Buchstaben – Listenpunkte mit „•" davor, damit auch Suche und
+Startbildschirm die Liste als Liste sehen. Damit Text und Formatierung nie
+auseinanderlaufen, gilt eine Regel: Der Klartext der Formatierung muss Zeichen für Zeichen
+dem gespeicherten Text entsprechen, sonst gilt der Text allein. Der Server prüft das beim
+Annehmen, die App noch einmal beim Anzeigen. Eine App, die das Feld noch nicht kennt,
+schickt es gar nicht mit – dann bleibt die Formatierung stehen, solange sie noch zum Text
+passt (etwa beim blossen Anheften), und fällt weg, sobald der Text ein anderer ist.
+Checklisten bleiben unformatiert: Ihre Zeilen sind Einträge, keine Absätze. Übernommen ist
+das Ganze aus der BSS-App (`lib/richtext`, `lib/richdom`), ohne deren Erwähnungen und
+Zuordnungen an Personen.
 
 Gespeichert wird **von selbst** – kurz nach dem letzten Tastendruck und noch einmal beim
 Schliessen. Einen Speichern-Knopf gibt es nicht; er war die einzige Möglichkeit,
@@ -1395,7 +1434,7 @@ eine funktionierende App auf dem Handy.
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Dokumentenmodus mit Randerkennung, mehrseitige Scans, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
-| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben und Suche | Die App wird täglich benutzt, nicht nur bei Post |
+| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben, Formatierung und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** ✅ | **Haus** | PDF-Import der Rechnungen für Strom, Wasser, Abwasser und Kehricht, Verbrauch und Ø Preis je Sparte, Perioden- und Vorjahresvergleich, Diagramme, Ablage des Belegs in den Dokumenten, CSV-Export | Die Nebenkosten des Hauses stehen nicht mehr in einer Tabelle auf dem Desktop |
 | **7** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
@@ -1432,6 +1471,7 @@ nichts davon hält den täglichen Gebrauch auf.
 | Akontorechnungen | **Neben der Verbrauchsauswertung, nicht darin** | Sie sind Vorauszahlungen auf denselben Strom und verdoppelten jede Summe |
 | Diagramme | **Mehrere Felder mit gemeinsamer Zeitachse, nie zwei Achsen** | kWh, m³, Franken und Preise je Einheit auf einer Skala erfinden einen Zusammenhang, den die Zahlen nicht hergeben |
 | Sichtbarkeit in der DocBase | **Kein Schalter – jede Notiz gehört allen** | Die Sammlung ist eine gemeinsame; eine Notiz neben einer Studie, die der andere nicht sieht, beantwortet niemandes Frage |
+| Formatierte Notizen | **Formatierung neben dem Text (`body_rich`), feste Palette und Stufen** | `body` bleibt lesbarer Text für Suche, Vorschau und ältere Apps; wie in der BSS-App nur die Grundlagen – Fett, Kursiv, Unterstrichen, Grösse, Farbe, Aufzählung |
 
 ## 14. Noch offen
 

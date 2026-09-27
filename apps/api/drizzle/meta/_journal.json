@@ -148,6 +148,13 @@
       "when": 1790171368260,
       "tag": "0020_steuerjahre",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790501903835,
+      "tag": "0021_notizen_formatiert",
+      "breakpoints": true
     }
   ]
 }

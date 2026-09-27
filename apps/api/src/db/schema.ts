@@ -318,6 +318,13 @@ export const notes = sqliteTable(
     title: text('title').notNull().default(''),
     body: text('body').notNull().default(''),
     /**
+     * Die Formatierung von `body` als JSON – Fett, Farben, Grössen,
+     * Aufzählungen –, null für reinen Text. Steht neben dem Text statt darin:
+     * `body` bleibt lesbar, durchsuchbar und für eine ältere App dasselbe wie
+     * vorher (siehe richtext.ts im geteilten Paket).
+     */
+    bodyRich: text('body_rich'),
+    /**
      * 'text' oder 'liste'. Bei einer Liste steht in `body` je Zeile ein
      * Eintrag mit vorangestelltem `[ ]` oder `[x]` – siehe parseChecklist im
      * geteilten Paket.

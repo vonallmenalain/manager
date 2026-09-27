@@ -121,6 +121,44 @@
   }
 }
 
+/*
+ * Formatierter Notiztext.
+ *
+ * Fett, Farben und Grössen stehen als Klassen am einzelnen Textstück (siehe
+ * lib/richStyles.ts). Hier steht nur, was sich nicht am einzelnen Element
+ * sagen lässt: die Listenzeichen je Ebene – im bearbeitbaren Feld
+ * (`.rt-editor`) und im gelesenen Text (`.richtext`) dieselben, damit beim
+ * Wechsel nichts verrutscht – und der Platzhalter des leeren Feldes.
+ */
+@layer components {
+  /* Der Einzug in `em`: In der kleinen Schrift einer Kachel rückt eine Liste
+     entsprechend weniger ein als in der geöffneten Notiz. */
+  .rt-editor ul,
+  .richtext ul {
+    list-style-type: disc;
+    padding-inline-start: 1.5em;
+  }
+  .rt-editor ul ul,
+  .richtext ul ul {
+    list-style-type: circle;
+    padding-inline-start: 1.25em;
+  }
+  .rt-editor ul ul ul,
+  .richtext ul ul ul {
+    list-style-type: square;
+  }
+
+  /* Der Platzhalter schwebt ohne Höhe über der ersten Zeile (float), damit er
+     jeden Innenabstand des Feldes mitmacht und den Cursor nicht verschiebt. */
+  .rt-editor[data-rt-empty]::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    @apply text-slate-400;
+  }
+}
+
 @layer utilities {
   /*
    * Derselbe Gedanke wie bei der Navigationsleiste, für ein aufgeklapptes

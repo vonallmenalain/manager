@@ -2,6 +2,7 @@ import type { Note } from '@manager/shared'
 
 import { NoteIcon } from '../components/icons'
 import { COLOR_STYLES } from '../components/NoteParts'
+import { RichText } from '../components/RichText'
 
 /**
  * Eine Notiz in der Sammlung – als Kachel und als Zeile.
@@ -48,7 +49,11 @@ export function NoteTile({
               ) : null}
               <NoteIcon className="size-4" />
             </span>
-            {note.body || <span className="text-slate-400">Ohne Text</span>}
+            {note.body ? (
+              <RichText text={note.body} rich={note.bodyRich} links={false} />
+            ) : (
+              <span className="text-slate-400">Ohne Text</span>
+            )}
           </span>
         </span>
 
@@ -99,7 +104,10 @@ export function NoteRow({
             {categoryName ? ` · ${categoryName}` : ''}
           </span>
           {note.body ? (
-            <span className="mt-0.5 line-clamp-2 block text-xs text-slate-500 dark:text-slate-400">
+            // Ohne `block` neben `line-clamp-2`: Das bringt seine eigene
+            // Anzeigeart mit, und ein `block` daneben hob die Grenze auf – eine
+            // lange Notiz stand sonst in voller Länge in der Zeile.
+            <span className="mt-0.5 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
               {note.body}
             </span>
           ) : null}

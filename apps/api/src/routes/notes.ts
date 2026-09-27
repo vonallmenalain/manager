@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import {
   normalizeForSearch,
+  normalizeRich,
   noteQuerySchema,
   parseChecklist,
   upsertNoteSchema,
@@ -23,6 +24,7 @@ function toApi(row: NoteRow): Note {
     id: row.id,
     title: row.title,
     body: row.body,
+    bodyRich: row.bodyRich,
     kind: row.kind as NoteKind,
     bereich: row.bereich as Bereich,
     categoryId: row.categoryId,
@@ -91,6 +93,30 @@ async function resolveCategory(
   return rows[0]?.id ?? null
 }
 
+/**
+ * Die Formatierung, die bleibt, wenn eine App ohne Formatierung speichert.
+ *
+ * Bis das neue Frontend veröffentlicht ist, läuft auf manchem Telefon noch
+ * eine App, die das Feld nicht kennt und deshalb gar nicht mitschickt. Wer
+ * damit nur das Anheften umschaltet, soll dabei nicht die Formatierung
+ * verlieren – wer aber den Text ändert, bekommt ihn unformatiert: Ein
+ * Formatfeld zu einem Text, den so niemand formatiert hat, wäre falsch.
+ */
+async function keptFormatting(
+  id: string,
+  userId: string,
+  kind: NoteKind,
+  body: string,
+): Promise<string | null> {
+  if (kind === 'liste') return null
+  const rows = await db
+    .select({ bodyRich: notes.bodyRich })
+    .from(notes)
+    .where(and(eq(notes.id, id), visibleTo(userId)))
+    .limit(1)
+  return normalizeRich(body, rows[0]?.bodyRich)
+}
+
 const noteRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
 
@@ -133,13 +159,16 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, kind, bereich, categoryId, pinned, shared, color } = parsed.data
+    const { title, body, bodyRich, kind, bereich, categoryId, pinned, shared, color } = parsed.data
     const inserted = await db
       .insert(notes)
       .values({
         id: randomUUID(),
         title,
         body,
+        // Eine App ohne Formatierung schickt das Feld gar nicht – dann ist die
+        // neue Notiz eben unformatiert.
+        bodyRich: bodyRich ?? null,
         kind,
         bereich,
         categoryId: await resolveCategory(categoryId, bereich),
@@ -166,11 +195,16 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
     const { title, body, kind, bereich, categoryId, pinned, shared, color } = parsed.data
+    const bodyRich =
+      parsed.data.bodyRich !== undefined
+        ? parsed.data.bodyRich
+        : await keptFormatting(id, user.id, kind, body)
     const updated = await db
       .update(notes)
       .set({
         title,
         body,
+        bodyRich,
         kind,
         bereich,
         categoryId: await resolveCategory(categoryId, bereich),

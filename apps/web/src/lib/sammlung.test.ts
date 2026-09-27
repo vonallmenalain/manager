@@ -33,6 +33,7 @@ function notiz(id: string, updatedAt: string, pinned = false): Note {
     id,
     title: id,
     body: '',
+    bodyRich: null,
     kind: 'text',
     bereich: 'docbase',
     categoryId: null,

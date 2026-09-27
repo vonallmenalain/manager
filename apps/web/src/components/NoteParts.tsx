@@ -1,5 +1,14 @@
-import { NOTE_COLOR_LABELS, NOTE_COLORS, splitLinks, type NoteColor } from '@manager/shared'
-import { useLayoutEffect, useRef, useState } from 'react'
+import {
+  NOTE_COLOR_LABELS,
+  NOTE_COLORS,
+  splitLinks,
+  type NoteColor,
+  type RichValue,
+} from '@manager/shared'
+import { useRef, useState } from 'react'
+
+import { RichText } from './RichText'
+import { RichTextField, type Akzent, type Einstieg } from './RichTextField'
 
 /**
  * Die Bausteine, aus denen eine Notiz besteht – Farbe, Breite, Text.
@@ -95,14 +104,28 @@ export function LinkedText({ text }: { text: string }) {
 }
 
 /**
- * Der Text einer Notiz – zum Lesen mit anklickbaren Verweisen, zum Schreiben
- * ein Textfeld.
+ * Wie der Text einer Notiz dasteht – gelesen und geschrieben gleich.
  *
- * In einem Textfeld ist ein Verweis nur Text; anklickbar wird er erst, wenn er
- * als Verweis gezeichnet ist. Deshalb zeigt die geöffnete Notiz zunächst den
- * gelesenen Text, und ein Griff hinein macht daraus das Eingabefeld – ausser
- * auf einem Verweis, der führt dorthin, wo er hinführt. Beim Verlassen des
- * Feldes steht wieder der lesbare Text da.
+ * Beide Fassungen tragen dieselben Klassen und denselben Aufbau: Beim Wechsel
+ * vom einen ins andere rückt keine Zeile, und der Punkt, auf den getippt
+ * wurde, trifft im Editor dasselbe Zeichen wie vorher im gelesenen Text.
+ */
+const ABSTAND = 'mt-3'
+const NOTIZTEXT = 'min-h-40 w-full text-base'
+
+/**
+ * Der Text einer Notiz – zum Lesen mit anklickbaren Verweisen, zum Schreiben
+ * das formatierbare Feld.
+ *
+ * In einem Eingabefeld ist ein Verweis nur Text; anklickbar wird er erst, wenn
+ * er als Verweis gezeichnet ist. Deshalb zeigt die geöffnete Notiz zunächst
+ * den gelesenen Text, und ein Griff hinein macht daraus das Eingabefeld –
+ * ausser auf einem Verweis, der führt dorthin, wo er hinführt. Beim Verlassen
+ * des Feldes steht wieder der lesbare Text da.
+ *
+ * Der Cursor landet dort, wo getippt wurde, und das Fenster bleibt dabei
+ * stehen. Früher sprang er ans Ende, während das Fenster an den Anfang der
+ * Notiz rollte – in einer langen Notiz schrieb man dann ausser Sichtweite.
  *
  * Eine frische oder leere Notiz beginnt gleich im Schreibmodus: Dort gibt es
  * nichts zu lesen und nichts anzutippen.
@@ -111,86 +134,67 @@ export function NoteText({
   value,
   onChange,
   startInEditing,
+  akzent,
 }: {
-  value: string
-  onChange: (value: string) => void
+  value: RichValue
+  onChange: (value: RichValue) => void
   startInEditing: boolean
+  /** Die Farbe der Knöpfe im Formatmenü – petrol in der DocBase. */
+  akzent?: Akzent
 }) {
-  const [schreibt, setSchreibt] = useState(startInEditing)
+  // null: gelesen. Sonst geschrieben – mit dem Ort, an den der Cursor gehört;
+  // ohne Ort (eine leere Notiz) wartet das Feld, bis man es antippt.
+  const [schreibt, setSchreibt] = useState<{ einstieg: Einstieg | null } | null>(
+    startInEditing ? { einstieg: null } : null,
+  )
+  /** Stand beim Drücken: War schon etwas markiert, ist der Griff keine neue Markierung. */
+  const markiertBeimDruck = useRef(false)
 
   if (schreibt) {
     return (
-      <GrowingTextarea
+      <RichTextField
         value={value}
         onChange={onChange}
-        autoFocus={!startInEditing}
-        onBlur={() => setSchreibt(false)}
+        einstieg={schreibt.einstieg}
+        onBlur={() => setSchreibt(null)}
+        placeholder="Text …"
+        aria-label="Text"
+        akzent={akzent}
+        wrapperClassName={ABSTAND}
+        className={NOTIZTEXT}
       />
     )
   }
 
   return (
     <div
-      onClick={() => setSchreibt(true)}
-      className="mt-3 min-h-40 w-full cursor-text whitespace-pre-wrap break-words text-base"
-    >
-      {value ? <LinkedText text={value} /> : <span className="text-slate-400">Text …</span>}
-    </div>
-  )
-}
-
-/**
- * Das Textfeld wächst mit dem Text.
- *
- * Ein Feld mit fester Zeilenzahl scrollt in sich selbst, während das Fenster
- * darüber noch Platz hätte – man schreibt dann durch ein Guckloch. So wächst
- * stattdessen das Feld, mit ihm das Fenster, und erst wenn das an den
- * Bildschirmrand stösst, bekommt der Inhalt eine Bildlaufleiste.
- */
-export function GrowingTextarea({
-  value,
-  onChange,
-  autoFocus,
-  onBlur,
-}: {
-  value: string
-  onChange: (value: string) => void
-  autoFocus?: boolean
-  onBlur?: () => void
-}) {
-  const field = useRef<HTMLTextAreaElement>(null)
-
-  useLayoutEffect(() => {
-    const element = field.current
-    if (!element) return
-    // Erst zurücksetzen: Sonst misst scrollHeight die bisherige Höhe mit, und
-    // das Feld wächst zwar, schrumpft aber beim Löschen nie wieder.
-    element.style.height = 'auto'
-    element.style.height = `${element.scrollHeight}px`
-  }, [value])
-
-  // Wer aus dem Lesen ins Schreiben wechselt, will weiterschreiben und nicht
-  // vorne beginnen – der Cursor gehört ans Ende.
-  useLayoutEffect(() => {
-    if (!autoFocus) return
-    const element = field.current
-    if (!element) return
-    element.focus()
-    element.setSelectionRange(element.value.length, element.value.length)
-  }, [autoFocus])
-
-  return (
-    <textarea
-      ref={field}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      onBlur={onBlur}
-      placeholder="Text …"
+      role="textbox"
+      tabIndex={0}
       aria-label="Text"
-      // Eine Mindesthöhe, damit auch die leere Notiz eine Fläche hat, die man
-      // mit dem Daumen trifft.
-      className="mt-3 min-h-40 w-full resize-none overflow-hidden bg-transparent text-base outline-none"
-    />
+      onPointerDown={() => {
+        markiertBeimDruck.current = window.getSelection()?.isCollapsed === false
+      }}
+      onClick={(event) => {
+        // Wer eben mit der Maus etwas markiert hat, will es kopieren – nicht
+        // mit dem Loslassen in den Schreibmodus fallen. Ein Klick in eine
+        // schon bestehende Markierung meint dagegen: hier schreiben.
+        const markiert = window.getSelection()?.isCollapsed === false
+        if (markiert && !markiertBeimDruck.current) return
+        setSchreibt({ einstieg: { x: event.clientX, y: event.clientY } })
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        setSchreibt({ einstieg: 'ende' })
+      }}
+      className={`${ABSTAND} ${NOTIZTEXT} cursor-text whitespace-pre-wrap break-words outline-none`}
+    >
+      {value.text ? (
+        <RichText text={value.text} rich={value.rich} />
+      ) : (
+        <span className="text-slate-400">Text …</span>
+      )}
+    </div>
   )
 }
 

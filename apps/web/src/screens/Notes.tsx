@@ -2,12 +2,14 @@ import {
   NOTE_KIND_LABELS,
   NOTE_KINDS,
   parseChecklist,
+  richValueOf,
   serializeChecklist,
   sortChecklist,
   type ChecklistItem,
   type Note,
   type NoteColor,
   type NoteKind,
+  type RichValue,
 } from '@manager/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -24,6 +26,7 @@ import {
   WidthPicker,
   type Breite,
 } from '../components/NoteParts'
+import { RichText } from '../components/RichText'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useLocalSetting } from '../lib/einstellungen'
 import { useDeleteNote, useNotes, useSaveNote } from '../lib/household'
@@ -395,11 +398,13 @@ function NoteCard({
       {note.kind === 'liste' ? (
         <ChecklistPreview body={note.body} max={regel.eintraege} />
       ) : note.body ? (
-        <span
-          className={`pointer-events-none relative mt-0.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300 ${regel.textZeilen}`}
+        // Die Vorschau zeigt die Formatierung mit: Was jemand rot oder als
+        // Aufzählung geschrieben hat, soll man auch in der Übersicht erkennen.
+        <div
+          className={`pointer-events-none relative mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-600 dark:text-slate-300 ${regel.textZeilen}`}
         >
-          <LinkedText text={note.body} />
-        </span>
+          <RichText text={note.body} rich={note.bodyRich} />
+        </div>
       ) : null}
     </div>
   )
@@ -458,8 +463,11 @@ function NoteEditor({
   // Die Art wird beim Anlegen gewählt und bleibt dann, was sie ist.
   const kind = note?.kind ?? newKind
   const [title, setTitle] = useState(note?.title ?? '')
-  const [text, setText] = useState(() =>
-    (note?.kind ?? newKind) === 'liste' ? '' : (note?.body ?? ''),
+  // Text samt Formatierung daneben – siehe `richtext` im geteilten Paket.
+  const [text, setText] = useState<RichValue>(() =>
+    (note?.kind ?? newKind) === 'liste'
+      ? richValueOf('', null)
+      : richValueOf(note?.body, note?.bodyRich),
   )
   const [items, setItems] = useState<ChecklistItem[]>(() => {
     if ((note?.kind ?? newKind) !== 'liste') return []
@@ -477,7 +485,9 @@ function NoteEditor({
   // Monitor breit und am Handy schmal gelesen werden.
   const [breite, setBreite] = useLocalSetting<Breite>('notizen.breite', BREITEN, 'standard')
 
-  const body = kind === 'liste' ? serializeChecklist(items) : text
+  const body = kind === 'liste' ? serializeChecklist(items) : text.text
+  // Eine Checkliste kennt keine Formatierung – ihre Zeilen sind Einträge.
+  const bodyRich = kind === 'liste' ? null : text.rich
   const leer = title.trim() === '' && body.trim() === ''
 
   // Ab dem ersten Speichern wird dieselbe Notiz weitergeschrieben, statt eine
@@ -489,7 +499,17 @@ function NoteEditor({
     // der Sammlung und in einer Schublade darin. Im Haushalt gibt es beides
     // nicht – die Werte stehen trotzdem hier, weil der Server sonst raten
     // müsste, aus welcher App die Notiz kommt.
-    { title, body, kind, bereich: 'manager' as const, categoryId: null, pinned, shared, color },
+    {
+      title,
+      body,
+      bodyRich,
+      kind,
+      bereich: 'manager' as const,
+      categoryId: null,
+      pinned,
+      shared,
+      color,
+    },
     async (entwurf) => {
       const result = await save.mutateAsync({ id: idRef.current, note: entwurf })
       idRef.current = result.note.id
@@ -574,7 +594,7 @@ function NoteEditor({
         {kind === 'liste' ? (
           <Checklist items={items} onChange={setItems} />
         ) : (
-          <NoteText value={text} onChange={setText} startInEditing={!note || text === ''} />
+          <NoteText value={text} onChange={setText} startInEditing={!note || text.text === ''} />
         )}
       </>
     </Modal>
