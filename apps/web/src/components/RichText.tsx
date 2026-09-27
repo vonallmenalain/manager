@@ -105,8 +105,12 @@ function listNodes(
         </li>,
       )
     } else {
-      // Ebene übersprungen (2 ohne 1): Liste direkt in Liste.
-      const nested = listNodes(blocks, index, blockLevel, links)
+      // Ebene übersprungen (4 direkt nach 1, etwa nach dreimal Tab): Jede
+      // fehlende Ebene bekommt ihre eigene Liste, eine in der anderen – so
+      // baut auch der Editor das Feld (`renderDocInto`). Spränge die Liste
+      // direkt auf die Zielebene, stünde der Punkt beim Lesen weniger weit
+      // eingerückt als beim Schreiben.
+      const nested = listNodes(blocks, index, level + 1, links)
       items.push(<Fragment key={`deep-${index}`}>{nested.node}</Fragment>)
       index = nested.next
     }
