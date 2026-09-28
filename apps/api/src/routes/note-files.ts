@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 
 import {
+  ALLOWED_FILES_LABEL,
   API_ERROR_CODES,
   cleanFileName,
   isAllowedMimeType,
@@ -63,7 +64,7 @@ const noteFileRoutes: FastifyPluginAsync = async (fastify) => {
         .send(
           apiError(
             'unsupported_type',
-            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind ${ALLOWED_FILES_LABEL}.`,
           ),
         )
     }
@@ -151,6 +152,10 @@ const noteFileRoutes: FastifyPluginAsync = async (fastify) => {
     if (row.mimeType.startsWith('image/')) {
       return reply.send({ kind: 'image', pages: 1, totalPages: 1 } satisfies PreviewInfo)
     }
+    // Word, Excel & Co. zeigt der Betrachter nicht – er bietet sie zum Öffnen an.
+    if (row.mimeType !== 'application/pdf') {
+      return reply.send({ kind: 'none', pages: 0, totalPages: 0 } satisfies PreviewInfo)
+    }
 
     const pages = await countPdfPages(resolveInStorage(row.bereich as Bereich, row.storagePath))
     if (pages === 0) {
@@ -221,6 +226,9 @@ const noteFileRoutes: FastifyPluginAsync = async (fastify) => {
       return reply
         .type(row.mimeType)
         .send(createReadStream(resolveInStorage(bereich, row.storagePath)))
+    }
+    if (row.mimeType !== 'application/pdf') {
+      return reply.status(404).send(notFound('Für diese Datei gibt es kein Vorschaubild.'))
     }
 
     let imagePath: string

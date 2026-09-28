@@ -1,3 +1,4 @@
+import { fileKindLabel } from '@manager/shared'
 import { useEffect, useState } from 'react'
 
 import { CropDialog } from './CropDialog'
@@ -78,7 +79,7 @@ export function DocumentPreview({
       />
     )
   }
-  return <NoPreview id={id} />
+  return <NoPreview id={id} art={fileKindLabel(mimeType)} />
 }
 
 function ImagePreview({
@@ -319,12 +320,19 @@ function PageButton({
   )
 }
 
-/** Der Platzhalter, wenn sich nichts anzeigen lässt – mit dem Weg zur Datei. */
-function NoPreview({ id }: { id: string }) {
+/**
+ * Der Platzhalter, wenn sich nichts anzeigen lässt – mit dem Weg zur Datei.
+ *
+ * Bei Word, Excel & Co. ist das der Normalfall, keine Panne: Eine Vorschau
+ * bräuchte ein Office auf dem Server. „Datei öffnen" gibt sie dem Gerät, das
+ * sie mit der passenden App zeigt.
+ */
+function NoPreview({ id, art }: { id: string; art?: string }) {
+  const office = art !== undefined && art !== 'PDF' && art !== 'Bild' && art !== 'Datei'
   return (
     <PreviewFrame>
       <p className="px-6 text-center text-sm text-slate-500 dark:text-slate-400">
-        Vorschau hier nicht möglich –{' '}
+        {office ? `${art} – hier ohne Vorschau.` : 'Vorschau hier nicht möglich –'}{' '}
         <a
           href={fileUrl(id)}
           target="_blank"

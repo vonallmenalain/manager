@@ -7,6 +7,7 @@ import { HochladenDialog, type HochladenBilanz } from './HochladenDialog'
 import { NoteIcon } from './icons'
 import { ALLE_TRAY_FELDER, PageTray, type TrayDetails, type TrayField } from './PageTray'
 import { ApiRequestError } from '../lib/api'
+import { DATEI_ACCEPT } from '../lib/dateitypen'
 import { einlesen } from '../lib/einlesen'
 import {
   useCategories,
@@ -398,7 +399,7 @@ export function UploadControls({
         ref={fileRef}
         type="file"
         multiple
-        accept="application/pdf,image/*"
+        accept={DATEI_ACCEPT}
         className="hidden"
         onChange={handleFileInput}
       />

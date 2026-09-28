@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { extractPdfText } from '../lib/pdf-text.js'
+import { eingebetteterText, KeinTextError } from './office.js'
 import { CONTROL_CHARS, isUsableTextLayer } from './text-quality.js'
+
+export { KeinTextError } from './office.js'
 
 const run = promisify(execFile)
 
@@ -124,6 +127,9 @@ async function recognizePdfPages(file: string, languages: string): Promise<Extra
  *      der das Encoding der Schrift auswertet. Immer noch ohne Rasterung.
  *   3. PDF ohne Textebene (eingescannt) → Seiten rastern, dann Tesseract.
  *   4. Bild → direkt Tesseract.
+ *   5. Word, Excel, PowerPoint, LibreOffice, RTF, Text → der Text steht in
+ *      der Datei selbst (siehe `office.ts`).
+ *   6. Alte Office-Formate (.doc, .xls, .ppt) → kein Text (`KeinTextError`).
  */
 export async function extractText(
   absolutePath: string,
@@ -165,7 +171,18 @@ export async function extractText(
     return { text: await recognizeImage(absolutePath, languages), method: 'ocr', pages: 1 }
   }
 
-  throw new ExtractionError(`Aus ${mimeType} lässt sich kein Text gewinnen`)
+  // Office, RTF und Klartext tragen ihren Text in sich – wie ein PDF mit
+  // Textebene, nur ohne Seiten.
+  let eingebettet: string | null
+  try {
+    eingebettet = await eingebetteterText(absolutePath, mimeType)
+  } catch (error) {
+    if (error instanceof KeinTextError) throw error
+    throw new ExtractionError('Die Datei liess sich nicht lesen', { cause: error })
+  }
+  if (eingebettet !== null) return { text: eingebettet, method: 'textebene' }
+
+  throw new KeinTextError(`Aus ${mimeType || 'dieser Datei'} lässt sich kein Text lesen.`)
 }
 
 /**

@@ -8,7 +8,7 @@ import { db } from '../db/index.js'
 import { documents, type DocumentRow } from '../db/schema.js'
 import { env } from '../env.js'
 import { resolveInStorage, textSidecarPath } from '../lib/storage.js'
-import { extractText, resolveLanguages, tidyText } from './extract.js'
+import { extractText, KeinTextError, resolveLanguages, tidyText } from './extract.js'
 import { MAX_UNREADABLE_SHARE, unreadableShare } from './text-quality.js'
 
 /** Nach drei erfolglosen Anläufen bringt ein vierter erfahrungsgemäss nichts. */
@@ -220,6 +220,22 @@ export class OcrWorker {
           'Text erkannt',
         )
       } catch (error) {
+        // Aus dieser Art Datei gibt es nichts zu lesen – das wird beim nächsten
+        // Versuch nicht anders. „Kein Text" statt dreier Anläufe und am Ende
+        // „fehlgeschlagen".
+        if (error instanceof KeinTextError) {
+          await db
+            .update(documents)
+            .set({
+              ocrStatus: 'skipped',
+              ocrError: error.message.slice(0, 500),
+              ocrFinishedAt: new Date().toISOString(),
+            })
+            .where(eq(documents.id, document.id))
+          this.#log.info({ documentId: document.id }, 'Kein Text lesbar – übersprungen')
+          return true
+        }
+
         const message = error instanceof Error ? error.message : String(error)
         const attempts = document.ocrAttempts + 1
         const exhausted = attempts >= MAX_ATTEMPTS

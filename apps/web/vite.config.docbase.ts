@@ -7,6 +7,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 import { DOCBASE_SCOPE } from './src/lib/appScopes'
+import { TEILEN_ACCEPT } from './src/lib/dateitypen'
 import { DOCBASE_SHARE_TARGET_PATH } from './src/lib/shareConstants'
 
 /**
@@ -110,7 +111,8 @@ export default defineConfig({
             files: [
               {
                 name: 'files',
-                accept: ['application/pdf', 'image/*'],
+                // Aus derselben Liste wie der Server – siehe lib/dateitypen.ts.
+                accept: TEILEN_ACCEPT,
               },
             ],
           },

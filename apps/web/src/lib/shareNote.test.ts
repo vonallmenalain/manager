@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { hatText, noteFromShare } from './shareNote.ts'
+import { geteilterDateiname, hatText, noteFromShare } from './shareNote.ts'
 
 /**
  * Die geprüften Fälle sind keine erfundenen: Es sind die Formen, in denen
@@ -83,5 +83,43 @@ describe('Erkennen, ob eine Notiz entstehen kann', () => {
 
   it('erkennt einen geteilten Verweis', () => {
     assert.equal(hatText({ title: '', text: '', url: 'https://beispiel.ch' }), true)
+  })
+})
+
+/**
+ * Chrome 153 für Android lässt geteilte Dateien fallen und reicht nur Titel
+ * und Text weiter – aus „Dateien von Google" genau den Dateinamen. Genau diese
+ * Form kam auf dem Handy an.
+ */
+describe('Erkennen, dass nur der Name einer Datei ankam', () => {
+  it('erkennt den Namen im Titel oder im Text', () => {
+    assert.equal(
+      geteilterDateiname({ title: 'Schreiber 26_27 PDF.pdf', text: '', url: '' }),
+      'Schreiber 26_27 PDF.pdf',
+    )
+    assert.equal(
+      geteilterDateiname({ title: '', text: ' Scan 2026-09-28.jpg ', url: '' }),
+      'Scan 2026-09-28.jpg',
+    )
+    assert.equal(geteilterDateiname({ title: 'Mietvertrag.DOCX' }), 'Mietvertrag.DOCX')
+    assert.equal(geteilterDateiname({ text: 'Nebenkosten.xlsx' }), 'Nebenkosten.xlsx')
+  })
+
+  it('hält einen geteilten Verweis nicht für eine fehlende Datei', () => {
+    assert.equal(
+      geteilterDateiname({ title: 'bericht.pdf', text: 'https://example.ch/bericht.pdf', url: '' }),
+      null,
+    )
+    assert.equal(
+      geteilterDateiname({ title: 'bericht.pdf', text: '', url: 'https://example.ch/x' }),
+      null,
+    )
+  })
+
+  it('lässt gewöhnlichen Text und unbekannte Endungen in Ruhe', () => {
+    assert.equal(geteilterDateiname({ title: 'Einkaufsliste', text: 'Milch, Brot' }), null)
+    assert.equal(geteilterDateiname({ text: 'Siehe Anhang: rechnung.pdf\nDanke!' }), null)
+    assert.equal(geteilterDateiname({ text: 'setup.exe' }), null)
+    assert.equal(geteilterDateiname({ text: 'ordner/datei.pdf' }), null)
   })
 })

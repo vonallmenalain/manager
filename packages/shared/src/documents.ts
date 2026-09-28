@@ -67,9 +67,15 @@ export const OPEN_STATUSES: readonly DocumentStatus[] = ['pendent']
 export const documentStatusSchema = z.enum(DOCUMENT_STATUSES)
 
 /**
- * Erlaubte Dateitypen. Alles was ein Haushalt tatsächlich bekommt: PDFs aus
- * E-Mails, Fotos von Papier, Screenshots. Bewusst eng gehalten – ein
- * Dokumentenarchiv ist kein Dateiserver.
+ * Erlaubte Dateitypen. Alles, was ein Haushalt tatsächlich bekommt: PDFs aus
+ * E-Mails, Fotos von Papier, Screenshots – und die Dokumente, die man selbst
+ * schreibt oder zugeschickt bekommt: Word, Excel, PowerPoint, dasselbe im
+ * offenen Format von LibreOffice, RTF, Text und CSV.
+ *
+ * Lange waren es nur PDF und Bilder. Nur: Der Mietvertrag als Word-Datei, die
+ * Nebenkostenabrechnung als Excel-Tabelle gehören genauso in die Ablage – und
+ * wer sie erst in ein PDF verwandeln muss, legt sie nicht ab. Ausführbares
+ * und Archive bleiben draussen: Ein Dokumentenarchiv ist kein Dateiserver.
  */
 export const ALLOWED_MIME_TYPES = [
   'application/pdf',
@@ -79,7 +85,23 @@ export const ALLOWED_MIME_TYPES = [
   'image/heic',
   'image/heif',
   'image/tiff',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/rtf',
+  'text/plain',
+  'text/csv',
 ] as const
+
+/** Für Meldungen: was sich ablegen lässt. */
+export const ALLOWED_FILES_LABEL =
+  'PDF, Bilder, Word, Excel, PowerPoint, LibreOffice-Dateien, RTF, Text und CSV'
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
@@ -96,6 +118,10 @@ const MIME_ALIASES: Record<string, AllowedMimeType> = {
   'image/heic-sequence': 'image/heic',
   'image/heif-sequence': 'image/heif',
   'image/tif': 'image/tiff',
+  'text/rtf': 'application/rtf',
+  'application/x-rtf': 'application/rtf',
+  'text/comma-separated-values': 'text/csv',
+  'application/csv': 'text/csv',
 }
 
 const MIME_BY_EXTENSION: Record<string, AllowedMimeType> = {
@@ -110,6 +136,57 @@ const MIME_BY_EXTENSION: Record<string, AllowedMimeType> = {
   heif: 'image/heif',
   tif: 'image/tiff',
   tiff: 'image/tiff',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odt: 'application/vnd.oasis.opendocument.text',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  rtf: 'application/rtf',
+  txt: 'text/plain',
+  csv: 'text/csv',
+}
+
+/**
+ * Die Endungen der erlaubten Dateien – für Auswahlfenster, die sich an der
+ * Endung orientieren, weil manche Ablagen für Office-Dateien keinen oder einen
+ * allgemeinen Typ melden.
+ */
+export const ALLOWED_EXTENSIONS: readonly string[] = Object.keys(MIME_BY_EXTENSION)
+
+/**
+ * Wie eine Dateiart heisst – in „Word · 120 KB" unter dem Namen und dort, wo
+ * sich eine Datei nicht als Vorschau zeigen lässt.
+ */
+export function fileKindLabel(mimeType: string): string {
+  if (mimeType === 'application/pdf') return 'PDF'
+  if (mimeType.startsWith('image/')) return 'Bild'
+  switch (mimeType) {
+    case 'application/msword':
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      return 'Word'
+    case 'application/vnd.ms-excel':
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return 'Excel'
+    case 'application/vnd.ms-powerpoint':
+    case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      return 'PowerPoint'
+    case 'application/vnd.oasis.opendocument.text':
+    case 'application/rtf':
+      return 'Textdokument'
+    case 'application/vnd.oasis.opendocument.spreadsheet':
+    case 'text/csv':
+      return 'Tabelle'
+    case 'application/vnd.oasis.opendocument.presentation':
+      return 'Präsentation'
+    case 'text/plain':
+      return 'Text'
+    default:
+      return 'Datei'
+  }
 }
 
 /**
