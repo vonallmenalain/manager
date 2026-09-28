@@ -17,17 +17,15 @@ import {
   DEFAULT_BEREICH,
   DEFAULT_DOCUMENT_STATUS,
   documentStatusSchema,
+  titleFromFilename,
   uploadTitleSchema,
   type Bereich,
   type DocumentStatus,
 } from '@manager/shared'
 
-/** "Rechnung Krankenkasse_Maerz.pdf" → "Rechnung Krankenkasse Maerz" */
-export function titleFromFilename(filename: string): string {
-  const withoutExtension = filename.replace(/\.[^./\\]+$/, '')
-  const cleaned = withoutExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
-  return cleaned.slice(0, 200) || 'Ohne Titel'
-}
+// Steht im geteilten Paket: Die App schlägt beim Teilen denselben Titel vor,
+// den der Server ohne Angabe vergeben würde.
+export { titleFromFilename }
 
 function firstEntry(field: Multipart | Multipart[] | undefined): Multipart | undefined {
   return Array.isArray(field) ? field[0] : field

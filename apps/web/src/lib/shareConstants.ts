@@ -38,6 +38,31 @@ export const SHARE_FILE_PREFIX = '/__geteilt/datei-'
 export const SHARE_TEXT_KEY = '/__geteilt/text'
 
 /**
+ * Schlüssel des Protokolls: Was Android beim Teilen tatsächlich übergeben hat.
+ *
+ * Kommt nichts Brauchbares an, weiss sonst niemand, warum – ob die andere App
+ * gar keine Datei mitgab, eine leere oder eine, die der Browser nicht lesen
+ * konnte. Das Protokoll hält nur Namen, Arten und Grössen fest, keine Inhalte,
+ * und die Auswahlseite zeigt es an, wenn nichts angekommen ist.
+ */
+export const SHARE_LOG_KEY = '/__geteilt/protokoll'
+
+export interface ShareProtokollFeld {
+  /** Der Name des Formularfelds – `files`, `title`, `text` oder `url`. */
+  name: string
+  art: 'text' | 'datei'
+  /** Zeichen bei Text, Bytes bei einer Datei. */
+  laenge: number
+  /** Dateiname und Typ, wie sie ankamen. */
+  datei?: string
+  typ?: string
+}
+
+export interface ShareProtokoll {
+  felder: ShareProtokollFeld[]
+}
+
+/**
  * Der Name des Teilen-Ziels, wie ihn der Router kennt.
  *
  * Als Seite gebraucht nur für den Fall, dass kein Service Worker den POST

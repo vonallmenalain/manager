@@ -61,7 +61,14 @@ export function Modal({
         // dvh statt vh: Auf dem Handy zählt die sichtbare Höhe, nicht die mit
         // eingeblendeter Adressleiste gerechnete – sonst stünde der Fuss des
         // Fensters unter dem Bildschirmrand.
-        className={`flex max-h-[calc(100dvh-1.5rem)] w-full ${width} flex-col rounded-2xl border shadow-xl ${className}`}
+        //
+        // min-w-0: Ohne das bestimmt der längste unteilbare Inhalt die Breite.
+        // Ein Verweis ohne Leerzeichen (eine Adresse mit hundert Parametern)
+        // zog das Fenster so bis zu seiner Höchstbreite auf, auch über den
+        // Rand eines Handys hinaus – samt Kopfzeile mit Anheften und
+        // Schliessen. So bleibt das Fenster im Bildschirm, und der Verweis
+        // bricht um.
+        className={`flex max-h-[calc(100dvh-1.5rem)] w-full min-w-0 ${width} flex-col rounded-2xl border shadow-xl ${className}`}
       >
         {header ? (
           <div className="flex items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">

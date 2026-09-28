@@ -813,6 +813,14 @@ bis kurz vor den Bildschirmrand – auch das Textfeld wächst beim Tippen mit, s
 selbst zu scrollen, während das Fenster darüber noch Platz hätte. Man soll nicht durch ein
 Guckloch schreiben. Der schmale Rand bleibt: Er zeigt, dass darunter die Seite liegt.
 
+**Das Fenster bleibt im Bildschirm.** Ein geteilter Verweis ist oft eine Adresse mit
+hundert Parametern und ohne ein einziges Leerzeichen. Ohne Gegenmittel bestimmte genau
+diese Zeile die Breite des Fensters: Es wuchs auf seine Höchstbreite, auf dem Handy über den
+rechten Rand hinaus, samt Anheften und Schliessen. Jetzt darf das Fenster schmaler werden
+als sein längstes Wort (`min-w-0`), und der Verweis bricht um. Auch der Titel bricht um,
+statt rechts aus seinem Feld zu laufen – er ist ein Textfeld, das mit seinem Inhalt
+wächst, bleibt aber eine Zeile: Die Eingabetaste fügt nichts ein.
+
 **Man sieht, was man schreibt – auch in einer langen Notiz.** Das frühere Textfeld wuchs,
 indem es bei jedem Tastendruck kurz auf seine Mindesthöhe schrumpfte und dann nachgemessen
 wurde. In diesem Augenblick war der Inhalt des Fensters kürzer als der Ausschnitt, der
@@ -1346,7 +1354,13 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
   `/docbase/teilen`), und dort wird das Ziel gewählt:
 
   * **Dokumente** im Manager, **Sammlung** in der DocBase – nur für Dateien, abgelegt
-    samt Texterkennung und Suche wie jedes hochgeladene Dokument.
+    samt Texterkennung und Suche wie jedes hochgeladene Dokument. Vorher stehen die
+    Angaben zum Anpassen da, dieselben wie im Stapel des Scanners: Titel (aus dem
+    Dateinamen vorgeschlagen, je Datei), Kategorie, Zuständig und Status, dazu Fällig und
+    eine Notiz; in der DocBase Titel, Kategorie und Notiz. Nach dem Ablegen geht das
+    Dokument auf – dort steht der Rest (Datum, Betrag, Absender). Liegt die Datei schon
+    in der Ablage, sagt das die Seite und bietet „Trotzdem ablegen" oder „Vorhandenes
+    Dokument öffnen" an.
   * **Notiz** – eine neue oder, über eine Suche, ans Ende einer bestehenden. Dorthin
     passt alles: Text und Verweise als Text (der Verweis bleibt anklickbar), Dateien
     entweder **ganz** (sie stehen in der Notiz und öffnen sich per Tipp) oder als ihr
@@ -1386,10 +1400,19 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
     was passiert ist und was zu tun ist, statt wortlos die Startseite.
   * *Doppelt abgelegt.* Die Ablage holte geteilte Dateien in einem Effekt ab, der beim
     nächsten Zeichnen ein zweites Mal lief, bevor die Adresse aufgeräumt war. Jede Datei
-    kam doppelt an – oder die zweite scheiterte mit „liegt bereits in der Ablage". Jetzt
-    wird genau einmal abgeholt.
+    kam doppelt an – oder die zweite scheiterte mit „liegt bereits in der Ablage". Seit die
+    Auswahlseite selbst ablegt (mit den Angaben oben), gibt es diesen Umweg über die
+    Dokumentenseite nicht mehr.
   * *Leere Dateifelder.* Manche Apps schicken beim Teilen eines Verweises ein leeres
     Dateifeld mit. Es fällt weg, statt als namenlose Datei aufzutauchen.
+  * *Keine Datei angekommen.* Nicht jede App gibt beim Teilen den Inhalt mit – beim
+    „Kopie senden" aus Google Drive kam auf dem Handy nichts an. Was Android übergibt,
+    liegt ausserhalb der App. Deshalb schreibt der Worker mit, was er bekommt (nur
+    Feldnamen, Dateinamen, Typen und Grössen, keine Inhalte), und die Auswahlseite sagt
+    es: keine Datei, oder eine, die leer ankam. Unter „Was ist angekommen?" steht das
+    Protokoll zum Nachsehen. Und sie bietet den Weg, der immer geht: **Datei auswählen**
+    über die Auswahl des Systems, in der auch Google Drive steht. Danach geht es genau
+    gleich weiter – Dokumente mit Angaben oder Notiz.
 * **iOS/iPadOS:** Safari unterstützt Web Share Target **nicht** – auch 2026 nicht.
   Eine installierte PWA erscheint dort nicht im Teilen-Menü. Das lässt sich nicht
   umgehen, aber gleichwertig lösen:

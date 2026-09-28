@@ -22,7 +22,9 @@ import {
   SHARE_CACHE,
   SHARE_FILENAME_HEADER,
   SHARE_FILE_PREFIX,
+  SHARE_LOG_KEY,
   SHARE_TEXT_KEY,
+  type ShareProtokoll,
 } from './shareConstants'
 import type { SharedText } from './shareNote'
 
@@ -33,9 +35,29 @@ export function shareCacheFor(bereich: Bereich): string {
 
 export interface SharedContent extends SharedText {
   files: File[]
+  /** Was der Worker beim Teilen festgehalten hat – `null`, wenn es keins gibt. */
+  protokoll?: ShareProtokoll | null
 }
 
 export const LEER: SharedContent = { files: [], title: '', text: '', url: '' }
+
+/**
+ * Selbst gewählte Dateien zum Geteilten dazu – wenn die andere App beim
+ * Teilen keine (oder eine leere) mitgab und die Datei deshalb auf der
+ * Auswahlseite gewählt wird.
+ *
+ * Dazu, nicht anstelle: Was an Titel, Text und Verweis ankam, bleibt – sonst
+ * stünde in der Notiz danach nur die Datei. Das Protokoll fällt weg; die
+ * Meldung „kam leer an" ist mit der gewählten Datei erledigt. Der Typ wird
+ * geprüft wie beim Abholen aus dem Zwischenspeicher.
+ */
+export function withFiles(content: SharedContent, files: readonly File[]): SharedContent {
+  const normalisiert = files.map((file) => {
+    const typ = uploadMimeType(file.type, file.name)
+    return typ === file.type ? file : new File([file], file.name, { type: typ })
+  })
+  return { ...content, files: [...content.files, ...normalisiert], protokoll: null }
+}
 
 /** Ist überhaupt etwas angekommen? */
 export function istLeer(content: SharedContent): boolean {
@@ -56,6 +78,7 @@ export async function readSharedContent(cacheName: string): Promise<SharedConten
 
   const files: File[] = []
   let text: SharedText = { title: '', text: '', url: '' }
+  let protokoll: ShareProtokoll | null = null
 
   for (const key of await cache.keys()) {
     const response = await cache.match(key)
@@ -68,24 +91,16 @@ export async function readSharedContent(cacheName: string): Promise<SharedConten
       continue
     }
 
+    if (pathname === SHARE_LOG_KEY) {
+      protokoll = await lesenAlsProtokoll(response)
+      continue
+    }
+
     if (!pathname.startsWith(SHARE_FILE_PREFIX)) continue
     files.push(await lesenAlsDatei(response))
   }
 
-  return { files, ...text }
-}
-
-/**
- * Die geteilten Dateien – und danach ist der Zwischenspeicher leer.
- *
- * Wird von der Dokumentenseite gerufen, sobald „Dokumente" gewählt wurde. Das
- * Aufräumen gehört hierher: Bliebe etwas liegen, tauchte es beim nächsten
- * Öffnen der App unerwartet wieder auf.
- */
-export async function collectSharedFiles(cacheName: string): Promise<File[]> {
-  const { files } = await readSharedContent(cacheName)
-  await discardSharedContent(cacheName)
-  return files
+  return { files, ...text, protokoll }
 }
 
 /**
@@ -124,6 +139,15 @@ async function lesenAlsDatei(response: Response): Promise<File> {
   const encodedName = response.headers.get(SHARE_FILENAME_HEADER)
   const name = encodedName ? decodeURIComponent(encodedName) : 'Geteiltes Dokument'
   return new File([blob], name, { type: uploadMimeType(blob.type, name) })
+}
+
+async function lesenAlsProtokoll(response: Response): Promise<ShareProtokoll | null> {
+  try {
+    const roh = (await response.json()) as Partial<ShareProtokoll>
+    return Array.isArray(roh.felder) ? { felder: roh.felder } : null
+  } catch {
+    return null
+  }
 }
 
 async function lesenAlsText(response: Response): Promise<SharedText> {

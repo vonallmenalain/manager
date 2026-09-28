@@ -262,13 +262,14 @@ export function PageTray({
 }
 
 /**
- * Eines der drei Auswahlfelder unter dem Titel.
+ * Eines der drei Auswahlfelder unter dem Titel – auch auf der Seite nach dem
+ * Teilen, wo dieselben Angaben vor dem Ablegen gewählt werden.
  *
  * Bewusst ein <select> und keine Reihe von Knöpfen: Die Kategorienliste eines
  * Haushalts hat ein Dutzend Einträge, und die Auswahl des Systems ist auf dem
  * Telefon die, die sich mit einer Hand bedienen lässt.
  */
-function TraySelect({
+export function TraySelect({
   label,
   value,
   options,

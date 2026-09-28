@@ -49,13 +49,25 @@ export class ApiRequestError extends Error {
   readonly code: string
   readonly status: number
   readonly fields: Record<string, string>
+  /**
+   * Die ganze Antwort des Servers. Manche Fehler bringen mehr mit als eine
+   * Meldung – ein Duplikat etwa das Dokument, das schon in der Ablage liegt.
+   */
+  readonly data: unknown
 
-  constructor(status: number, code: string, message: string, fields?: Record<string, string>) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    fields?: Record<string, string>,
+    data?: unknown,
+  ) {
     super(message)
     this.name = 'ApiRequestError'
     this.status = status
     this.code = code
     this.fields = fields ?? {}
+    this.data = data
   }
 }
 
@@ -117,6 +129,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       error?.code ?? 'unknown',
       error?.message ?? 'Unerwarteter Fehler.',
       error?.fields,
+      payload,
     )
   }
 

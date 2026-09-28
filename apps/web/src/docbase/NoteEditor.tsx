@@ -10,6 +10,7 @@ import {
   ColorPicker,
   DateiKnopf,
   NoteText,
+  NoteTitle,
   WidthPicker,
   type Breite,
   type NoteTextHandle,
@@ -128,15 +129,8 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
       }
     >
       <>
-        <input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Titel"
-          aria-label="Titel"
-          // Bei einer neuen Notiz steht der Finger schon über der Tastatur.
-          autoFocus={!note}
-          className="w-full bg-transparent text-lg font-semibold outline-none"
-        />
+        {/* Bei einer neuen Notiz steht der Finger schon über der Tastatur. */}
+        <NoteTitle value={title} onChange={setTitle} autoFocus={!note} />
 
         {/* Die Kategorie steht oben und nicht im Fuss: Sie entscheidet, wo die
             Notiz später auftaucht, und das gehört zum Anlegen dazu – nicht zum

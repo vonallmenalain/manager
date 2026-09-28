@@ -658,6 +658,20 @@ export function formatAmount(cents: number | null): string {
   })
 }
 
+/**
+ * Der Titel, den ein Dokument ohne eigene Angabe bekommt – aus dem Dateinamen.
+ *
+ * "Rechnung Krankenkasse_Maerz.pdf" → "Rechnung Krankenkasse Maerz". Steht hier
+ * und nicht nur im Server, weil die App beim Teilen denselben Titel zum
+ * Anpassen vorschlägt: Wer ihn stehen lässt, bekommt genau das, was ohne
+ * Formular in der Ablage stünde.
+ */
+export function titleFromFilename(filename: string): string {
+  const withoutExtension = filename.replace(/\.[^./\\]+$/, '')
+  const cleaned = withoutExtension.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return cleaned.slice(0, 200) || 'Ohne Titel'
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
