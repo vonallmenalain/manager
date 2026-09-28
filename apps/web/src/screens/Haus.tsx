@@ -35,7 +35,7 @@ import { HausChart, ShareBar, type ChartData, type ChartPanel, type ChartSeries 
 import { Modal, ModalCloseButton } from '../components/Modal'
 import { RechnungDetail, RechnungFormular } from '../components/HausRechnung'
 import { API_BASE, ApiRequestError } from '../lib/api'
-import { dateiEinlesen } from '../lib/einlesen'
+import { einlesenEinzeln } from '../lib/einlesen'
 import { useLocalSetting } from '../lib/einstellungen'
 import {
   useAddHausBill,
@@ -1147,7 +1147,7 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
     // zum Auslesen und nach dem Prüfen beim Übernehmen. Bis dahin hätte Chrome
     // eine Datei aus Google Drive längst verloren (siehe `lib/einlesen.ts`).
     const gewaehlt = Array.from(files)
-    const eingelesen = await Promise.all(gewaehlt.map(dateiEinlesen))
+    const eingelesen = await einlesenEinzeln(gewaehlt)
 
     // Eine Datei nach der anderen: Beim gleichzeitigen Hochladen von fünf
     // Rechnungen bringt der Server nichts schneller zustande, und ein Fehler

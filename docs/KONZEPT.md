@@ -1431,7 +1431,9 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
     wird jede gewählte Datei gleich nach der Auswahl in den Arbeitsspeicher kopiert
     (`lib/einlesen.ts`) – auf der Auswahlseite, beim Hochladen in den Dokumenten, beim
     Einfügen in eine Notiz und beim Import einer Hausrechnung. Wie lange das Ausfüllen
-    danach dauert, spielt keine Rolle mehr. Was sich nicht lesen lässt, meldet sich sofort
+    danach dauert, spielt keine Rolle mehr. Gelesen wird eine Datei nach der anderen, und
+    eine Auswahl darf zusammen höchstens 100 MB gross sein – sonst lägen zehn grosse PDFs
+    zugleich im Speicher des Handys. Was sich nicht lesen lässt, meldet sich sofort
     mit einem Satz, der sagt, was geht: die Datei in Drive zuerst herunterladen und dann
     aus „Downloads" wählen. Bricht ein Hochladen trotzdem ohne Antwort ab, prüft
     `lib/api.ts`, ob die Datei schuld ist, bevor es nach der Verbindung fragt.

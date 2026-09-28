@@ -3,7 +3,14 @@ import { describe, it } from 'node:test'
 
 import { MAX_UPLOAD_BYTES } from '@manager/shared'
 
-import { dateiEinlesen, einlesen, meldungUnlesbar, unlesbareDatei } from './einlesen.ts'
+import {
+  dateiEinlesen,
+  einlesen,
+  einlesenEinzeln,
+  MAX_AUSWAHL_BYTES,
+  meldungUnlesbar,
+  unlesbareDatei,
+} from './einlesen.ts'
 
 /**
  * Eine Datei, an deren Inhalt Chrome nicht mehr herankommt – wie eine aus
@@ -75,6 +82,71 @@ describe('Gewählte Dateien einlesen', () => {
       ['eins.pdf', 'drei.jpg'],
     )
     assert.deepEqual(probleme, [meldungUnlesbar('zwei.pdf')])
+  })
+})
+
+/** Eine Datei, die so gross tut – ohne so viel Speicher zu brauchen. */
+function mitGroesse(name: string, bytes: number): File {
+  const datei = new File(['x'], name)
+  Object.defineProperty(datei, 'size', { value: bytes })
+  return datei
+}
+
+describe('Eine Auswahl mit vielen oder grossen Dateien', () => {
+  const MB = 1024 * 1024
+
+  it('liest zusammen nur bis zur Obergrenze', async () => {
+    const { dateien, probleme } = await einlesen([
+      mitGroesse('a.pdf', 40 * MB),
+      mitGroesse('b.pdf', 40 * MB),
+      mitGroesse('c.pdf', 40 * MB),
+      mitGroesse('d.pdf', 10 * MB),
+    ])
+
+    assert.equal(MAX_AUSWAHL_BYTES, 100 * MB)
+    // Die dritte passt nicht mehr, die kleine vierte schon.
+    assert.deepEqual(
+      dateien.map((datei) => datei.name),
+      ['a.pdf', 'b.pdf', 'd.pdf'],
+    )
+    assert.equal(probleme.length, 1)
+    assert.match(probleme[0] ?? '', /„c\.pdf" wurde nicht gelesen.*100 MB.*kleineren Portionen/)
+  })
+
+  it('zählt eine einzelne zu grosse Datei nicht mit', async () => {
+    const ergebnisse = await einlesenEinzeln([
+      mitGroesse('riesig.pdf', 60 * MB),
+      mitGroesse('a.pdf', 45 * MB),
+      mitGroesse('b.pdf', 45 * MB),
+    ])
+
+    assert.deepEqual(
+      ergebnisse.map((ergebnis) => (ergebnis.ok ? ergebnis.datei.name : ergebnis.meldung)),
+      ['„riesig.pdf" ist grösser als 50 MB.', 'a.pdf', 'b.pdf'],
+    )
+  })
+
+  it('liest eine Datei nach der anderen, nicht alle zugleich', async () => {
+    let gleichzeitig = 0
+    let hoechstens = 0
+    class LangsameDatei extends File {
+      override async arrayBuffer(): Promise<ArrayBuffer> {
+        gleichzeitig += 1
+        hoechstens = Math.max(hoechstens, gleichzeitig)
+        await new Promise((fertig) => setTimeout(fertig, 5))
+        gleichzeitig -= 1
+        return super.arrayBuffer()
+      }
+    }
+
+    const { dateien } = await einlesen([
+      new LangsameDatei(['a'], 'a.pdf'),
+      new LangsameDatei(['b'], 'b.pdf'),
+      new LangsameDatei(['c'], 'c.pdf'),
+    ])
+
+    assert.equal(dateien.length, 3)
+    assert.equal(hoechstens, 1)
   })
 })
 

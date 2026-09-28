@@ -33,16 +33,51 @@ export interface Eingelesen {
   probleme: string[]
 }
 
-/** Mehrere Dateien einlesen – alle zugleich, denn „sofort" gilt für jede. */
+/**
+ * Wie viel eine Auswahl zusammen in den Arbeitsspeicher holen darf.
+ *
+ * Jede Datei darf bis zu 50 MB gross sein, und fast überall lassen sich
+ * mehrere zugleich wählen. Ohne Obergrenze lägen zehn grosse PDFs mit einer
+ * halben Milliarde Bytes im Speicher, bevor die erste hochgeladen ist – auf
+ * dem Handy das Ende des Tabs. Zwei Dateien der Höchstgrösse passen hinein,
+ * eine übliche Auswahl von Fotos und Briefen bei Weitem.
+ */
+export const MAX_AUSWAHL_BYTES = 2 * MAX_UPLOAD_BYTES
+
+/** Mehrere Dateien einlesen – getrennt nach Lesbarem und Problemen. */
 export async function einlesen(files: readonly File[]): Promise<Eingelesen> {
-  const ergebnisse = await Promise.all(files.map(dateiEinlesen))
   const dateien: File[] = []
   const probleme: string[] = []
-  for (const ergebnis of ergebnisse) {
+  for (const ergebnis of await einlesenEinzeln(files)) {
     if (ergebnis.ok) dateien.push(ergebnis.datei)
     else probleme.push(ergebnis.meldung)
   }
   return { dateien, probleme }
+}
+
+/**
+ * Mehrere Dateien einlesen – jede mit ihrem Ergebnis, in der gewählten
+ * Reihenfolge.
+ *
+ * Eine nach der anderen, nicht alle zugleich: So liegt jeweils nur eine Datei
+ * doppelt im Speicher (als gelesener Puffer und als neue Datei). „Sofort"
+ * bleibt es trotzdem – eine Datei vom Gerät ist in einem Augenblick gelesen,
+ * und eine, an die Chrome nicht herankommt, scheitert ebenso schnell.
+ */
+export async function einlesenEinzeln(files: readonly File[]): Promise<Einlesung[]> {
+  const ergebnisse: Einlesung[] = []
+  let summe = 0
+  for (const file of files) {
+    // Eine einzelne zu grosse Datei meldet `dateiEinlesen` selbst, genauer.
+    if (file.size <= MAX_UPLOAD_BYTES && summe + file.size > MAX_AUSWAHL_BYTES) {
+      ergebnisse.push({ ok: false, meldung: meldungZuViel(file.name) })
+      continue
+    }
+    const ergebnis = await dateiEinlesen(file)
+    if (ergebnis.ok) summe += file.size
+    ergebnisse.push(ergebnis)
+  }
+  return ergebnisse
 }
 
 export async function dateiEinlesen(file: File): Promise<Einlesung> {
@@ -68,6 +103,10 @@ export async function dateiEinlesen(file: File): Promise<Einlesung> {
     ok: true,
     datei: new File([inhalt], file.name, { type: file.type, lastModified: file.lastModified }),
   }
+}
+
+function meldungZuViel(name: string): string {
+  return `„${name}" wurde nicht gelesen – die Auswahl ist zusammen grösser als ${Math.round(MAX_AUSWAHL_BYTES / 1024 / 1024)} MB. Bitte in kleineren Portionen wählen.`
 }
 
 /** Was zu tun ist, wenn Chrome eine Datei nicht lesen kann. */
