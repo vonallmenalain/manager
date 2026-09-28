@@ -181,6 +181,40 @@ describe('Text aus Excel, PowerPoint und LibreOffice', () => {
     assert.deepEqual(text.split('\n'), ['Stromzähler', 'Hauptleitung'])
   })
 
+  it('liest Texte aus Formeln und aus dem „Export nach Excel" von Web-Apps', () => {
+    const blatt = `<worksheet><sheetData><row r="1">
+<c r="A1" t="str"><v>Rechnung Mai</v></c>
+<c r="B1" s="1"/>
+<c r="C1" t="str"><f>A1&amp;" (bezahlt)"</f><v>Rechnung Mai (bezahlt)</v></c>
+<c r="D1" t="str"><v xml:space="preserve"> Zürich &amp; Umgebung </v></c>
+<c r="E1"><v>1250.5</v></c>
+<c r="F1" t="b"><v>1</v></c>
+</row></sheetData></worksheet>`
+    const text = officeText(zip({ 'xl/worksheets/sheet1.xml': blatt }), 'excel')
+    assert.deepEqual(text.split('\n'), [
+      'Rechnung Mai',
+      'Rechnung Mai (bezahlt)',
+      ' Zürich & Umgebung ',
+    ])
+  })
+
+  it('liest Tabellen mit Vorsilbe „x:" und frei benannten Blättern', () => {
+    // So schreiben Programme auf Grundlage des Open XML SDK von Microsoft.
+    const ns = 'xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    const text = officeText(
+      zip({
+        'xl/sharedStrings.xml': `<x:sst ${ns}><x:si><x:t>Gemeinsam</x:t></x:si></x:sst>`,
+        'xl/worksheets/daten.xml': `<x:worksheet ${ns}><x:sheetData><x:row r="1">
+<x:c r="A1" t="s"><x:v>0</x:v></x:c>
+<x:c r="B1" t="inlineStr"><x:is><x:t xml:space="preserve">Direkt im Blatt</x:t></x:is></x:c>
+</x:row></x:sheetData></x:worksheet>`,
+        'xl/worksheets/_rels/daten.xml.rels': '<Relationships/>',
+      }),
+      'excel',
+    )
+    assert.deepEqual(text.split('\n').filter(Boolean), ['Gemeinsam', 'Direkt im Blatt'])
+  })
+
   it('gibt bei einer Tabelle ohne Texte nichts zurück', () => {
     assert.equal(officeText(zip({ 'xl/workbook.xml': '<workbook/>' }), 'excel'), '')
   })
@@ -224,14 +258,11 @@ describe('Text aus Excel, PowerPoint und LibreOffice', () => {
 
 describe('Text aus RTF', () => {
   it('liest Absätze und Umlaute, ohne Schriften und Metadaten', () => {
-    const rtf =
-      String.raw`{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0\fnil Calibri;}}{\colortbl ;\red255\green0\blue0;}{\*\generator Riched20 10.0}\viewkind4\uc1
+    const rtf = String.raw`{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0\fnil Calibri;}}{\colortbl ;\red255\green0\blue0;}{\*\generator Riched20 10.0}\viewkind4\uc1
 \pard\f0\fs22 Sch\'f6ne Gr\'fc\'dfe\par
 {\b Rechnung} Nr.\tab 42\par
-Preis: 12` +
-      // Nicht im String.raw: Beim Entfernen der Typen macht Node aus 荤
-      // sonst schon das Zeichen selbst.
-      '\\u8364?\\par\n}'
+Preis: 12\u8364?\par
+}`
     assert.equal(rtfText(rtf).trim(), 'Schöne Grüße\nRechnung Nr.\t42\nPreis: 12€')
   })
 

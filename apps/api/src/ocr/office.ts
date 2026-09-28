@@ -225,6 +225,15 @@ function wordText(xml: string): string {
   ])
 }
 
+/**
+ * Excel schreibt die Elemente seiner Tabellen ohne Vorsilbe, Programme auf
+ * Grundlage des Open XML SDK von Microsoft mit „x:" (<x:si><x:t>…). Gelesen
+ * wird beides gleich; die folgenden Leser erwarten Elemente ohne Vorsilbe.
+ */
+function ohneVorsilbe(xml: string): string {
+  return xml.replace(/<(\/?)[A-Za-z_][\w.-]*:(?=[A-Za-z_])/g, '<$1')
+}
+
 /** Excel: die Texte der Zellen, je einer pro Zeile – Zahlen findet die Suche ohnehin selten. */
 function excelText(xml: string): string {
   // Lesehilfen für japanische Schrift (<rPh>) wiederholen den Text in Lautschrift.
@@ -232,16 +241,24 @@ function excelText(xml: string): string {
 }
 
 /**
- * Texte, die direkt in den Zellen eines Blatts stehen (`inlineStr`) statt in
- * der gemeinsamen Liste – so schreiben manche Programme ihre Tabellen, und
- * eine sharedStrings.xml gibt es dann gar nicht.
+ * Texte, die direkt in den Zellen eines Blatts stehen statt in der
+ * gemeinsamen Liste: als `inlineStr` – eine sharedStrings.xml gibt es dann
+ * oft gar nicht – oder als `str`, das Ergebnis einer Formel. In dieser Form
+ * legen auch viele Web-Apps beim „Export nach Excel" jeden Text ab.
  */
 function blattText(xml: string): string {
   const texte: string[] = []
-  for (const treffer of xml.matchAll(/<is>([\s\S]*?)<\/is>/g)) {
-    texte.push(excelText(treffer[1] ?? ''))
+  for (const [, attribute = '', inhalt = ''] of xml.matchAll(
+    /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g,
+  )) {
+    const inline = /<is(?:\s[^>]*)?>([\s\S]*?)<\/is>/.exec(inhalt)
+    if (inline) {
+      texte.push(excelText(inline[1] ?? ''))
+    } else if (/\bt=["']str["']/.test(attribute)) {
+      texte.push(entitaeten(/<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(inhalt)?.[1] ?? ''))
+    }
   }
-  return texte.join('\n')
+  return texte.filter(Boolean).join('\n')
 }
 
 function folienText(xml: string): string {
@@ -298,12 +315,13 @@ export function officeText(zip: Buffer, art: OfficeArt): string {
     case 'excel': {
       // Die gemeinsame Liste der Zelltexte – fehlt, wenn keine Zelle Text hat
       // oder das Programm die Texte in die Blätter schreibt.
-      const texte = [excelText(teil('xl/sharedStrings.xml') ?? '')]
+      const texte = [excelText(ohneVorsilbe(teil('xl/sharedStrings.xml') ?? ''))]
       let laenge = texte[0]?.length ?? 0
       for (const eintrag of eintraege) {
         if (laenge > MAX_TEXT_CHARS) break
-        if (!/^xl\/worksheets\/sheet\d+\.xml$/.test(eintrag.name)) continue
-        const text = blattText(auspacken(eintrag))
+        // Die Blätter – Excel nummeriert sie (sheet1.xml …), andere Programme nicht unbedingt.
+        if (!/^xl\/worksheets\/[^/]+\.xml$/.test(eintrag.name)) continue
+        const text = blattText(ohneVorsilbe(auspacken(eintrag)))
         texte.push(text)
         laenge += text.length
       }

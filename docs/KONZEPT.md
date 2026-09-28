@@ -1257,12 +1257,12 @@ LibreOffice (`.odt`, `.ods`, `.odp`), RTF, Text und CSV. Deren Text liegt in der
 selbst, ohne Rasterung und ohne Tesseract (`ocr/office.ts`):
 
 * **Office ab 2007 und LibreOffice** sind ZIP-Archive voller XML. Ausgepackt werden nur
-  die Teile mit dem Text (`word/document.xml`, `xl/sharedStrings.xml`, die Folien,
-  `content.xml`), mit dem zlib von Node statt mit LibreOffice im Image – das wären mehrere
-  hundert Megabyte bei jedem Update über die Hausleitung. Kein Teil wird über 30 MB
-  entpackt, egal was das Archiv über sich behauptet.
+  die Teile mit dem Text (`word/document.xml`, `xl/sharedStrings.xml` und die Blätter,
+  die Folien, `content.xml`), mit dem zlib von Node statt mit LibreOffice im Image – das
+  wären mehrere hundert Megabyte bei jedem Update über die Hausleitung. Kein Teil wird
+  über 30 MB entpackt, egal was das Archiv über sich behauptet.
 * **RTF** wird mit einem kleinen eigenen Leser zu Text; Schrifttabellen, Bilder und
-  Feldbefehle fallen weg, Umlaute (`\'fc`, `荤`) werden aufgelöst.
+  Feldbefehle fallen weg, Umlaute und Sonderzeichen (`\'fc`, `\u8364?`) werden aufgelöst.
 * **Text und CSV** werden in ihrer Kodierung gelesen: UTF-16 am Byte-Order-Mark, sonst
   UTF-8, und wo das nicht aufgeht, die alte Windows-Kodierung.
 * **Alte Binärformate** (`.doc`, `.xls`, `.ppt`) werden abgelegt und lassen sich öffnen,
