@@ -76,18 +76,19 @@ const DATEIENDUNG =
  * Notiz an, in der „Schreiber 26_27 PDF.pdf" der einzige Inhalt war. Mit dem
  * Namen lässt sich sagen, was passiert ist – und die Datei gleich auswählen.
  *
- * Nur, wenn nichts auf einen geteilten Verweis deutet: Eine Seite, deren Titel
- * „bericht.pdf" lautet, bringt ihre Adresse mit, und dort fehlt keine Datei.
+ * Nur, wenn der Name das Einzige ist, was ankam: Eine Seite, deren Titel
+ * „bericht.pdf" lautet, bringt ihre Adresse mit, und wer „agenda.pdf" mit
+ * „Bitte bis morgen ansehen" teilt, schickt eine Nachricht – in beiden Fällen
+ * fehlt keine Datei, und der Text darf nicht verloren gehen.
  */
 export function geteilterDateiname(shared: Partial<SharedText>): string | null {
-  const felder = [shared.title, shared.text, shared.url].map((feld) => (feld ?? '').trim())
-  if (felder.some((feld) => /[a-z][a-z0-9+.-]*:\/\//i.test(feld))) return null
-
-  for (const feld of felder) {
-    if (feld === '' || feld.length > 255 || /[\n/\\]/.test(feld)) continue
-    if (DATEIENDUNG.test(feld)) return feld
-  }
-  return null
+  const werte = [shared.title, shared.text, shared.url]
+    .map((feld) => (feld ?? '').trim())
+    .filter((feld) => feld !== '')
+  const name = werte[0]
+  if (name === undefined || werte.some((wert) => wert !== name)) return null
+  if (name.length > 255 || /[\n/\\]/.test(name)) return null
+  return DATEIENDUNG.test(name) ? name : null
 }
 
 /**

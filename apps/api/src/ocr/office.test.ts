@@ -168,6 +168,19 @@ describe('Text aus Excel, PowerPoint und LibreOffice', () => {
     assert.deepEqual(text.trim().split('\n'), ['Nebenkosten', 'Heizung', 'Wasser'])
   })
 
+  it('liest Texte, die direkt in den Zellen der Blätter stehen', () => {
+    const blatt = `<worksheet><sheetData><row r="1">
+<c r="A1" t="inlineStr"><is><t>Stromzähler</t></is></c>
+<c r="B1"><v>4711</v></c>
+<c r="C1" t="inlineStr"><is><r><t>Haupt</t></r><r><t>leitung</t></r></is></c>
+</row></sheetData></worksheet>`
+    const text = officeText(
+      zip({ 'xl/workbook.xml': '<workbook/>', 'xl/worksheets/sheet1.xml': blatt }),
+      'excel',
+    )
+    assert.deepEqual(text.split('\n'), ['Stromzähler', 'Hauptleitung'])
+  })
+
   it('gibt bei einer Tabelle ohne Texte nichts zurück', () => {
     assert.equal(officeText(zip({ 'xl/workbook.xml': '<workbook/>' }), 'excel'), '')
   })

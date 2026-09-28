@@ -190,6 +190,25 @@ export function fileKindLabel(mimeType: string): string {
 }
 
 /**
+ * Typen, mit denen Programme mehr meinen, als sie sagen: Windows meldet eine
+ * CSV-Datei als „application/vnd.ms-excel", sobald Excel installiert ist,
+ * manche Apps ein .docx als „application/msword", und „text/plain" steht
+ * auch vor CSV und RTF. Nur innerhalb dieser Familie entscheidet die Endung
+ * – ein „application/pdf" bleibt ein PDF, auch wenn die Datei „.txt" heisst.
+ */
+const UNGENAUE_TYPEN: ReadonlySet<string> = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/rtf',
+  'text/plain',
+  'text/csv',
+])
+
+/**
  * Der Dateityp, mit dem eine Datei weiterverarbeitet wird.
  *
  * Nicht jede App sagt beim Teilen, was sie schickt: Manche liefern gar keinen
@@ -200,18 +219,24 @@ export function fileKindLabel(mimeType: string): string {
  * zuerst der mitgeschickte Typ, wenn er bekannt ist, und sonst die Endung des
  * Dateinamens. Was dann noch unbekannt ist, bleibt, wie es kam, und wird vom
  * Aufrufer abgelehnt.
+ *
+ * Ausnahme: die ungenauen Typen der Office-Familie (siehe `UNGENAUE_TYPEN`).
+ * Hinter ihnen steckt oft eine andere Datei derselben Familie – dann gilt die
+ * Endung, sonst würde ein .docx als altes .doc abgelegt und nie durchsucht.
  */
 export function uploadMimeType(
   claimed: string | null | undefined,
   filename: string | null | undefined,
 ): string {
   const typ = (claimed ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-  if (ALLOWED_MIME_SET.has(typ)) return typ
-  const alias = MIME_ALIASES[typ]
-  if (alias) return alias
-
   const endung = (filename ?? '').split('.').pop()?.trim().toLowerCase() ?? ''
   const nachName = (filename ?? '').includes('.') ? MIME_BY_EXTENSION[endung] : undefined
+
+  if (ALLOWED_MIME_SET.has(typ)) {
+    return UNGENAUE_TYPEN.has(typ) && nachName && UNGENAUE_TYPEN.has(nachName) ? nachName : typ
+  }
+  const alias = MIME_ALIASES[typ]
+  if (alias) return alias
   return nachName ?? typ
 }
 

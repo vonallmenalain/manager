@@ -231,6 +231,19 @@ function excelText(xml: string): string {
   return textElemente(xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, ''), 't', [['</si>', '\n']])
 }
 
+/**
+ * Texte, die direkt in den Zellen eines Blatts stehen (`inlineStr`) statt in
+ * der gemeinsamen Liste – so schreiben manche Programme ihre Tabellen, und
+ * eine sharedStrings.xml gibt es dann gar nicht.
+ */
+function blattText(xml: string): string {
+  const texte: string[] = []
+  for (const treffer of xml.matchAll(/<is>([\s\S]*?)<\/is>/g)) {
+    texte.push(excelText(treffer[1] ?? ''))
+  }
+  return texte.join('\n')
+}
+
 function folienText(xml: string): string {
   return textElemente(xml, 'a:t', [
     ['<a:br\\b[^>]*>', '\n'],
@@ -282,9 +295,20 @@ export function officeText(zip: Buffer, art: OfficeArt): string {
       if (xml === null) throw new Error('Kein Word-Dokument')
       return wordText(xml)
     }
-    case 'excel':
-      // Ohne Texte in den Zellen gibt es keine sharedStrings.xml – dann eben nichts.
-      return excelText(teil('xl/sharedStrings.xml') ?? '')
+    case 'excel': {
+      // Die gemeinsame Liste der Zelltexte – fehlt, wenn keine Zelle Text hat
+      // oder das Programm die Texte in die Blätter schreibt.
+      const texte = [excelText(teil('xl/sharedStrings.xml') ?? '')]
+      let laenge = texte[0]?.length ?? 0
+      for (const eintrag of eintraege) {
+        if (laenge > MAX_TEXT_CHARS) break
+        if (!/^xl\/worksheets\/sheet\d+\.xml$/.test(eintrag.name)) continue
+        const text = blattText(auspacken(eintrag))
+        texte.push(text)
+        laenge += text.length
+      }
+      return texte.filter(Boolean).join('\n')
+    }
     case 'powerpoint': {
       const folien = eintraege
         .map((eintrag) => ({

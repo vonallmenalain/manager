@@ -43,6 +43,25 @@ describe('Welche Dateien in die Ablage dürfen', () => {
     assert.equal(uploadMimeType(null, 'notiz.txt'), 'text/plain')
   })
 
+  it('lässt bei ungenauen Office-Typen die Endung entscheiden', () => {
+    // Windows meldet CSV als Excel, manche Apps ein .docx als altes Word.
+    assert.equal(uploadMimeType('application/msword', 'Mietvertrag.docx'), DOCX)
+    assert.equal(uploadMimeType('application/vnd.ms-excel', 'liste.csv'), 'text/csv')
+    assert.equal(uploadMimeType('application/vnd.ms-excel', 'Nebenkosten.xlsx'), XLSX)
+    assert.equal(uploadMimeType('text/plain', 'daten.csv'), 'text/csv')
+    assert.equal(uploadMimeType('text/plain', 'brief.rtf'), 'application/rtf')
+    // Stimmt der Typ, bleibt er – auch ohne passende Endung.
+    assert.equal(uploadMimeType('application/msword', 'alt.doc'), 'application/msword')
+    assert.equal(uploadMimeType('application/msword', 'ohne-endung'), 'application/msword')
+    assert.equal(uploadMimeType('text/plain', 'notiz.txt'), 'text/plain')
+  })
+
+  it('lässt genaue Typen nicht von der Endung überstimmen', () => {
+    assert.equal(uploadMimeType('application/pdf', 'rechnung.txt'), 'application/pdf')
+    assert.equal(uploadMimeType('image/png', 'bild.jpg'), 'image/png')
+    assert.equal(uploadMimeType('text/plain', 'scan.pdf'), 'text/plain')
+  })
+
   it('übersetzt ältere Schreibweisen', () => {
     assert.equal(uploadMimeType('text/rtf', 'brief.rtf'), 'application/rtf')
     assert.equal(uploadMimeType('text/comma-separated-values', 'liste.csv'), 'text/csv')

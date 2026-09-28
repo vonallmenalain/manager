@@ -116,6 +116,17 @@ describe('Erkennen, dass nur der Name einer Datei ankam', () => {
     )
   })
 
+  it('erkennt den Namen auch, wenn er in Titel und Text steht', () => {
+    assert.equal(geteilterDateiname({ title: 'Brief.docx', text: 'Brief.docx' }), 'Brief.docx')
+  })
+
+  it('hält eine Nachricht mit Dateinamen nicht für eine fehlende Datei', () => {
+    assert.equal(
+      geteilterDateiname({ title: 'agenda.pdf', text: 'Bitte bis morgen ansehen', url: '' }),
+      null,
+    )
+  })
+
   it('lässt gewöhnlichen Text und unbekannte Endungen in Ruhe', () => {
     assert.equal(geteilterDateiname({ title: 'Einkaufsliste', text: 'Milch, Brot' }), null)
     assert.equal(geteilterDateiname({ text: 'Siehe Anhang: rechnung.pdf\nDanke!' }), null)
