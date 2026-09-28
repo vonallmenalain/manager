@@ -42,8 +42,11 @@ export async function findVisibleNoteFile(
 /**
  * Ordnet die Dateien, die der Text einer Notiz nennt, dieser Notiz zu.
  *
- * Nur eigene und noch freie: Eine fremde Kennung im Formatfeld macht die
- * Datei dahinter nicht zur Beilage dieser Notiz. Umgekehrt wird hier nichts
+ * Nur eigene, noch freie und aus demselben Bereich: Eine fremde Kennung im
+ * Formatfeld macht die Datei dahinter nicht zur Beilage dieser Notiz, und
+ * eine Datei aus der Ablage des Haushalts wird nicht zur Beilage einer
+ * DocBase-Notiz – sie läge sonst in der falschen Ablage. Eine solche Datei
+ * bleibt frei und wird nach einem Tag weggeräumt. Umgekehrt wird hier nichts
  * gelöst – wer eine Datei aus dem Text nimmt, lässt sie bei der Notiz liegen,
  * bis diese gelöscht wird. So kostet auch ein Speichern aus einer älteren App,
  * die das Formatfeld nicht kennt, keine Datei.
@@ -51,6 +54,7 @@ export async function findVisibleNoteFile(
 export async function linkNoteFiles(
   noteId: string,
   userId: string,
+  bereich: Bereich,
   bodyRich: string | null,
 ): Promise<void> {
   const doc = bodyRich ? parseRichJson(bodyRich) : null
@@ -61,7 +65,12 @@ export async function linkNoteFiles(
     .update(noteFiles)
     .set({ noteId })
     .where(
-      and(inArray(noteFiles.id, ids), isNull(noteFiles.noteId), eq(noteFiles.createdBy, userId)),
+      and(
+        inArray(noteFiles.id, ids),
+        isNull(noteFiles.noteId),
+        eq(noteFiles.createdBy, userId),
+        eq(noteFiles.bereich, bereich),
+      ),
     )
 }
 

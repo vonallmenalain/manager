@@ -341,13 +341,15 @@ export const api = {
    * Notiz steht: Kennung, Name, Typ, Grösse. Zur Notiz gehört sie, sobald die
    * Notiz mit ihr gespeichert ist.
    */
-  uploadNoteFile: (file: File, bereich: Bereich) => {
+  uploadNoteFile: (file: File, bereich: Bereich, signal?: AbortSignal) => {
     const body = new FormData()
     // Der Bereich vor der Datei – wie beim Dokument entscheidet er, in
     // welcher Ablage sie liegt.
     body.append('bereich', bereich)
     body.append('file', file)
-    return request<{ file: RichFile }>('/api/notes/files', { method: 'POST', body })
+    // Mit Abbruchsignal: „Abbrechen" soll auch eine Datei anhalten, die gerade
+    // unterwegs ist, statt sie fertig hochzuladen und dann liegen zu lassen.
+    return request<{ file: RichFile }>('/api/notes/files', { method: 'POST', body, signal })
   },
 
   noteFilePreview: (id: string) => request<PreviewInfo>(`/api/notes/files/${id}/vorschau`),
@@ -363,13 +365,14 @@ export const api = {
     requestBlob(`/api/notes/files/${id}/datei`, signal),
 
   /** „Text erkennen": Datei hinschicken, Kennung zurück – siehe `texterkennen`. */
-  startTexterkennung: (file: File) => {
+  startTexterkennung: (file: File, signal?: AbortSignal) => {
     const body = new FormData()
     body.append('file', file)
-    return request<TexterkennungAuftrag>('/api/texterkennung', { method: 'POST', body })
+    return request<TexterkennungAuftrag>('/api/texterkennung', { method: 'POST', body, signal })
   },
 
-  texterkennung: (id: string) => request<TexterkennungAuftrag>(`/api/texterkennung/${id}`),
+  texterkennung: (id: string, signal?: AbortSignal) =>
+    request<TexterkennungAuftrag>(`/api/texterkennung/${id}`, { signal }),
 
   getFinanceYear: (year: number) => request<FinanceYear>(`/api/finanzen/${year}`),
 

@@ -876,8 +876,9 @@ erkennen, und nähme dem Text den Platz. Die Datei selbst liegt in `note_files` 
 der Ablage unter `Notizen/`. Sehen darf sie, wer die Notiz sehen darf; wer sie
 hochgeladen hat, schon bevor die Notiz gespeichert ist. Zur Notiz gehört sie ab dem
 Speichern: Der Server liest die Kennungen aus dem Formatfeld und ordnet nur eigene, noch
-freie Dateien zu – eine fremde Kennung im Text macht die Datei dahinter nicht zur
-eigenen. Gelöst wird dabei nichts: Wer eine Datei aus dem Text nimmt, lässt sie bei der
+freie Dateien aus demselben Bereich zu – eine fremde Kennung im Text macht die Datei
+dahinter nicht zur eigenen, und eine Datei aus der Ablage des Haushalts wird nicht zur
+Beilage einer DocBase-Notiz. Gelöst wird dabei nichts: Wer eine Datei aus dem Text nimmt, lässt sie bei der
 Notiz liegen, bis diese gelöscht wird. So kostet auch ein Speichern aus einer älteren
 App, die das Formatfeld nicht kennt, keine Datei. Mit der Notiz verschwinden ihre
 Dateien; was nie in einer gespeicherten Notiz ankam, räumt der Server nach einem Tag weg.

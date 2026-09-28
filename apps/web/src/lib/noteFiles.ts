@@ -146,14 +146,14 @@ function warten(ms: number, signal?: AbortSignal): Promise<void> {
  * zuverlässig. Deshalb hinschicken und nachfragen, bis der Text da ist.
  */
 export async function texterkennen(file: File, signal?: AbortSignal): Promise<string> {
-  let auftrag = await api.startTexterkennung(file)
+  let auftrag = await api.startTexterkennung(file, signal)
   const ende = Date.now() + HOECHSTENS_MS
   while (auftrag.status === 'wartet' || auftrag.status === 'laeuft') {
     if (Date.now() > ende) {
       throw new Error('Die Texterkennung dauert zu lange. Bitte später nochmals versuchen.')
     }
     await warten(NACHFRAGE_MS, signal)
-    auftrag = await api.texterkennung(auftrag.id)
+    auftrag = await api.texterkennung(auftrag.id, signal)
   }
   if (auftrag.status === 'fehler') {
     throw new Error(auftrag.message ?? 'Der Text liess sich nicht erkennen.')
@@ -189,7 +189,7 @@ export async function dateienAlsBloecke(
     for (const [index, file] of files.entries()) {
       signal?.throwIfAborted()
       onFortschritt?.({ art, schritt: index + 1, von: files.length })
-      const { file: rich } = await api.uploadNoteFile(file, bereich)
+      const { file: rich } = await api.uploadNoteFile(file, bereich, signal)
       hochgeladen.push(rich)
     }
     signal?.throwIfAborted()

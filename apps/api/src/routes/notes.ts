@@ -185,7 +185,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const row = inserted[0]
     if (!row) throw new Error('Notiz konnte nicht gespeichert werden')
     // Dateien, die der Text nennt, gehören ab jetzt zu dieser Notiz.
-    await linkNoteFiles(row.id, user.id, row.bodyRich)
+    await linkNoteFiles(row.id, user.id, row.bereich as Bereich, row.bodyRich)
     return reply.status(201).send({ note: toApi(row) })
   })
 
@@ -225,7 +225,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
 
     const row = updated[0]
     if (!row) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
-    await linkNoteFiles(row.id, user.id, row.bodyRich)
+    await linkNoteFiles(row.id, user.id, row.bereich as Bereich, row.bodyRich)
     return reply.send({ note: toApi(row) })
   })
 
