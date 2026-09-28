@@ -424,6 +424,20 @@ Antwort, wenn die Datei schon übertragen ist. Ist eine Kategorie gewählt, wand
 gleich in deren Ordner statt später beim ersten Bearbeiten. Datum, Fälligkeit und Betrag
 bleiben der Detailansicht: Sie stehen meist im Dokument selbst und werden dort abgelesen.
 
+**Datei wählen – erst ansehen, dann hochladen.** Gewählte Dateien gingen lange ohne
+Zwischenschritt in die Ablage, mit dem Dateinamen als Titel, unsortiert und pendent. Jetzt
+kommt vor jeder Datei ein Fenster (`HochladenDialog`), das zeigt, wie sie abgelegt wird:
+Titel (aus dem Dateinamen vorgeschlagen), Kategorie, Zuständig, Status, Fällig und Notiz –
+dieselben Felder wie nach dem Teilen (`AblageFelder`, abgelegt über `lib/ablegen.ts`). Wer
+nichts ändern will, lädt mit einem Klick hoch; bei fünf PDFs erscheinen fünf Fenster
+nacheinander („2 von 5"), jedes wieder mit den Vorgaben, denn fünf gleichzeitig gewählte
+Dateien sind oft fünf verschiedene Dinge. „Überspringen" lässt eine Datei aus, „Abbrechen"
+den Rest (mit Rückfrage, wenn noch mehr als eine übrig ist). Liegt eine Datei schon in der
+Ablage, sagt das Fenster es und bietet „Trotzdem hochladen" an. Am Rechner steht der Cursor
+gleich im markierten Titel: Tippen ersetzt ihn, Enter lädt hoch. Auf dem Handy nicht – dort
+schöbe die Tastatur den Knopf aus dem Bild. In der DocBase stehen nur Titel, Kategorie und
+Notiz im Fenster.
+
 **Suchen:** Ein Suchfeld über allem. Sucht gleichzeitig in Titel, Absender, Notizen und
 OCR-Volltext, mit Treffer-Hervorhebung im Textausschnitt.
 
