@@ -23,6 +23,7 @@ import {
   type Einstieg,
   type RichTextFieldHandle,
 } from './RichTextField'
+import { einlesen } from '../lib/einlesen'
 import {
   dateienAlsBloecke,
   inNotizEinsetzen,
@@ -378,7 +379,14 @@ export function NoteText({
             const files = Array.from(event.target.files ?? [])
             // Leeren, damit dieselbe Datei gleich nochmals gewählt werden kann.
             event.target.value = ''
-            if (files.length > 0) setGewaehlt(files)
+            if (files.length === 0) return
+            // Sofort einlesen, nicht erst nach der Wahl „ganz oder nur Text":
+            // Bis dahin hätte Chrome eine Datei aus Google Drive verloren
+            // (siehe `lib/einlesen.ts`).
+            void einlesen(files).then(({ dateien, probleme }) => {
+              if (probleme.length > 0) setMeldung(probleme.join(' '))
+              if (dateien.length > 0) setGewaehlt(dateien)
+            })
           }}
         />
       ) : null}

@@ -36,6 +36,8 @@ import type {
   YearFigures,
 } from '@manager/shared'
 
+import { meldungUnlesbar, unlesbareDatei } from './einlesen'
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
 /** Für Adressen, die der Browser direkt lädt (Bilder, Downloads). */
@@ -105,6 +107,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       },
     })
   } catch {
+    // Bricht ein Hochladen ohne Antwort ab, kann auch die Datei schuld sein:
+    // Chrome auf Android kommt an manche Dateien aus Google Drive nicht heran
+    // und bricht die Anfrage dann ab wie bei fehlender Verbindung (siehe
+    // `einlesen.ts`).
+    const unlesbar = init.body instanceof FormData ? await unlesbareDatei(init.body) : null
+    if (unlesbar) {
+      throw new ApiRequestError(0, 'file_unreadable', meldungUnlesbar(unlesbar.name))
+    }
     throw new ApiRequestError(
       0,
       'network_error',

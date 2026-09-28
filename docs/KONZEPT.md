@@ -1405,14 +1405,36 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
     Dokumentenseite nicht mehr.
   * *Leere Dateifelder.* Manche Apps schicken beim Teilen eines Verweises ein leeres
     Dateifeld mit. Es fällt weg, statt als namenlose Datei aufzutauchen.
-  * *Keine Datei angekommen.* Nicht jede App gibt beim Teilen den Inhalt mit – beim
-    „Kopie senden" aus Google Drive kam auf dem Handy nichts an. Was Android übergibt,
-    liegt ausserhalb der App. Deshalb schreibt der Worker mit, was er bekommt (nur
-    Feldnamen, Dateinamen, Typen und Grössen, keine Inhalte), und die Auswahlseite sagt
-    es: keine Datei, oder eine, die leer ankam. Unter „Was ist angekommen?" steht das
-    Protokoll zum Nachsehen. Und sie bietet den Weg, der immer geht: **Datei auswählen**
-    über die Auswahl des Systems, in der auch Google Drive steht. Danach geht es genau
+  * *Keine Datei angekommen.* Nicht jede App gibt beim Teilen den Inhalt mit, und was
+    Android übergibt, liegt ausserhalb der App. Deshalb schreibt der Worker mit, was er
+    bekommt (nur Feldnamen, Dateinamen, Typen und Grössen, keine Inhalte), und die
+    Auswahlseite sagt es: keine Datei, oder eine, die leer ankam. Unter „Was ist
+    angekommen?" stehen das Protokoll und die Version von Chrome. Und sie bietet den Weg,
+    der immer geht: **Datei auswählen** über die Auswahl des Systems. Danach geht es genau
     gleich weiter – Dokumente mit Angaben oder Notiz.
+  * *Chrome 153 wirft geteilte Dateien weg.* Beim „Kopie senden" aus Google Drive kam auf
+    dem Handy ein Formular ganz ohne Felder an – nicht einmal die Datei. Das ist ein Fehler
+    in Chrome für Android: Eine Sicherheitskorrektur in Version 153 („Verify caller URI
+    permissions before Web Share Target") verwirft Dateien, die an eine installierte
+    Web-App geteilt werden, auch aus der Galerie oder der Kamera (gemeldet bei Squoosh,
+    GoogleChromeLabs/squoosh#1503). Aus der App heraus lässt sich das nicht beheben; die
+    Auswahlseite nennt bei einem leeren Formular deshalb Chrome als Ursache, damit man den
+    Fehler nicht in der App sucht, aus der geteilt wurde. Verweise und Text laufen nicht
+    über solche Dateifreigaben und sollten nicht betroffen sein. Bis Chrome das behebt,
+    führt „Datei auswählen" ans Ziel.
+  * *Dateien aus Google Drive.* Auch der Weg über die Auswahl scheiterte – mit „Keine
+    Verbindung zum Server. Bist du offline?", obwohl die Verbindung stand. Chrome auf
+    Android kommt an Dateien aus Drive schlecht heran: Liegt eine nur in Drive und nicht
+    auf dem Gerät, lässt sie sich gar nicht lesen; lädt Drive sie nach der Auswahl nach,
+    ändert sie sich, und Chrome bricht das spätere Hochladen ab
+    (`ERR_UPLOAD_FILE_CHANGED`). Beides endet im Browser wie ein Verbindungsabbruch. Jetzt
+    wird jede gewählte Datei gleich nach der Auswahl in den Arbeitsspeicher kopiert
+    (`lib/einlesen.ts`) – auf der Auswahlseite, beim Hochladen in den Dokumenten, beim
+    Einfügen in eine Notiz und beim Import einer Hausrechnung. Wie lange das Ausfüllen
+    danach dauert, spielt keine Rolle mehr. Was sich nicht lesen lässt, meldet sich sofort
+    mit einem Satz, der sagt, was geht: die Datei in Drive zuerst herunterladen und dann
+    aus „Downloads" wählen. Bricht ein Hochladen trotzdem ohne Antwort ab, prüft
+    `lib/api.ts`, ob die Datei schuld ist, bevor es nach der Verbindung fragt.
 * **iOS/iPadOS:** Safari unterstützt Web Share Target **nicht** – auch 2026 nicht.
   Eine installierte PWA erscheint dort nicht im Teilen-Menü. Das lässt sich nicht
   umgehen, aber gleichwertig lösen:

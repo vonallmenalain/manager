@@ -6,6 +6,7 @@ import { DocumentScanner } from './DocumentScanner'
 import { NoteIcon } from './icons'
 import { ALLE_TRAY_FELDER, PageTray, type TrayDetails, type TrayField } from './PageTray'
 import { ApiRequestError } from '../lib/api'
+import { einlesen } from '../lib/einlesen'
 import {
   useCategories,
   useHouseholdUsers,
@@ -120,10 +121,14 @@ export function UploadControls({
       if (files.length === 0) return false
       setState({ running: files.length, message: null })
 
+      // Zuerst alle einlesen, dann hochladen (siehe `lib/einlesen.ts`): Eine
+      // Datei aus Google Drive, an die Chrome nicht herankommt, meldet sich so
+      // mit einem klaren Satz statt als Verbindungsfehler – und bei mehreren
+      // ist die letzte noch lesbar, wenn sie an die Reihe kommt.
+      const { dateien, probleme: problems } = await einlesen(files)
       let done = 0
-      const problems: string[] = []
 
-      for (const file of files) {
+      for (const file of dateien) {
         try {
           await upload.mutateAsync({ file, bereich, ...documentDetails })
           done += 1
