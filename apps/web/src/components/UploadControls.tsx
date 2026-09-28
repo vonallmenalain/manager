@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { DocumentScanner } from './DocumentScanner'
+import { HochladenDialog, type HochladenBilanz } from './HochladenDialog'
 import { NoteIcon } from './icons'
 import { ALLE_TRAY_FELDER, PageTray, type TrayDetails, type TrayField } from './PageTray'
 import { ApiRequestError } from '../lib/api'
@@ -52,7 +53,8 @@ const EMPTY_DETAILS: TrayDetails = {
  *  - Dokument scannen – der eingebaute Scanner mit Randerkennung
  *  - Foto aufnehmen – die Kamera geht sofort auf, das Bild bleibt wie es ist;
  *    in der DocBase steht an dieser Stelle „Notiz erstellen", siehe `onNotiz`
- *  - Datei wählen – PDFs und Screenshots
+ *  - Datei wählen – PDFs und Screenshots, vor dem Hochladen eine nach der
+ *    anderen mit Titel, Kategorie, Status usw. (`HochladenDialog`)
  *  - App-Verknüpfung `?aufnehmen=1` – langer Druck auf das App-Symbol
  *
  * Geteiltes aus anderen Apps kommt nicht hier an, sondern auf der Seite
@@ -112,6 +114,8 @@ export function UploadControls({
 
   const [pages, setPages] = useState<ScanPage[]>([])
   const [details, setDetails] = useState<TrayDetails>(EMPTY_DETAILS)
+  /** Gewählte Dateien vor dem Hochladen – dazu, was sich nicht lesen liess. */
+  const [vorlage, setVorlage] = useState<{ files: File[]; hinweise: string[] } | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [preparing, setPreparing] = useState(false)
   const [source, setSource] = useState<PageSource>('scanner')
@@ -317,11 +321,41 @@ export function UploadControls({
     void collectPhotos(files)
   }
 
+  /**
+   * Gewählte Dateien: zuerst einlesen (siehe `lib/einlesen.ts`), dann eine
+   * nach der anderen vorlegen – mit den Angaben, unter denen sie abgelegt
+   * wird (`HochladenDialog`).
+   */
+  async function dateienVorlegen(files: File[]) {
+    if (files.length === 0) return
+    setState({ running: files.length, message: null })
+    const { dateien, probleme } = await einlesen(files)
+    if (dateien.length === 0) {
+      setState({ running: 0, message: probleme.join(' · ') })
+      return
+    }
+    setState({ running: 0, message: null })
+    setVorlage({ files: dateien, hinweise: probleme })
+  }
+
+  function vorlageFertig({ hochgeladen, ausgelassen, hinweise }: HochladenBilanz) {
+    setVorlage(null)
+    const teile: string[] = []
+    if (hochgeladen > 0) {
+      const nicht = ausgelassen > 0 ? `, ${ausgelassen} nicht hochgeladen` : ''
+      teile.push(
+        `${hochgeladen} ${hochgeladen === 1 ? 'Dokument' : 'Dokumente'} hinzugefügt${nicht}.`,
+      )
+    }
+    teile.push(...hinweise)
+    setState({ running: 0, message: teile.length > 0 ? teile.join(' ') : null })
+  }
+
   function handleFileInput(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? [])
     event.target.value = ''
     setMenuOpen(false)
-    void uploadFiles(files)
+    void dateienVorlegen(files)
   }
 
   const busy = state.running > 0 || preparing
@@ -408,6 +442,19 @@ export function UploadControls({
             }
           }}
           onUpload={() => void uploadPages()}
+        />
+      ) : null}
+
+      {vorlage ? (
+        <HochladenDialog
+          files={vorlage.files}
+          hinweise={vorlage.hinweise}
+          bereich={bereich}
+          felder={felder}
+          // Fälligkeiten kennt nur der Haushalt.
+          faellig={bereich !== 'docbase'}
+          akzent={akzent}
+          onFertig={vorlageFertig}
         />
       ) : null}
 

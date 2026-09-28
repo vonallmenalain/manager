@@ -1,16 +1,11 @@
 import {
   blocksFromText,
-  DEFAULT_DOCUMENT_STATUS,
-  DOCUMENT_STATUS_LABELS,
-  DOCUMENT_STATUSES,
   docOfValue,
   formatFileSize,
   titleFromFilename,
   toRichValue,
-  UNASSIGNED_LABEL,
   withWritingLines,
   type Bereich,
-  type DocumentStatus,
   type ManagedDocument,
   type Note,
   type RichBlock,
@@ -19,13 +14,17 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { CategorySelect } from '../components/CategoryPicker'
+import { AblageFelder } from '../components/AblageFelder'
 import { DocumentIcon, FolderIcon, NoteIcon } from '../components/icons'
 import { EinfuegeWahl, FortschrittText } from '../components/NoteFiles'
 import { formatEdited } from '../components/NoteParts'
-import { ALLE_TRAY_FELDER, TraySelect, type TrayField } from '../components/PageTray'
-import { api, ApiRequestError } from '../lib/api'
-import { useCategories, useHouseholdUsers, useUploadDocument } from '../lib/documents'
+import { ALLE_TRAY_FELDER, type TrayField } from '../components/PageTray'
+import {
+  dokumentAblegen,
+  OHNE_ANGABEN,
+  type AblageAngaben,
+  type AblageErgebnis,
+} from '../lib/ablegen'
 import { einlesen, type Eingelesen } from '../lib/einlesen'
 import { useNotes, useSaveNote } from '../lib/household'
 import {
@@ -560,34 +559,18 @@ function ProtokollAnzeige({ protokoll }: { protokoll: ShareProtokoll | null | un
 }
 
 /** Die Angaben vor dem Ablegen – für alle Dateien dieselben, nur der Titel je Datei. */
-interface Angaben {
+interface Angaben extends Omit<AblageAngaben, 'titel'> {
   titel: string[]
-  categoryId: string | null
-  assignedTo: string | null
-  status: DocumentStatus
-  /** JJJJ-MM-TT oder leer */
-  faellig: string
-  notiz: string
 }
 
 /** Wie es um eine Datei steht – ein zweiter Versuch lädt nichts doppelt hoch. */
-type DateiStand =
-  | { art: 'offen' }
-  /** `hinweis`: abgelegt, aber Fälligkeit oder Notiz fehlen noch. */
-  | { art: 'abgelegt'; dokument: ManagedDocument; hinweis?: string }
-  | { art: 'doppelt'; meldung: string; vorhanden?: ManagedDocument }
-  | { art: 'fehler'; meldung: string }
+type DateiStand = { art: 'offen' } | AblageErgebnis
 
 /**
- * Vor dem Ablegen: Titel, Kategorie, Zuständigkeit, Status – dazu Fälligkeit
- * und Notiz.
- *
- * Dieselben Angaben wie im Stapel des Scanners und mit denselben Feldern,
- * damit sich Ablegen überall gleich anfühlt. Wer in diesem Moment weiss, dass
- * die Rechnung pendent ist und wen sie angeht, soll es jetzt sagen können –
- * nicht erst, nachdem er das Dokument in der Liste wiedergefunden hat. Was
- * darüber hinausgeht (Datum, Betrag, Absender), steht danach in der Ansicht
- * des Dokuments, die gleich aufgeht.
+ * Vor dem Ablegen: je Datei ein Titel, darunter Kategorie, Zuständigkeit,
+ * Status, Fälligkeit und Notiz (`AblageFelder`) – dieselben Felder wie vor dem
+ * Hochladen über „Datei wählen". Was darüber hinausgeht (Datum, Betrag,
+ * Absender), steht danach in der Ansicht des Dokuments, die gleich aufgeht.
  *
  * Mehrere Dateien werden mehrere Dokumente, jedes mit eigenem Titel; die
  * übrigen Angaben gelten für alle. Liegt eine Datei schon in der Ablage, sagt
@@ -605,18 +588,11 @@ function AblageFormular({
   onZurueck: () => void
   onAbgelegt: (dokumente: ManagedDocument[]) => void
 }) {
-  const categories = useCategories(sicht.bereich)
-  const users = useHouseholdUsers()
-  const upload = useUploadDocument()
   const queryClient = useQueryClient()
 
   const [angaben, setAngaben] = useState<Angaben>(() => ({
+    ...OHNE_ANGABEN,
     titel: files.map((file) => titleFromFilename(file.name)),
-    categoryId: null,
-    assignedTo: null,
-    status: DEFAULT_DOCUMENT_STATUS,
-    faellig: '',
-    notiz: '',
   }))
   const [staende, setStaende] = useState<DateiStand[]>(() => files.map(() => ({ art: 'offen' })))
   const [laeuft, setLaeuft] = useState<{ schritt: number; von: number } | null>(null)
@@ -651,58 +627,12 @@ function AblageFormular({
 
     const neu = [...staende]
     for (const [schritt, index] of auswahl.entries()) {
-      const file = files[index] as File
       setLaeuft({ schritt: schritt + 1, von: auswahl.length })
-      try {
-        const { document } = await upload.mutateAsync({
-          file,
-          allowDuplicate: trotzdem,
-          bereich: sicht.bereich,
-          title: angaben.titel[index]?.trim() || undefined,
-          categoryId: felder.includes('kategorie') ? angaben.categoryId : undefined,
-          assignedTo: felder.includes('zustaendig') ? angaben.assignedTo : undefined,
-          status: felder.includes('status') ? angaben.status : undefined,
-        })
-        // Ab hier liegt das Dokument in der Ablage – was danach schiefgeht,
-        // darf es nicht ein zweites Mal hochladen.
-        neu[index] = { art: 'abgelegt', dokument: document }
-
-        // Fälligkeit und Notiz nimmt das Hochladen nicht an – sie gehen gleich
-        // danach mit, bevor jemand das Dokument zu sehen bekommt. Scheitert
-        // das, bleibt das Dokument abgelegt, und die Seite sagt, was fehlt.
-        const faellig = sicht.faellig && angaben.faellig ? angaben.faellig : undefined
-        const notiz = angaben.notiz.trim() || undefined
-        if (faellig || notiz) {
-          try {
-            await api.updateDocument(document.id, {
-              ...(faellig ? { dueDate: faellig } : {}),
-              ...(notiz ? { notes: notiz } : {}),
-            })
-          } catch {
-            const fehlt =
-              faellig && notiz
-                ? 'Fälligkeit und Notiz fehlen'
-                : faellig
-                  ? 'die Fälligkeit fehlt'
-                  : 'die Notiz fehlt'
-            neu[index] = {
-              art: 'abgelegt',
-              dokument: document,
-              hinweis: `abgelegt, aber ${fehlt} – bitte im Dokument nachtragen.`,
-            }
-          }
-        }
-      } catch (error) {
-        if (error instanceof ApiRequestError && error.code === 'duplicate') {
-          const data = error.data as { existing?: ManagedDocument } | undefined
-          neu[index] = { art: 'doppelt', meldung: error.message, vorhanden: data?.existing }
-        } else {
-          neu[index] = {
-            art: 'fehler',
-            meldung: error instanceof Error ? error.message : 'Ablegen fehlgeschlagen.',
-          }
-        }
-      }
+      neu[index] = await dokumentAblegen(
+        files[index] as File,
+        { ...angaben, titel: angaben.titel[index] ?? '' },
+        { bereich: sicht.bereich, felder, faellig: sicht.faellig, trotzdem },
+      )
       setStaende([...neu])
     }
 
@@ -772,71 +702,14 @@ function AblageFormular({
           )
         })}
 
-        <div className={`grid gap-2 ${felder.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          {felder.includes('kategorie') ? (
-            <div className={felder.length > 1 ? 'col-span-2' : ''}>
-              <CategorySelect
-                categories={categories.data?.categories ?? []}
-                bereich={sicht.bereich}
-                value={angaben.categoryId ?? ''}
-                disabled={busy}
-                onChange={(value) => andere({ categoryId: value || null })}
-              />
-            </div>
-          ) : null}
-          {felder.includes('zustaendig') ? (
-            <TraySelect
-              label="Zuständig"
-              value={angaben.assignedTo ?? ''}
-              disabled={busy}
-              onChange={(value) => andere({ assignedTo: value || null })}
-              options={[
-                { value: '', label: UNASSIGNED_LABEL },
-                ...(users.data?.users ?? []).map((user) => ({ value: user.id, label: user.name })),
-              ]}
-            />
-          ) : null}
-          {felder.includes('status') ? (
-            <TraySelect
-              label="Status"
-              value={angaben.status}
-              disabled={busy}
-              onChange={(value) => andere({ status: value as DocumentStatus })}
-              options={DOCUMENT_STATUSES.map((status) => ({
-                value: status,
-                label: DOCUMENT_STATUS_LABELS[status],
-              }))}
-            />
-          ) : null}
-          {sicht.faellig ? (
-            <label className="col-span-2 block">
-              <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                Fällig
-              </span>
-              <input
-                type="date"
-                value={angaben.faellig}
-                onChange={(event) => andere({ faellig: event.target.value })}
-                disabled={busy}
-                className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-base disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950"
-              />
-            </label>
-          ) : null}
-        </div>
-
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-            Notiz
-          </span>
-          <textarea
-            value={angaben.notiz}
-            onChange={(event) => andere({ notiz: event.target.value })}
-            disabled={busy}
-            rows={2}
-            maxLength={2000}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950"
-          />
-        </label>
+        <AblageFelder
+          angaben={angaben}
+          onChange={andere}
+          felder={felder}
+          faellig={sicht.faellig}
+          bereich={sicht.bereich}
+          disabled={busy}
+        />
       </div>
 
       {nochOffen.length > 0 || busy ? (
