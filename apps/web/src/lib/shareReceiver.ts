@@ -1,4 +1,10 @@
-import { SHARE_FILENAME_HEADER, SHARE_FILE_PREFIX, SHARE_TEXT_KEY } from './shareConstants'
+import {
+  SHARE_FILENAME_HEADER,
+  SHARE_FILE_PREFIX,
+  SHARE_LOG_KEY,
+  SHARE_TEXT_KEY,
+  type ShareProtokoll,
+} from './shareConstants'
 
 /**
  * Nimmt alles entgegen, was Android beim Teilen mitschickt – für die Service
@@ -71,6 +77,21 @@ export async function receiveShare(
         new Response(JSON.stringify(text), { headers: { 'content-type': 'application/json' } }),
       )
     }
+
+    // Was überhaupt ankam – auch das, was oben verworfen wurde (eine leere
+    // Datei). Nur Namen und Grössen, keine Inhalte.
+    const protokoll: ShareProtokoll = { felder: [] }
+    formData.forEach((wert, name) => {
+      protokoll.felder.push(
+        typeof wert === 'string'
+          ? { name, art: 'text', laenge: wert.length }
+          : { name, art: 'datei', laenge: wert.size, datei: wert.name, typ: wert.type },
+      )
+    })
+    await cache.put(
+      new Request(SHARE_LOG_KEY),
+      new Response(JSON.stringify(protokoll), { headers: { 'content-type': 'application/json' } }),
+    )
 
     // 303 statt 302: Der Browser soll die Zieladresse mit GET laden, nicht
     // den POST wiederholen.

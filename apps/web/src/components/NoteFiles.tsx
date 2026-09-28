@@ -181,7 +181,9 @@ function Overlay({
         aria-modal="true"
         aria-label={label}
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md"
+        // min-w-0 wie im Notizfenster: Ein langer Dateiname darf die Fläche
+        // nicht über den Bildschirmrand ziehen.
+        className="w-full min-w-0 max-w-md"
       >
         {children}
       </div>

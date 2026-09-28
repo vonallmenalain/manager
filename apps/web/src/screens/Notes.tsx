@@ -24,6 +24,7 @@ import {
   formatEdited,
   LinkedText,
   NoteText,
+  NoteTitle,
   WidthPicker,
   type Breite,
   type NoteTextHandle,
@@ -590,15 +591,8 @@ function NoteEditor({
       }
     >
       <>
-        <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Titel"
-            aria-label="Titel"
-            // Bei einer neuen Notiz steht der Finger schon über der Tastatur.
-            autoFocus={!note}
-            className="w-full bg-transparent text-lg font-semibold outline-none"
-          />
+        {/* Bei einer neuen Notiz steht der Finger schon über der Tastatur. */}
+        <NoteTitle value={title} onChange={setTitle} autoFocus={!note} />
 
         {kind === 'liste' ? (
           <Checklist items={items} onChange={setItems} />

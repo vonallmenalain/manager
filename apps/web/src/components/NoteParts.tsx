@@ -2,6 +2,7 @@ import {
   docOfValue,
   NOTE_COLOR_LABELS,
   NOTE_COLORS,
+  NOTE_TITLE_MAX,
   removeFile,
   splitLinks,
   toRichValue,
@@ -119,6 +120,43 @@ export function LinkedText({ text }: { text: string }) {
         ),
       )}
     </>
+  )
+}
+
+/**
+ * Der Titel einer Notiz – so lang er ist, auf so vielen Zeilen, wie er braucht.
+ *
+ * Früher ein einzeiliges Eingabefeld: Ein langer Titel – etwa der Name einer
+ * geteilten Webseite – lief rechts aus dem Feld, und man sah nur seinen
+ * Anfang. Jetzt ein Textfeld, das mit seinem Inhalt wächst
+ * (`field-sizing: content`) und umbricht. Eine neue Zeile gibt es trotzdem
+ * nicht: Die Eingabetaste tut nichts, und eingefügte Umbrüche werden zu
+ * Leerzeichen – ein Titel bleibt eine Zeile, nur eben eine, die umbricht.
+ */
+export function NoteTitle({
+  value,
+  onChange,
+  autoFocus,
+}: {
+  value: string
+  onChange: (value: string) => void
+  autoFocus?: boolean
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(event) => onChange(event.target.value.replace(/\s*\n\s*/g, ' '))}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.preventDefault()
+      }}
+      rows={1}
+      maxLength={NOTE_TITLE_MAX}
+      placeholder="Titel"
+      aria-label="Titel"
+      enterKeyHint="done"
+      autoFocus={autoFocus}
+      className="block field-sizing-content w-full resize-none bg-transparent text-lg font-semibold outline-none"
+    />
   )
 }
 
