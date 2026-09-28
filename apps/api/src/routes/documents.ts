@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 
 import {
+  ALLOWED_FILES_LABEL,
   API_ERROR_CODES,
   buildSearchText,
   DOCUMENT_STATUSES,
@@ -108,7 +109,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         .send(
           apiError(
             'unsupported_type',
-            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind ${ALLOWED_FILES_LABEL}.`,
           ),
         )
     }
@@ -561,7 +562,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         .send(
           apiError(
             'unsupported_type',
-            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind ${ALLOWED_FILES_LABEL}.`,
           ),
         )
     }

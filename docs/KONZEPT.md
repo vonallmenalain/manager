@@ -1251,6 +1251,29 @@ flowchart LR
 Fehlgeschlagene Jobs werden dreimal mit wachsendem Abstand wiederholt und danach im
 Dokument sichtbar markiert ("Texterkennung fehlgeschlagen – erneut versuchen").
 
+**Word, Excel, PowerPoint & Co.** In die Ablage (und in Notizen) dürfen neben PDFs und
+Bildern auch Word-, Excel- und PowerPoint-Dateien, dasselbe im offenen Format von
+LibreOffice (`.odt`, `.ods`, `.odp`), RTF, Text und CSV. Deren Text liegt in der Datei
+selbst, ohne Rasterung und ohne Tesseract (`ocr/office.ts`):
+
+* **Office ab 2007 und LibreOffice** sind ZIP-Archive voller XML. Ausgepackt werden nur
+  die Teile mit dem Text (`word/document.xml`, `xl/sharedStrings.xml` und die Blätter,
+  die Folien, `content.xml`), mit dem zlib von Node statt mit LibreOffice im Image – das
+  wären mehrere hundert Megabyte bei jedem Update über die Hausleitung. Kein Teil wird
+  über 30 MB entpackt, egal was das Archiv über sich behauptet.
+* **RTF** wird mit einem kleinen eigenen Leser zu Text; Schrifttabellen, Bilder und
+  Feldbefehle fallen weg, Umlaute und Sonderzeichen (`\'fc`, `\u8364?`) werden aufgelöst.
+* **Text und CSV** werden in ihrer Kodierung gelesen: UTF-16 am Byte-Order-Mark, sonst
+  UTF-8, und wo das nicht aufgeht, die alte Windows-Kodierung.
+* **Alte Binärformate** (`.doc`, `.xls`, `.ppt`) werden abgelegt und lassen sich öffnen,
+  aber nicht durchsuchen. Sie bekommen den Status „Kein Text" (`skipped`) statt dreier
+  Anläufe und am Ende „fehlgeschlagen".
+
+Eine Vorschau gibt es für diese Dateien nicht – dafür bräuchte es ein Office auf dem
+Server. Die Ansicht sagt „Word – hier ohne Vorschau" und bietet „Datei öffnen" an; das
+Gerät zeigt sie dann mit der passenden App. Gelesen wird höchstens so viel Text, wie
+die Suche braucht (200 000 Zeichen).
+
 ---
 
 **„Lesbar" heisst mehr als „vorhanden".** Eine Textebene gilt erst dann als
@@ -1435,7 +1458,16 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
     Auswahlseite nennt bei einem leeren Formular deshalb Chrome als Ursache, damit man den
     Fehler nicht in der App sucht, aus der geteilt wurde. Verweise und Text laufen nicht
     über solche Dateifreigaben und sollten nicht betroffen sein. Bis Chrome das behebt,
-    führt „Datei auswählen" ans Ziel.
+    führt „Datei auswählen" ans Ziel. Die Ursache ist inzwischen im Chromium-Code
+    beschrieben: WebAPKs starten über einen Weg, der die geprüften Freigaben nicht
+    mitgibt, deshalb wird jede Datei abgewiesen; die Korrektur ist unterwegs.
+  * *Nur der Dateiname kam an.* Aus „Dateien von Google" kommt bei demselben Fehler der
+    Name der Datei als Titel an, die Datei selbst nicht. Die Seite bot dann eine Notiz an,
+    in der nur „Schreiber 26_27 PDF.pdf" stand. Jetzt erkennt sie den Namen
+    (`geteilterDateiname`), sagt, dass die Datei nicht mitkam, und stellt „Datei
+    auswählen" gross an den Anfang – in der Auswahl steht die Datei meist gleich unter
+    „Zuletzt verwendet". Die beiden Ziele bleiben gesperrt, bis die Datei da ist, und der
+    Name verschwindet danach, statt als Text über der Datei in der Notiz zu stehen.
   * *Dateien aus Google Drive.* Auch der Weg über die Auswahl scheiterte – mit „Keine
     Verbindung zum Server. Bist du offline?", obwohl die Verbindung stand. Chrome auf
     Android kommt an Dateien aus Drive schlecht heran: Liegt eine nur in Drive und nicht

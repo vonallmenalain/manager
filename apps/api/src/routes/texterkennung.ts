@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import {
+  ALLOWED_FILES_LABEL,
   API_ERROR_CODES,
   isAllowedMimeType,
   MAX_UPLOAD_BYTES,
@@ -39,7 +40,7 @@ const texterkennungRoutes: FastifyPluginAsync = async (fastify) => {
         .send(
           apiError(
             'unsupported_type',
-            `Aus ${mimeType || 'dieser Datei'} lässt sich kein Text lesen. Möglich sind PDF und Bilder.`,
+            `Aus ${mimeType || 'dieser Datei'} lässt sich kein Text lesen. Möglich sind ${ALLOWED_FILES_LABEL}.`,
           ),
         )
     }

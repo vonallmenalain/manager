@@ -311,6 +311,16 @@ function RecognisedText({
     )
   }
 
+  // Eine alte Word-, Excel- oder PowerPoint-Datei: kein Fehler, nur kein Text.
+  if (status === 'skipped') {
+    return (
+      <p className="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        {error ?? 'Aus dieser Datei lässt sich kein Text lesen.'} Auffindbar ist sie über Titel und
+        Notiz.
+      </p>
+    )
+  }
+
   if (!text) return null
 
   return (
@@ -318,7 +328,7 @@ function RecognisedText({
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
         Erkannter Text{' '}
         <span className="font-normal text-slate-500 dark:text-slate-400">
-          {method === 'textebene' ? 'aus dem PDF gelesen' : 'per Texterkennung'} ·{' '}
+          {method === 'textebene' ? 'aus der Datei gelesen' : 'per Texterkennung'} ·{' '}
           {text.length.toLocaleString('de-CH')} Zeichen
         </span>
       </summary>

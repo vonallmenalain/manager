@@ -16,11 +16,13 @@
   },
   // appScopes.ts steht unter src, wird aber auch von den Konfigurationen
   // gebraucht: Die Geltungsbereiche der beiden Apps stehen im Manifest und in
-  // der App, und sie müssen dieselben sein.
+  // der App, und sie müssen dieselben sein. Ebenso die Dateitypen: Was im
+  // Teilen-Menü angeboten wird, muss der Server annehmen.
   "include": [
     "vite.config.ts",
     "vite.config.docbase.ts",
     "src/lib/appScopes.ts",
+    "src/lib/dateitypen.ts",
     "src/lib/shareConstants.ts"
   ]
 }

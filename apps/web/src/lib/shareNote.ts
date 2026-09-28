@@ -62,6 +62,35 @@ export function hatText(shared: Partial<SharedText>): boolean {
   return draft.title !== '' || draft.body !== ''
 }
 
+/** Endungen, an denen sich der Name einer Datei erkennen lässt, die die App annimmt. */
+const DATEIENDUNG =
+  /\.(pdf|docx?|xlsx?|pptx?|od[tsp]|rtf|txt|csv|jpe?g|jfif|png|webp|heic|heif|tiff?)$/i
+
+/**
+ * Der Name einer Datei, die beim Teilen hätte mitkommen sollen – und von der
+ * nur der Name ankam.
+ *
+ * Chrome für Android wirft seit Version 153 geteilte Dateien weg, die an eine
+ * installierte Web-App gehen, und reicht nur Titel und Text weiter. Aus
+ * „Dateien von Google" steht darin der Dateiname: Die Seite bot dann eine
+ * Notiz an, in der „Schreiber 26_27 PDF.pdf" der einzige Inhalt war. Mit dem
+ * Namen lässt sich sagen, was passiert ist – und die Datei gleich auswählen.
+ *
+ * Nur, wenn der Name das Einzige ist, was ankam: Eine Seite, deren Titel
+ * „bericht.pdf" lautet, bringt ihre Adresse mit, und wer „agenda.pdf" mit
+ * „Bitte bis morgen ansehen" teilt, schickt eine Nachricht – in beiden Fällen
+ * fehlt keine Datei, und der Text darf nicht verloren gehen.
+ */
+export function geteilterDateiname(shared: Partial<SharedText>): string | null {
+  const werte = [shared.title, shared.text, shared.url]
+    .map((feld) => (feld ?? '').trim())
+    .filter((feld) => feld !== '')
+  const name = werte[0]
+  if (name === undefined || werte.some((wert) => wert !== name)) return null
+  if (name.length > 255 || /[\n/\\]/.test(name)) return null
+  return DATEIENDUNG.test(name) ? name : null
+}
+
 /**
  * Ein Titel für ein Teilen, das keinen mitbringt.
  *

@@ -23,6 +23,7 @@ import {
   type Einstieg,
   type RichTextFieldHandle,
 } from './RichTextField'
+import { DATEI_ACCEPT } from '../lib/dateitypen'
 import { einlesen } from '../lib/einlesen'
 import {
   dateienAlsBloecke,
@@ -372,7 +373,7 @@ export function NoteText({
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,image/*"
+          accept={DATEI_ACCEPT}
           multiple
           hidden
           onChange={(event) => {

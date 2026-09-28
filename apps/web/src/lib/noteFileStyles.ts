@@ -1,4 +1,4 @@
-import { formatFileSize, type RichFile } from '@manager/shared'
+import { fileKindLabel, formatFileSize, type RichFile } from '@manager/shared'
 
 /**
  * Wie eine Datei im Text einer Notiz aussieht – im gelesenen Text (React,
@@ -37,10 +37,9 @@ export const FILE_REMOVE =
 /** In der Übersicht (Kachel, Listeneintrag): nur eine Zeile mit Büroklammer. */
 export const FILE_COMPACT = 'block truncate'
 
-/** „PDF · 245 KB" – die kleine Zeile unter dem Namen. */
+/** „PDF · 245 KB", „Word · 38 KB" – die kleine Zeile unter dem Namen. */
 export function fileMeta(file: RichFile): string {
-  const art = file.mime === 'application/pdf' ? 'PDF' : 'Bild'
-  return `${art} · ${formatFileSize(file.size)}`
+  return `${fileKindLabel(file.mime)} · ${formatFileSize(file.size)}`
 }
 
 export function isImage(file: RichFile): boolean {

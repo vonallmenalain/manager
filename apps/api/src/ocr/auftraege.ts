@@ -5,7 +5,7 @@ import type { TexterkennungStatus } from '@manager/shared'
 import type { FastifyBaseLogger } from 'fastify'
 
 import { env } from '../env.js'
-import { extractText, resolveLanguages, tidyText } from './extract.js'
+import { extractText, KeinTextError, resolveLanguages, tidyText } from './extract.js'
 
 /**
  * Texterkennung auf Abruf – für „Text erkennen und einfügen" in einer Notiz.
@@ -98,7 +98,12 @@ export function texterkennungStarten(
       )
     } catch (error) {
       auftrag.status = 'fehler'
-      auftrag.fehler = 'Der Text liess sich nicht erkennen.'
+      // Bei einer alten Word-Datei sagt die Meldung, warum – und dass die
+      // ganze Datei weiterhin geht.
+      auftrag.fehler =
+        error instanceof KeinTextError
+          ? `${error.message} Als ganze Datei lässt sie sich einfügen.`
+          : 'Der Text liess sich nicht erkennen.'
       log.warn({ err: error, auftrag: auftrag.id }, 'Texterkennung für eine Notiz fehlgeschlagen')
     } finally {
       await rm(absolutePath, { force: true }).catch(() => undefined)

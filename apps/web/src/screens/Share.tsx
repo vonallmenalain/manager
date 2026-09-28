@@ -25,6 +25,7 @@ import {
   type AblageAngaben,
   type AblageErgebnis,
 } from '../lib/ablegen'
+import { DATEI_ACCEPT } from '../lib/dateitypen'
 import { einlesen, type Eingelesen } from '../lib/einlesen'
 import { useNotes, useSaveNote } from '../lib/household'
 import {
@@ -43,7 +44,7 @@ import {
   withFiles,
   type SharedContent,
 } from '../lib/sharedContent'
-import { hatText, noteFromShare } from '../lib/shareNote'
+import { geteilterDateiname, hatText, noteFromShare } from '../lib/shareNote'
 
 /**
  * Wohin mit dem Geteilten?
@@ -251,7 +252,16 @@ export function Share({ app }: { app: ShareApp }) {
   function dateienGewaehlt({ dateien, probleme }: Eingelesen) {
     setFehler(probleme.length > 0 ? probleme.join(' ') : null)
     if (dateien.length === 0) return
-    setContent((alt) => withFiles(alt ?? LEER, dateien))
+    setContent((alt) => {
+      const bisher = alt ?? LEER
+      // Kam statt der Datei nur ihr Name, hat er mit der Datei ausgedient – in
+      // der Notiz stünde er sonst als Text über ihr.
+      const ohneName =
+        bisher.files.length === 0 && geteilterDateiname(bisher)
+          ? { ...bisher, title: '', text: '' }
+          : bisher
+      return withFiles(ohneName, dateien)
+    })
     setSchritt('ziel')
   }
 
@@ -300,6 +310,8 @@ export function Share({ app }: { app: ShareApp }) {
 
   const dateien = content.files.length
   const text = hatText(content)
+  // Nur der Name einer Datei kam an, die Datei selbst nicht (Chrome 153).
+  const fehlendeDatei = dateien === 0 ? geteilterDateiname(content) : null
 
   if (arbeit) {
     return (
@@ -378,7 +390,11 @@ export function Share({ app }: { app: ShareApp }) {
         />
       ) : null}
 
-      <Vorschau content={content} />
+      {fehlendeDatei ? (
+        <FehlendeDatei name={fehlendeDatei} knopf={sicht.knopf} onDateien={dateienGewaehlt} />
+      ) : (
+        <Vorschau content={content} />
+      )}
 
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Wohin damit?</p>
@@ -388,7 +404,9 @@ export function Share({ app }: { app: ShareApp }) {
           beschreibung={
             dateien > 0
               ? sicht.ablageText(dateien)
-              : 'Nur für Dateien: PDF, Foto oder Bildschirmfoto.'
+              : fehlendeDatei
+                ? 'Zuerst die Datei oben auswählen.'
+                : 'Nur für Dateien – PDF, Word, Excel, Fotos und mehr.'
           }
           moeglich={dateien > 0}
           onClick={() => setSchritt('ablage')}
@@ -407,16 +425,19 @@ export function Share({ app }: { app: ShareApp }) {
           beschreibung={
             dateien > 0
               ? 'In eine neue oder bestehende Notiz – als ganze Datei oder nur ihr Text.'
-              : 'In eine neue oder bestehende Notiz – ein Verweis bleibt anklickbar.'
+              : fehlendeDatei
+                ? 'Zuerst die Datei oben auswählen.'
+                : 'In eine neue oder bestehende Notiz – ein Verweis bleibt anklickbar.'
           }
-          moeglich={dateien > 0 || text}
+          // Ohne die Datei entstünde eine Notiz, in der nur ihr Name steht.
+          moeglich={dateien > 0 || (text && !fehlendeDatei)}
           onClick={() => setSchritt('notiz')}
           icon={<NoteIcon className="size-6" />}
           akzent={sicht.akzent}
         />
       </div>
 
-      {dateien === 0 || leereDateien(content.protokoll).length > 0 ? (
+      {(dateien === 0 && !fehlendeDatei) || leereDateien(content.protokoll).length > 0 ? (
         <DateiWahl knopf={sicht.knopf} onDateien={dateienGewaehlt} dezent />
       ) : null}
 
@@ -468,7 +489,7 @@ function DateiWahl({
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf,image/*"
+        accept={DATEI_ACCEPT}
         multiple
         hidden
         onChange={(event) => {
@@ -483,6 +504,42 @@ function DateiWahl({
         }}
       />
     </>
+  )
+}
+
+/**
+ * Statt der Datei kam nur ihr Name (siehe `geteilterDateiname`).
+ *
+ * Die Datei liegt aber auf dem Gerät, und in der Auswahl des Systems steht
+ * sie meist gleich zuoberst unter „Zuletzt verwendet": ein Griff, und es geht
+ * weiter wie gewohnt. Deshalb steht die Auswahl hier gross und zuerst – und
+ * nicht erst unten, nach zwei Zielen, von denen ohne die Datei keines passt.
+ */
+function FehlendeDatei({
+  name,
+  knopf,
+  onDateien,
+}: {
+  name: string
+  knopf: string
+  onDateien: (eingelesen: Eingelesen) => void
+}) {
+  const grund =
+    (chromeVersion() ?? 0) >= 153
+      ? 'Das liegt an Chrome für Android: Seit Version 153 gibt Chrome geteilte Dateien nicht an installierte Web-Apps weiter.'
+      : 'Die andere App hat die Datei selbst nicht mitgegeben.'
+  return (
+    <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+      <div className="space-y-1">
+        <p className="break-words font-medium text-amber-900 dark:text-amber-200">
+          „{name}" ist nicht mitgekommen – nur ihr Name.
+        </p>
+        <p className="text-sm text-amber-800 dark:text-amber-300">
+          {grund} Die Datei hier auswählen: Sie steht meist gleich oben unter „Zuletzt verwendet".
+        </p>
+      </div>
+      <DateiWahl knopf={knopf} onDateien={onDateien} />
+    </div>
   )
 }
 
