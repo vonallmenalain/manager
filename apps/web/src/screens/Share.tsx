@@ -26,6 +26,7 @@ import { formatEdited } from '../components/NoteParts'
 import { ALLE_TRAY_FELDER, TraySelect, type TrayField } from '../components/PageTray'
 import { api, ApiRequestError } from '../lib/api'
 import { useCategories, useHouseholdUsers, useUploadDocument } from '../lib/documents'
+import { einlesen, type Eingelesen } from '../lib/einlesen'
 import { useNotes, useSaveNote } from '../lib/household'
 import {
   dateienAlsBloecke,
@@ -68,7 +69,8 @@ import { hatText, noteFromShare } from '../lib/shareNote'
  * den Grund als Beschreibung – wer teilt, soll einmal lesen, was diese App mit
  * was macht, und es danach wissen.
  *
- * Kommt nichts an – manche Apps geben beim Teilen keine Datei mit –, sagt die
+ * Kommt nichts an – manche Apps geben beim Teilen keine Datei mit, und Chrome
+ * für Android wirft geteilte Dateien seit Version 153 ganz weg –, sagt die
  * Seite, was der Worker tatsächlich bekommen hat, und bietet an, die Datei
  * gleich hier auszuwählen. Danach geht es genau gleich weiter.
  */
@@ -134,7 +136,7 @@ export function Share({ app }: { app: ShareApp }) {
   const [content, setContent] = useState<SharedContent | null>(null)
   const [fehler, setFehler] = useState<string | null>(
     params.get('fehler')
-      ? 'Das Geteilte konnte nicht gelesen werden. Bitte nochmals teilen.'
+      ? 'Das Geteilte kam unlesbar an – nochmals teilen, oder die Datei hier selbst auswählen.'
       : null,
   )
   const [schritt, setSchritt] = useState<'ziel' | 'notiz' | 'ablage'>('ziel')
@@ -247,10 +249,10 @@ export function Share({ app }: { app: ShareApp }) {
   }
 
   /** Die Datei selbst wählen, wenn beim Teilen keine ankam. */
-  function dateienGewaehlt(files: File[]) {
-    if (files.length === 0) return
-    setFehler(null)
-    setContent((alt) => withFiles(alt ?? LEER, files))
+  function dateienGewaehlt({ dateien, probleme }: Eingelesen) {
+    setFehler(probleme.length > 0 ? probleme.join(' ') : null)
+    if (dateien.length === 0) return
+    setContent((alt) => withFiles(alt ?? LEER, dateien))
     setSchritt('ziel')
   }
 
@@ -278,10 +280,13 @@ export function Share({ app }: { app: ShareApp }) {
         <div className="space-y-3 rounded-2xl border border-dashed border-slate-300 px-5 py-8 text-center dark:border-slate-700">
           <p className="font-medium">Keine Datei angekommen</p>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {leerGrund(content.protokoll)} Die Datei lässt sich hier direkt auswählen – im
-            Auswahlfenster stehen auch Google Drive und die Downloads.
+            {leerGrund(content.protokoll)} Die Datei lässt sich hier direkt auswählen.
           </p>
           <DateiWahl knopf={sicht.knopf} onDateien={dateienGewaehlt} />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Aus Google Drive: die Datei dort zuerst herunterladen (⋮ → Herunterladen) und hier dann
+            unter „Downloads" wählen – direkt aus Drive kann Chrome sie oft nicht lesen.
+          </p>
         </div>
         <ProtokollAnzeige protokoll={content.protokoll} />
         <button
@@ -427,9 +432,13 @@ export function Share({ app }: { app: ShareApp }) {
 }
 
 /**
- * Die Datei selbst wählen – für den Fall, dass die andere App beim Teilen
- * keine mitgab. Über die Auswahl des Systems: Dort stehen neben den Downloads
- * auch Google Drive und andere Ablagen.
+ * Die Datei selbst wählen – für den Fall, dass beim Teilen keine ankam. Über
+ * die Auswahl des Systems: Dort stehen neben den Downloads auch Google Drive
+ * und andere Ablagen.
+ *
+ * Gelesen wird gleich nach der Auswahl, nicht erst beim Ablegen: Bis Titel und
+ * Status gewählt sind, hätte Chrome eine Datei aus Google Drive sonst verloren
+ * (siehe `lib/einlesen.ts`).
  */
 function DateiWahl({
   knopf,
@@ -437,23 +446,25 @@ function DateiWahl({
   dezent = false,
 }: {
   knopf: string
-  onDateien: (files: File[]) => void
+  onDateien: (eingelesen: Eingelesen) => void
   /** Als Textknopf statt als auffälliger – wenn schon etwas angekommen ist. */
   dezent?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [liest, setLiest] = useState(false)
   return (
     <>
       <button
         type="button"
+        disabled={liest}
         onClick={() => inputRef.current?.click()}
         className={
           dezent
-            ? 'min-h-11 w-full rounded-xl border border-slate-300 text-sm font-medium text-slate-700 dark:border-slate-700 dark:text-slate-200'
-            : `min-h-12 w-full rounded-2xl px-4 text-base font-medium shadow-sm transition active:scale-[0.99] ${knopf}`
+            ? 'min-h-11 w-full rounded-xl border border-slate-300 text-sm font-medium text-slate-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200'
+            : `min-h-12 w-full rounded-2xl px-4 text-base font-medium shadow-sm transition active:scale-[0.99] disabled:opacity-60 ${knopf}`
         }
       >
-        Datei auswählen
+        {liest ? 'Wird gelesen …' : 'Datei auswählen'}
       </button>
       <input
         ref={inputRef}
@@ -464,7 +475,12 @@ function DateiWahl({
         onChange={(event) => {
           const files = Array.from(event.target.files ?? [])
           event.target.value = ''
-          onDateien(files)
+          if (files.length === 0) return
+          setLiest(true)
+          void einlesen(files).then((eingelesen) => {
+            setLiest(false)
+            onDateien(eingelesen)
+          })
         }}
       />
     </>
@@ -478,27 +494,51 @@ function leereDateien(protokoll: ShareProtokoll | null | undefined): string[] {
     .map((feld) => `„${feld.datei}"`)
 }
 
-/** Warum nichts ankam – so genau, wie es das Protokoll des Workers sagt. */
+/**
+ * Warum nichts ankam – so genau, wie es das Protokoll des Workers sagt.
+ *
+ * Ein Formular ganz ohne Felder schickt keine App von sich aus: Seit Version
+ * 153 wirft Chrome für Android Dateien weg, die an eine installierte Web-App
+ * geteilt werden (gemeldet u. a. bei Squoosh, GoogleChromeLabs/squoosh#1503),
+ * und schickt den Rest leer weiter. Das soll hier so stehen – sonst sucht man
+ * den Fehler in der App, aus der geteilt wurde.
+ */
 function leerGrund(protokoll: ShareProtokoll | null | undefined): string {
   if (!protokoll) return 'Hier liegt nichts, das sich ablegen liesse.'
   const leer = leereDateien(protokoll)
   if (leer.length > 0) {
     return `${leer.join(', ')} kam leer an – die andere App hat den Inhalt nicht mitgegeben.`
   }
+  if (protokoll.felder.length === 0) {
+    return (chromeVersion() ?? 0) >= 153
+      ? 'Chrome hat beim Teilen nichts weitergegeben. Das liegt an Chrome für Android, nicht an der App: Seit Version 153 kommen geteilte Dateien bei installierten Web-Apps nicht mehr an.'
+      : 'Beim Teilen kam gar nichts an, weder Datei noch Text.'
+  }
   return 'Die andere App hat beim Teilen keine Datei mitgegeben.'
+}
+
+/** Die Hauptversion von Chrome – null in anderen Browsern, auch in solchen auf Chrome-Basis. */
+function chromeVersion(): number | null {
+  const kennung = navigator.userAgent
+  if (/SamsungBrowser|EdgA|OPR|Firefox/.test(kennung)) return null
+  const treffer = /Chrome\/(\d+)/.exec(kennung)
+  return treffer ? Number(treffer[1]) : null
 }
 
 /**
  * Was der Worker beim Teilen bekommen hat – eingeklappt, für den Fall, dass
- * man der Sache nachgehen will. Nur Namen, Arten und Grössen.
+ * man der Sache nachgehen will. Nur Namen, Arten und Grössen, dazu die
+ * Version von Chrome: Ob etwas ankommt, hängt inzwischen auch an ihr.
  */
 function ProtokollAnzeige({ protokoll }: { protokoll: ShareProtokoll | null | undefined }) {
   if (!protokoll) return null
+  const chrome = chromeVersion()
   return (
     <details className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
       <summary className="cursor-pointer py-1 text-slate-500 dark:text-slate-400">
         Was ist angekommen?
       </summary>
+      {chrome ? <p className="py-1 text-xs text-slate-500">Chrome {chrome}</p> : null}
       {protokoll.felder.length === 0 ? (
         <p className="py-1">Gar nichts – auch kein Text.</p>
       ) : (

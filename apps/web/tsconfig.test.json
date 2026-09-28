@@ -12,6 +12,8 @@
     "src/lib/scan",
     "src/lib/appScopes.ts",
     "src/lib/appScopes.test.ts",
+    "src/lib/einlesen.ts",
+    "src/lib/einlesen.test.ts",
     "src/lib/shareConstants.ts",
     "src/lib/shareConstants.test.ts",
     "src/lib/shareNote.ts",
