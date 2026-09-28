@@ -36,10 +36,11 @@ import {
 } from '../lib/noteFiles'
 import { DOCBASE_SHARE_CACHE, SHARE_CACHE, type ShareProtokoll } from '../lib/shareConstants'
 import {
-  contentFromFiles,
   discardSharedContent,
   istLeer,
+  LEER,
   readSharedContent,
+  withFiles,
   type SharedContent,
 } from '../lib/sharedContent'
 import { hatText, noteFromShare } from '../lib/shareNote'
@@ -249,7 +250,7 @@ export function Share({ app }: { app: ShareApp }) {
   function dateienGewaehlt(files: File[]) {
     if (files.length === 0) return
     setFehler(null)
-    setContent(contentFromFiles(files))
+    setContent((alt) => withFiles(alt ?? LEER, files))
     setSchritt('ziel')
   }
 
@@ -532,7 +533,8 @@ interface Angaben {
 /** Wie es um eine Datei steht – ein zweiter Versuch lädt nichts doppelt hoch. */
 type DateiStand =
   | { art: 'offen' }
-  | { art: 'abgelegt'; dokument: ManagedDocument }
+  /** `hinweis`: abgelegt, aber Fälligkeit oder Notiz fehlen noch. */
+  | { art: 'abgelegt'; dokument: ManagedDocument; hinweis?: string }
   | { art: 'doppelt'; meldung: string; vorhanden?: ManagedDocument }
   | { art: 'fehler'; meldung: string }
 
@@ -586,11 +588,12 @@ function AblageFormular({
   const abgelegte = staende.flatMap((stand) => (stand.art === 'abgelegt' ? [stand.dokument] : []))
   const doppelte = staende.filter((stand) => stand.art === 'doppelt')
   const nochOffen = staende.filter((stand) => stand.art === 'offen' || stand.art === 'fehler')
-  const meldungen = staende.flatMap((stand, index) =>
-    stand.art === 'doppelt' || stand.art === 'fehler'
-      ? [`${files[index]?.name ?? 'Datei'}: ${stand.meldung}`]
-      : [],
-  )
+  const meldungen = staende.flatMap((stand, index) => {
+    const name = files[index]?.name ?? 'Datei'
+    if (stand.art === 'doppelt' || stand.art === 'fehler') return [`${name}: ${stand.meldung}`]
+    if (stand.art === 'abgelegt' && stand.hinweis) return [`${name}: ${stand.hinweis}`]
+    return []
+  })
   // Nur eine Datei, und die liegt schon in der Ablage: Dann ist „öffnen" oft
   // genau das, was man wollte.
   const vorhanden =
@@ -620,17 +623,35 @@ function AblageFormular({
           assignedTo: felder.includes('zustaendig') ? angaben.assignedTo : undefined,
           status: felder.includes('status') ? angaben.status : undefined,
         })
+        // Ab hier liegt das Dokument in der Ablage – was danach schiefgeht,
+        // darf es nicht ein zweites Mal hochladen.
+        neu[index] = { art: 'abgelegt', dokument: document }
+
         // Fälligkeit und Notiz nimmt das Hochladen nicht an – sie gehen gleich
-        // danach mit, bevor jemand das Dokument zu sehen bekommt.
+        // danach mit, bevor jemand das Dokument zu sehen bekommt. Scheitert
+        // das, bleibt das Dokument abgelegt, und die Seite sagt, was fehlt.
         const faellig = sicht.faellig && angaben.faellig ? angaben.faellig : undefined
         const notiz = angaben.notiz.trim() || undefined
         if (faellig || notiz) {
-          await api.updateDocument(document.id, {
-            ...(faellig ? { dueDate: faellig } : {}),
-            ...(notiz ? { notes: notiz } : {}),
-          })
+          try {
+            await api.updateDocument(document.id, {
+              ...(faellig ? { dueDate: faellig } : {}),
+              ...(notiz ? { notes: notiz } : {}),
+            })
+          } catch {
+            const fehlt =
+              faellig && notiz
+                ? 'Fälligkeit und Notiz fehlen'
+                : faellig
+                  ? 'die Fälligkeit fehlt'
+                  : 'die Notiz fehlt'
+            neu[index] = {
+              art: 'abgelegt',
+              dokument: document,
+              hinweis: `abgelegt, aber ${fehlt} – bitte im Dokument nachtragen.`,
+            }
+          }
         }
-        neu[index] = { art: 'abgelegt', dokument: document }
       } catch (error) {
         if (error instanceof ApiRequestError && error.code === 'duplicate') {
           const data = error.data as { existing?: ManagedDocument } | undefined
@@ -647,7 +668,9 @@ function AblageFormular({
 
     setLaeuft(null)
     void queryClient.invalidateQueries({ queryKey: ['documents'] })
-    if (neu.every((stand) => stand.art === 'abgelegt')) {
+    // Weiter geht es von selbst nur, wenn nichts zu sagen bleibt – fehlt eine
+    // Angabe, soll das vorher zu lesen sein.
+    if (neu.every((stand) => stand.art === 'abgelegt' && !stand.hinweis)) {
       onAbgelegt(neu.flatMap((stand) => (stand.art === 'abgelegt' ? [stand.dokument] : [])))
     }
   }
@@ -809,7 +832,15 @@ function AblageFormular({
         </div>
       ) : null}
 
-      {abgelegte.length > 0 && abgelegte.length < files.length && !busy ? (
+      {abgelegte.length === files.length && !busy ? (
+        // Alles abgelegt, aber mit einem Hinweis – weiter erst, wenn gelesen.
+        <button
+          onClick={() => onAbgelegt(abgelegte)}
+          className={`min-h-12 w-full rounded-xl text-base font-semibold ${sicht.knopf}`}
+        >
+          Weiter {abgelegte.length === 1 ? 'zum Dokument' : 'zu den Dokumenten'}
+        </button>
+      ) : abgelegte.length > 0 && !busy ? (
         <button
           onClick={() => onAbgelegt(abgelegte)}
           className="min-h-11 w-full rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300"

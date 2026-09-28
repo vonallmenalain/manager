@@ -42,19 +42,21 @@ export interface SharedContent extends SharedText {
 export const LEER: SharedContent = { files: [], title: '', text: '', url: '' }
 
 /**
- * Selbst gewählte Dateien als Geteiltes – wenn die andere App beim Teilen
- * nichts mitgab und die Datei deshalb auf der Auswahlseite gewählt wird.
- * Mit demselben Blick auf den Typ wie beim Abholen aus dem Zwischenspeicher.
+ * Selbst gewählte Dateien zum Geteilten dazu – wenn die andere App beim
+ * Teilen keine (oder eine leere) mitgab und die Datei deshalb auf der
+ * Auswahlseite gewählt wird.
+ *
+ * Dazu, nicht anstelle: Was an Titel, Text und Verweis ankam, bleibt – sonst
+ * stünde in der Notiz danach nur die Datei. Das Protokoll fällt weg; die
+ * Meldung „kam leer an" ist mit der gewählten Datei erledigt. Der Typ wird
+ * geprüft wie beim Abholen aus dem Zwischenspeicher.
  */
-export function contentFromFiles(files: readonly File[]): SharedContent {
-  return {
-    ...LEER,
-    files: files.map((file) =>
-      file.type === uploadMimeType(file.type, file.name)
-        ? file
-        : new File([file], file.name, { type: uploadMimeType(file.type, file.name) }),
-    ),
-  }
+export function withFiles(content: SharedContent, files: readonly File[]): SharedContent {
+  const normalisiert = files.map((file) => {
+    const typ = uploadMimeType(file.type, file.name)
+    return typ === file.type ? file : new File([file], file.name, { type: typ })
+  })
+  return { ...content, files: [...content.files, ...normalisiert], protokoll: null }
 }
 
 /** Ist überhaupt etwas angekommen? */
