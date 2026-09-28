@@ -7,9 +7,19 @@
  * funktionieren: Der Worker legt ab, die Oberfläche sucht woanders.
  */
 // Mit .ts-Endung, damit `node --test` die Datei ohne Bündler laden kann.
-import { MANAGER_SCOPE } from './appScopes.ts'
+import { DOCBASE_SCOPE, MANAGER_SCOPE } from './appScopes.ts'
 
+/**
+ * Der Zwischenspeicher des Managers.
+ *
+ * Jede App hat ihren eigenen: Die Cache Storage gehört der ganzen Adresse,
+ * nicht einer App. Mit einem gemeinsamen Namen fände der Manager, was eben an
+ * die DocBase geteilt wurde – und räumte es beim nächsten Teilen weg.
+ */
 export const SHARE_CACHE = 'geteilte-dateien'
+
+/** Der Zwischenspeicher der DocBase. */
+export const DOCBASE_SHARE_CACHE = 'docbase-geteilt'
 
 /** Kopfzeile, in der der ursprüngliche Dateiname mitreist. */
 export const SHARE_FILENAME_HEADER = 'x-dateiname'
@@ -28,12 +38,22 @@ export const SHARE_FILE_PREFIX = '/__geteilt/datei-'
 export const SHARE_TEXT_KEY = '/__geteilt/text'
 
 /**
+ * Der Name des Teilen-Ziels, wie ihn der Router kennt.
+ *
+ * Als Seite gebraucht nur für den Fall, dass kein Service Worker den POST
+ * abgefangen hat: Dann kommt der Aufruf als gewöhnlicher Seitenaufruf an, und
+ * statt kommentarlos auf der Startseite zu landen, steht dort, was passiert
+ * ist (siehe `screens/ShareMissed.tsx`).
+ */
+export const SHARE_TARGET_ROUTE = 'share-target'
+
+/**
  * Adresse, an die Android den POST schickt (muss zum Manifest passen).
  *
  * Mit dem Geltungsbereich davor: Ein Teilen-Ziel ausserhalb des eigenen
  * Bereichs lehnt der Browser ab.
  */
-export const SHARE_TARGET_PATH = `${MANAGER_SCOPE}share-target`
+export const SHARE_TARGET_PATH = `${MANAGER_SCOPE}${SHARE_TARGET_ROUTE}`
 
 /**
  * Die Seite, auf der nach dem Teilen das Ziel gewählt wird.
@@ -48,3 +68,20 @@ export const SHARE_TARGET_PATH = `${MANAGER_SCOPE}share-target`
  */
 export const SHARE_LANDING_ROUTE = 'teilen'
 export const SHARE_LANDING_PATH = `${MANAGER_SCOPE}${SHARE_LANDING_ROUTE}`
+
+/** Teilen-Ziel und Auswahlseite der DocBase – dieselbe Einrichtung, eigener Bereich. */
+export const DOCBASE_SHARE_TARGET_PATH = `${DOCBASE_SCOPE}${SHARE_TARGET_ROUTE}`
+export const DOCBASE_SHARE_LANDING_PATH = `${DOCBASE_SCOPE}${SHARE_LANDING_ROUTE}`
+
+/**
+ * Das Teilen-Ziel der Installationen von vor dem Umzug nach `/app/`.
+ *
+ * Android hat Name, Symbol und Teilen-Ziel einer installierten App fest in
+ * ihrem Paket stehen. Eine App, die noch auf `/` installiert wurde, schickt
+ * deshalb weiterhin an `/share-target` – und dort war seit dem Umzug niemand
+ * mehr: Netlify leitete nach `/app/share-target` um, aus dem POST wurde ein
+ * gewöhnlicher Aufruf, die Dateien waren weg, und die App zeigte ihre
+ * Startseite. Seither fängt der Worker an der Wurzel diesen Aufruf ab (siehe
+ * `legacy-root/sw.js`).
+ */
+export const LEGACY_SHARE_TARGET_PATH = '/share-target'

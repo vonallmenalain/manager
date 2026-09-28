@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { extractPdfText } from '../lib/pdf-text.js'
-import { isUsableTextLayer } from './text-quality.js'
+import { CONTROL_CHARS, isUsableTextLayer } from './text-quality.js'
 
 const run = promisify(execFile)
 
@@ -174,10 +174,13 @@ export async function extractText(
  * Texterkennung hinterlässt viel Leerraum – bei einer eingescannten Rechnung
  * schnell mehr Leerzeichen als Buchstaben. Ungefiltert bläht das die Datenbank
  * auf und macht die Textausschnitte in den Suchergebnissen unlesbar.
+ * Steuerzeichen fallen weg, ein Seitenvorschub wird zum Zeilenumbruch – in
+ * einer Notiz stünden sie sonst als unsichtbare Zeichen mitten im Text.
  */
 export function tidyText(raw: string): string {
   return raw
-    .replace(/\r\n?/g, '\n')
+    .replace(CONTROL_CHARS, '')
+    .replace(/\r\n?|[\v\f]/g, '\n')
     .replace(/[ \t ]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')

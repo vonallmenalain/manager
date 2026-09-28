@@ -7,8 +7,8 @@ import {
   type ManagedDocument,
   type Note,
 } from '@manager/shared'
-import { useCallback, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { NewCategoryDialog } from '../../components/CategoryPicker'
 import { DocumentTile } from '../../components/DocumentTile'
@@ -72,6 +72,22 @@ export function Library() {
   const [spalten, setSpalten] = useLocalSetting<Spalten>('docbase.spalten', SPALTEN, '2')
   /** 'neu' heisst: Das Fenster geht auf, die Notiz gibt es noch nicht. */
   const [notiz, setNotiz] = useState<Note | 'neu' | null>(null)
+
+  // Vom Teilen kommt man mit der eben gefüllten Notiz im Gepäck: Sie geht
+  // gleich auf. Mitgegeben statt in der Liste gesucht, weil ein gesetzter
+  // Kategorienfilter sie dort gerade ausblenden könnte. Danach wird sie aus
+  // dem Verlauf genommen – sonst ginge sie beim Zurückkehren wieder auf.
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const mitgebracht = (location.state as { notiz?: Note } | null)?.notiz
+    if (!mitgebracht) return
+    setNotiz(mitgebracht)
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: null },
+    )
+  }, [location.state, location.pathname, location.search, navigate])
 
   const categories = useCategories('docbase')
   const gesucht = {

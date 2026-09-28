@@ -22,7 +22,7 @@ import {
   rotatePage,
   type ScanPage,
 } from '../lib/scan/pages'
-import { collectSharedFiles } from '../lib/sharedContent'
+import { collectSharedFiles, shareCacheFor } from '../lib/sharedContent'
 
 interface UploadState {
   running: number
@@ -150,12 +150,26 @@ export function UploadControls({
     [upload, bereich],
   )
 
-  // Geteilte Dateien abholen, nachdem auf `/teilen` „Dokumente" gewählt wurde.
-  // Läuft genau einmal pro Weiterleitung; der Parameter wird sofort entfernt,
+  // Geteilte Dateien abholen, nachdem auf `/teilen` „Dokumente" (bzw. in der
+  // DocBase „Sammlung") gewählt wurde. Der Parameter wird sofort entfernt,
   // damit ein Neuladen nicht erneut auslöst.
+  //
+  // Genau einmal je Weiterleitung – und das ist nicht selbstverständlich:
+  // `uploadFiles` ist bei jedem Zeichnen eine neue Funktion (die Mutation
+  // dahinter liefert jedes Mal ein neues Objekt), und bis das Entfernen des
+  // Parameters in der Adresse angekommen ist, zeichnet die Seite schon wieder.
+  // Der Effekt lief dadurch ein zweites Mal, beide Durchgänge fanden dieselben
+  // Dateien im Zwischenspeicher, und jede geteilte Datei landete doppelt in der
+  // Ablage – oder das zweite Hochladen scheiterte mit „liegt bereits in der
+  // Ablage". Deshalb steht die Funktion hinter einem Verweis, und solange ein
+  // Abholen läuft, wird kein zweites begonnen.
   const shared = searchParams.get('geteilt')
+  const uploadFilesRef = useRef(uploadFiles)
+  uploadFilesRef.current = uploadFiles
+  const holtAb = useRef(false)
   useEffect(() => {
-    if (!shared) return
+    if (!shared || holtAb.current) return
+    holtAb.current = true
 
     setSearchParams(
       (params) => {
@@ -165,17 +179,23 @@ export function UploadControls({
       { replace: true },
     )
 
-    void collectSharedFiles().then((files) => {
-      if (files.length === 0) {
-        setState({
-          running: 0,
-          message: 'Keine geteilte Datei gefunden. Bitte nochmals teilen.',
-        })
-        return
-      }
-      void uploadFiles(files)
-    })
-  }, [shared, setSearchParams, uploadFiles])
+    // Aus dem Zwischenspeicher der eigenen App: Was an die DocBase geteilt
+    // wurde, gehört in die Sammlung, nicht in den Haushalt.
+    void collectSharedFiles(shareCacheFor(bereich))
+      .then(async (files) => {
+        if (files.length === 0) {
+          setState({
+            running: 0,
+            message: 'Keine geteilte Datei gefunden. Bitte nochmals teilen.',
+          })
+          return
+        }
+        await uploadFilesRef.current(files)
+      })
+      .finally(() => {
+        holtAb.current = false
+      })
+  }, [shared, setSearchParams, bereich])
 
   // Verknüpfung vom Startbildschirm: direkt in den Scanner.
   const capture = searchParams.get('aufnehmen')

@@ -13,6 +13,7 @@
     "src/lib/appScopes.ts",
     "src/lib/appScopes.test.ts",
     "src/lib/shareConstants.ts",
+    "src/lib/shareConstants.test.ts",
     "src/lib/shareNote.ts",
     "src/lib/shareNote.test.ts"
   ],

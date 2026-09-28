@@ -9,7 +9,7 @@ import { documents, type DocumentRow } from '../db/schema.js'
 import { env } from '../env.js'
 import { resolveInStorage, textSidecarPath } from '../lib/storage.js'
 import { extractText, resolveLanguages, tidyText } from './extract.js'
-import { MAX_PRIVATE_USE_SHARE, privateUseShare } from './text-quality.js'
+import { MAX_UNREADABLE_SHARE, unreadableShare } from './text-quality.js'
 
 /** Nach drei erfolglosen Anläufen bringt ein vierter erfahrungsgemäss nichts. */
 const MAX_ATTEMPTS = 3
@@ -57,8 +57,10 @@ export class OcrWorker {
    *
    * Eine Zeit lang hat `pdftotext` bei Rechnungen mit eigenwilligen Schriften
    * Zeichen aus dem privaten Unicode-Bereich geliefert, und die galten als
-   * gelesen. Diese Dokumente sind über ihren Inhalt nicht auffindbar, und von
-   * selbst würde sich das nie ändern: Ihr Zustand steht auf „fertig".
+   * gelesen. Ebenso bei PDFs aus dem Browser, deren Text der eigene Leser mit
+   * Nullzeichen durchsetzt hat. Diese Dokumente sind über ihren Inhalt nicht
+   * auffindbar, und von selbst würde sich das nie ändern: Ihr Zustand steht auf
+   * „fertig".
    *
    * Läuft bei jedem Start und ist danach ein Leerlauf – ein Dokument, das
    * einmal richtig gelesen wurde, fällt hier nie wieder auf.
@@ -72,7 +74,7 @@ export class OcrWorker {
       .where(and(eq(documents.ocrStatus, 'done'), isNotNull(documents.ocrText)))
 
     const betroffen = kandidaten
-      .filter((zeile) => zeile.probe && privateUseShare(zeile.probe) > MAX_PRIVATE_USE_SHARE)
+      .filter((zeile) => zeile.probe && unreadableShare(zeile.probe) > MAX_UNREADABLE_SHARE)
       .map((zeile) => zeile.id)
 
     if (betroffen.length === 0) return

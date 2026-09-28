@@ -321,7 +321,7 @@ export function usePreviewInfo(id: string | undefined) {
  * Ohne das revoke bliebe jede angeschaute Seite bis zum Neuladen der App im
  * Speicher – bei einem mehrseitigen Scan auf dem Handy schnell spürbar.
  */
-function useObjectUrl(blob: Blob | undefined): string | null {
+export function useObjectUrl(blob: Blob | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {

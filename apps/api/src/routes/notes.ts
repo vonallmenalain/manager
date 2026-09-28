@@ -18,6 +18,7 @@ import { db } from '../db/index.js'
 import { categories, notes, type NoteRow } from '../db/schema.js'
 import { notFound, unauthorized, validationError } from '../lib/errors.js'
 import { categoryCondition } from '../lib/filters.js'
+import { deleteNoteFiles, filesOfNote, linkNoteFiles } from '../lib/note-files.js'
 
 function toApi(row: NoteRow): Note {
   return {
@@ -183,6 +184,8 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
 
     const row = inserted[0]
     if (!row) throw new Error('Notiz konnte nicht gespeichert werden')
+    // Dateien, die der Text nennt, gehören ab jetzt zu dieser Notiz.
+    await linkNoteFiles(row.id, user.id, row.bodyRich)
     return reply.status(201).send({ note: toApi(row) })
   })
 
@@ -222,6 +225,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
 
     const row = updated[0]
     if (!row) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
+    await linkNoteFiles(row.id, user.id, row.bodyRich)
     return reply.send({ note: toApi(row) })
   })
 
@@ -230,12 +234,17 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     if (!user) return reply.status(401).send(unauthorized())
 
     const { id } = request.params as { id: string }
+    // Vor dem Löschen einsammeln: Danach steht bei ihnen keine Notiz mehr.
+    const dateien = await filesOfNote(id)
     const deleted = await db
       .delete(notes)
       .where(and(eq(notes.id, id), visibleTo(user.id)))
       .returning({ id: notes.id })
 
     if (deleted.length === 0) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
+    // Mit der Notiz verschwinden ihre Dateien. Was dabei hängen bleibt, holt
+    // das stündliche Aufräumen nach – die Zeilen stehen dann ohne Notiz da.
+    await deleteNoteFiles(dateien, request.log)
     return reply.status(204).send()
   })
 }

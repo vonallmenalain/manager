@@ -482,10 +482,30 @@ export const noteSchema = z.object({
 
 export type Note = z.infer<typeof noteSchema>
 
+/** Wie lang Titel und Text einer Notiz sein dürfen. */
+export const NOTE_TITLE_MAX = 120
+export const NOTE_BODY_MAX = 20_000
+
+/**
+ * Ein Auftrag „Text erkennen" für eine Notiz, wie ihn `/api/texterkennung`
+ * meldet: Hochladen gibt die Kennung, Nachfragen den Stand – und am Ende den
+ * Text oder den Grund, warum es keinen gibt.
+ */
+export type TexterkennungStatus = 'wartet' | 'laeuft' | 'fertig' | 'fehler'
+
+export interface TexterkennungAuftrag {
+  id: string
+  status: TexterkennungStatus
+  /** Nur bei `fertig` – auch leer, wenn in der Datei kein Text stand. */
+  text?: string
+  /** Nur bei `fehler`. */
+  message?: string
+}
+
 export const upsertNoteSchema = z
   .object({
-    title: z.string().trim().max(120).default(''),
-    body: z.string().max(20_000).default(''),
+    title: z.string().trim().max(NOTE_TITLE_MAX).default(''),
+    body: z.string().max(NOTE_BODY_MAX).default(''),
     /**
      * Fehlt das Feld ganz, kommt die Anfrage von einer App, die noch nichts von
      * Formatierung weiss – dann bleibt, was schon dasteht, solange es zum Text

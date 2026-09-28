@@ -155,6 +155,13 @@
       "when": 1790501903835,
       "tag": "0021_notizen_formatiert",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1790584843343,
+      "tag": "0022_notiz_dateien",
+      "breakpoints": true
     }
   ]
 }

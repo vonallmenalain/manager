@@ -5,7 +5,9 @@ Finanzen (Zehnten / Fastopfer) und die Nebenkosten des Hauses für zwei Personen
 
 **Stand: Etappe 6 abgeschlossen** – alle geplanten Bereiche sind gebaut.
 Dokumente lassen sich teilen, aufnehmen, verwalten und **über ihren Inhalt
-durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Der
+durchsuchen**: Gescannte Rechnungen werden automatisch gelesen. Geteilt wird an
+Manager und DocBase getrennt, und erst danach gewählt, wohin es soll – in die
+Ablage oder in eine neue bzw. bestehende Notiz. Der
 **Dokumentenmodus** schneidet ein abfotografiertes Blatt selbst zu, entzerrt es
 und rechnet den Schatten heraus; **mehrere Seiten** sammeln sich zu einem
 einzigen PDF, statt einzeln in der Ablage zu landen. Die
@@ -13,7 +15,9 @@ einzigen PDF, statt einzeln in der Ablage zu landen. Die
 Reihenfolge des eigenen Rundgangs gebracht – und merkt sich Korrekturen
 dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
 mit Autospeichern, Anheften, Farben und Suche; Text lässt sich wie in der BSS-App
-formatieren (Fett, Kursiv, Grösse, Farbe, Aufzählung) –, und die **Finanzen** rechnen
+formatieren (Fett, Kursiv, Grösse, Farbe, Aufzählung), und Bilder und PDFs stehen
+auf Wunsch direkt im Text, ganz zum Antippen oder als erkannter Text –, und die
+**Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet
 sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Die Steuern
 stehen je Jahr in beliebig vielen Beträgen – Bundessteuer, Staatssteuer –, und

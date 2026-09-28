@@ -18,6 +18,7 @@ import type {
   Note,
   PreviewInfo,
   PublicUser,
+  RichFile,
   SaveMonthInput,
   SaveTaxesInput,
   SetupInput,
@@ -25,6 +26,7 @@ import type {
   ShoppingSection,
   TaxEntry,
   TaxYearFigures,
+  TexterkennungAuftrag,
   UpdateCategoryInput,
   UpdateDocumentInput,
   UpdateShoppingItemInput,
@@ -333,6 +335,41 @@ export const api = {
     request<{ note: Note }>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(note) }),
 
   deleteNote: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
+
+  /**
+   * Eine Datei für eine Notiz – Bild oder PDF. Zurück kommt, was im Text der
+   * Notiz steht: Kennung, Name, Typ, Grösse. Zur Notiz gehört sie, sobald die
+   * Notiz mit ihr gespeichert ist.
+   */
+  uploadNoteFile: (file: File, bereich: Bereich) => {
+    const body = new FormData()
+    // Der Bereich vor der Datei – wie beim Dokument entscheidet er, in
+    // welcher Ablage sie liegt.
+    body.append('bereich', bereich)
+    body.append('file', file)
+    return request<{ file: RichFile }>('/api/notes/files', { method: 'POST', body })
+  },
+
+  noteFilePreview: (id: string) => request<PreviewInfo>(`/api/notes/files/${id}/vorschau`),
+
+  /** Das kleine Bild in der Notiz – bei einem PDF die erste Seite. */
+  noteFileThumbnail: (id: string, signal?: AbortSignal) =>
+    requestBlob(`/api/notes/files/${id}/vorschaubild`, signal),
+
+  noteFilePreviewPage: (id: string, page: number, signal?: AbortSignal) =>
+    requestBlob(`/api/notes/files/${id}/vorschau/${page}`, signal),
+
+  noteFile: (id: string, signal?: AbortSignal) =>
+    requestBlob(`/api/notes/files/${id}/datei`, signal),
+
+  /** „Text erkennen": Datei hinschicken, Kennung zurück – siehe `texterkennen`. */
+  startTexterkennung: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<TexterkennungAuftrag>('/api/texterkennung', { method: 'POST', body })
+  },
+
+  texterkennung: (id: string) => request<TexterkennungAuftrag>(`/api/texterkennung/${id}`),
 
   getFinanceYear: (year: number) => request<FinanceYear>(`/api/finanzen/${year}`),
 

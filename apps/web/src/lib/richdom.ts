@@ -7,10 +7,25 @@ import {
   normalizeDoc,
   type RichBlock,
   type RichDoc,
+  type RichFile,
   type RichMarks,
   type RichRun,
 } from '@manager/shared'
 
+import {
+  FILE_BLOCK,
+  FILE_CHIP_BUTTON,
+  FILE_CHIP_ICON,
+  FILE_CHIP_TEXT,
+  FILE_CHIP_THUMB,
+  FILE_IMAGE,
+  FILE_IMAGE_BUTTON,
+  FILE_META,
+  FILE_NAME,
+  FILE_REMOVE,
+  fileMeta,
+  isImage,
+} from './noteFileStyles'
 import { markClasses } from './richStyles'
 
 /**
@@ -32,11 +47,39 @@ import { markClasses } from './richStyles'
  * Cursor und Auswahl werden als Zeichenstellen im Bearbeitungstext gemerkt
  * (`editTextOf`, Blöcke mit `\n` verbunden): Diese Zahlen überleben den
  * Neuaufbau des Feldes – die DOM-Knoten nicht.
+ *
+ * Eine Datei ist ein `<div data-rt-file="…" contenteditable="false">`: Das
+ * Attribut trägt die Angaben zur Datei, der Inhalt ist blosse Darstellung
+ * (Bild, Name, Kreuz zum Entfernen) und wird beim Lesen übergangen. Im
+ * Bearbeitungstext ist sie eine leere Zeile.
  */
 
 type ScanEvent =
   | { kind: 'block'; level: number; anchor: Node }
+  | { kind: 'file'; file: RichFile; anchor: HTMLElement }
   | { kind: 'text'; node: Text; text: string; marks: RichMarks }
+
+/** Das Attribut, an dem eine Datei im Feld hängt – samt ihren Angaben. */
+export const FILE_ATTR = 'data-rt-file'
+
+/** Die Angaben einer Datei aus ihrem Element – oder nichts, wenn sie nicht stimmen. */
+export function readFileAttr(el: Element): RichFile | null {
+  try {
+    const raw = JSON.parse(el.getAttribute(FILE_ATTR) ?? '') as Partial<RichFile> | null
+    if (!raw || typeof raw.id !== 'string' || typeof raw.name !== 'string') return null
+    if (typeof raw.mime !== 'string' || typeof raw.size !== 'number') return null
+    return { id: raw.id, name: raw.name, mime: raw.mime, size: raw.size }
+  } catch {
+    return null
+  }
+}
+
+/** Das Element der Datei, in dem ein Knoten steht – oder nichts. */
+export function fileElementOf(node: EventTarget | null, root: HTMLElement): HTMLElement | null {
+  if (!(node instanceof Element)) return null
+  const el = node.closest<HTMLElement>(`[${FILE_ATTR}]`)
+  return el && root.contains(el) ? el : null
+}
 
 const BLOCK_TAGS = new Set([
   'DIV',
@@ -142,7 +185,12 @@ function inlineMarks(el: HTMLElement, marks: RichMarks): RichMarks {
 const FOREIGN_MARKUP = '[style],font,b,strong,i,em,u,span:not([data-rt])'
 
 export function needsNormalize(root: HTMLElement): boolean {
-  return root.querySelector(FOREIGN_MARKUP) !== null
+  // Was in einer Datei steht, zeichnen wir selbst – ihre Spans tragen kein
+  // `data-rt` und sind trotzdem kein fremdes Markup.
+  for (const el of Array.from(root.querySelectorAll(FOREIGN_MARKUP))) {
+    if (!el.closest(`[${FILE_ATTR}]`)) return true
+  }
+  return false
 }
 
 /**
@@ -174,6 +222,14 @@ function scan(root: HTMLElement, emit: (event: ScanEvent) => void): void {
     const el = node as HTMLElement
     const tag = el.tagName
     if (SKIP_TAGS.has(tag)) return
+
+    if (el.hasAttribute(FILE_ATTR)) {
+      // Eine Datei ist ein Block für sich; was darin steht, ist Darstellung.
+      const file = readFileAttr(el)
+      if (file) emit({ kind: 'file', file, anchor: el })
+      pendingBlock = true
+      return
+    }
 
     if (tag === 'BR') {
       if (brBreaks(el, root)) {
@@ -218,8 +274,13 @@ export function docFromDom(root: HTMLElement): RichDoc {
       blocks.push(event.level > 0 ? { list: event.level, runs: [] } : { runs: [] })
       return
     }
+    if (event.kind === 'file') {
+      blocks.push({ runs: [], file: event.file })
+      return
+    }
     let current = blocks[blocks.length - 1]
-    if (!current) {
+    // Text gehört nie in den Block einer Datei – er beginnt eine eigene Zeile.
+    if (!current || current.file) {
       current = { runs: [] }
       blocks.push(current)
     }
@@ -234,7 +295,7 @@ export function docFromDom(root: HTMLElement): RichDoc {
 
 interface PositionMap {
   texts: { offset: number; node: Text; length: number }[]
-  blocks: { offset: number; anchor: Node }[]
+  blocks: { offset: number; anchor: Node; file?: true }[]
   /** Beide zusammen, in Dokumentreihenfolge */
   points: { offset: number; node: Node; textLength: number }[]
   length: number
@@ -245,10 +306,14 @@ function buildMap(root: HTMLElement): PositionMap {
   let offset = 0
   let started = false
   scan(root, (event) => {
-    if (event.kind === 'block') {
+    if (event.kind === 'block' || event.kind === 'file') {
       if (started) offset += 1
       started = true
-      map.blocks.push({ offset, anchor: event.anchor })
+      map.blocks.push(
+        event.kind === 'file'
+          ? { offset, anchor: event.anchor, file: true }
+          : { offset, anchor: event.anchor },
+      )
       map.points.push({ offset, node: event.anchor, textLength: 0 })
       return
     }
@@ -336,6 +401,17 @@ function locatePoint(
   for (const block of map.blocks) {
     if (block.offset !== target) continue
     const anchor = block.anchor
+    if (block.file) {
+      // In eine Datei lässt sich nicht tippen: Der Cursor gehört an den
+      // Anfang der Zeile darunter – gibt es keine, hinter die Datei.
+      if (target < map.length) return locatePoint(root, map, target + 1)
+      const parent = anchor.parentNode
+      if (parent) {
+        const index = Array.prototype.indexOf.call(parent.childNodes, anchor)
+        return { node: parent, offset: index + 1 }
+      }
+      continue
+    }
     if (anchor.nodeType === Node.TEXT_NODE) {
       best = { node: anchor, offset: 0 }
     } else if ((anchor as HTMLElement).tagName === 'BR') {
@@ -528,19 +604,112 @@ function fillBlock(el: HTMLElement, block: RichBlock): void {
   else el.append(...nodes)
 }
 
+/** Holt das kleine Bild zu einer Datei – als blob:-Adresse. */
+export type ThumbnailLoader = (id: string) => Promise<string>
+
+function element<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag)
+  el.className = className
+  if (text !== undefined) el.textContent = text
+  return el
+}
+
+/** Die Zeile mit Name und Grösse – für PDFs und Bilder, die sich nicht zeichnen lassen. */
+function fillChip(button: HTMLElement, file: RichFile, thumbnail?: ThumbnailLoader): void {
+  button.className = FILE_CHIP_BUTTON
+  const icon = element('span', FILE_CHIP_ICON, isImage(file) ? '🖼' : '📄')
+  icon.setAttribute('aria-hidden', 'true')
+  const text = element('span', FILE_CHIP_TEXT)
+  text.append(element('span', FILE_NAME, file.name), element('span', FILE_META, fileMeta(file)))
+  button.replaceChildren(icon, text)
+
+  if (isImage(file) || !thumbnail) return
+  // Die erste Seite des PDFs ersetzt das Zeichen, sobald sie da ist – gleich
+  // gross, damit nichts verrutscht.
+  thumbnail(file.id).then(
+    (url) => {
+      const img = element('img', FILE_CHIP_THUMB)
+      img.alt = ''
+      img.draggable = false
+      img.src = url
+      img.onerror = () => img.replaceWith(icon)
+      if (icon.isConnected) icon.replaceWith(img)
+    },
+    () => undefined,
+  )
+}
+
+/**
+ * Eine Datei im Feld – so gebaut wie `NoteFileBlock` im gelesenen Text, mit
+ * denselben Klassen (siehe `noteFileStyles.ts`), dazu das Kreuz zum Entfernen.
+ */
+function fileElement(file: RichFile, thumbnail?: ThumbnailLoader): HTMLElement {
+  const box = element('div', FILE_BLOCK)
+  box.setAttribute(FILE_ATTR, JSON.stringify(file))
+  box.contentEditable = 'false'
+
+  const open = element('button', '')
+  open.type = 'button'
+  open.title = file.name
+  open.setAttribute('aria-label', `${file.name} öffnen`)
+  open.setAttribute('data-rt-open', '')
+
+  if (isImage(file)) {
+    open.className = FILE_IMAGE_BUTTON
+    const img = element('img', FILE_IMAGE)
+    img.alt = file.name
+    img.draggable = false
+    // Kann der Browser das Bild nicht zeichnen (HEIC vom iPhone), steht die
+    // Zeile mit Name und Grösse da statt eines leeren Rahmens.
+    img.onerror = () => fillChip(open, file)
+    open.append(img)
+    thumbnail?.(file.id).then(
+      (url) => {
+        img.src = url
+      },
+      () => fillChip(open, file),
+    )
+  } else {
+    fillChip(open, file, thumbnail)
+  }
+
+  const remove = element('button', FILE_REMOVE, '✕')
+  remove.type = 'button'
+  remove.title = 'Aus der Notiz entfernen'
+  remove.setAttribute('aria-label', `${file.name} aus der Notiz entfernen`)
+  remove.setAttribute('data-rt-remove', '')
+
+  box.append(open, remove)
+  return box
+}
+
 /**
  * Das Feld aus dem Modell aufbauen.
  *
  * Absätze werden `<div>` (so legt sie auch der Browser beim Tippen an),
  * Listenpunkte `<li>` in so tief verschachtelten `<ul>`, wie die Ebene sagt –
- * derselbe Aufbau wie im gelesenen Text (`RichText`).
+ * derselbe Aufbau wie im gelesenen Text (`RichText`). Eine Datei wird ein
+ * eigener Block, in den sich nicht tippen lässt.
  */
-export function renderDocInto(root: HTMLElement, doc: RichDoc): void {
+export function renderDocInto(
+  root: HTMLElement,
+  doc: RichDoc,
+  options: { thumbnail?: ThumbnailLoader } = {},
+): void {
   const normal = normalizeDoc(doc)
   const nodes: Node[] = []
   // Offene Listen je Ebene – Ebene 2 hängt in der letzten <li> von Ebene 1.
   const stack: HTMLElement[] = []
   for (const block of normal.blocks) {
+    if (block.file) {
+      stack.length = 0
+      nodes.push(fileElement(block.file, options.thumbnail))
+      continue
+    }
     const level = block.list ? Math.min(block.list, MAX_LIST_LEVEL) : 0
     if (level === 0) {
       stack.length = 0

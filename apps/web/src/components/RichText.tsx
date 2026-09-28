@@ -4,11 +4,14 @@ import {
   hasMarks,
   marksOf,
   splitLinks,
+  withWritingLines,
   type RichBlock,
+  type RichFile,
   type RichRun,
 } from '@manager/shared'
 import { Fragment, useMemo, type ReactNode } from 'react'
 
+import { NoteFileBlock } from './NoteFiles'
 import { markClasses } from '../lib/richStyles'
 
 /**
@@ -29,6 +32,8 @@ export function RichText({
   text,
   rich,
   links = true,
+  dateien = 'gross',
+  onOpenFile,
   className = '',
 }: {
   text: string
@@ -39,33 +44,67 @@ export function RichText({
    * erlaubt, und auf einer so kleinen Fläche träfe man ihn nur aus Versehen.
    */
   links?: boolean
+  /**
+   * Wie Dateien dastehen: gross wie im Editor (die geöffnete Notiz) oder als
+   * eine Zeile „📎 Name" (Kachel und Liste – dort ist für Bilder kein Platz,
+   * und die Fläche gehört dem Öffnen der Notiz).
+   */
+  dateien?: 'gross' | 'kompakt'
+  /** Antippen einer Datei – ohne Angabe lässt sie sich nicht öffnen. */
+  onOpenFile?: (file: RichFile) => void
   className?: string
 }) {
-  const doc = useMemo(() => docOfValue({ text, rich }), [text, rich])
+  const doc = useMemo(() => {
+    const value = docOfValue({ text, rich })
+    // Um jede Datei eine Zeile zum Schreiben – wie im Editor, damit beide
+    // Fassungen gleich hoch sind (siehe `withWritingLines`).
+    return dateien === 'gross' ? withWritingLines(value) : value
+  }, [text, rich, dateien])
+  const ctx: Zeichnen = { links, kompakt: dateien === 'kompakt', onOpenFile }
 
-  return <div className={`richtext ${className}`}>{blockNodes(doc.blocks, links)}</div>
+  return <div className={`richtext ${className}`}>{blockNodes(doc.blocks, ctx)}</div>
+}
+
+/** Was beim Zeichnen durch alle Ebenen gereicht wird. */
+interface Zeichnen {
+  links: boolean
+  kompakt: boolean
+  onOpenFile?: (file: RichFile) => void
 }
 
 /* ------------------------------------------------------------------ */
 /* Blöcke und Listen                                                   */
 /* ------------------------------------------------------------------ */
 
-function renderBlock(block: RichBlock, key: number, links: boolean): ReactNode {
+function renderBlock(block: RichBlock, key: number, ctx: Zeichnen): ReactNode {
   // Eine leere Zeile trägt ein <br> wie im Editor – sonst fiele sie zusammen.
-  return block.runs.length === 0 ? <br /> : renderRuns(block.runs, `b${key}`, links)
+  return block.runs.length === 0 ? <br /> : renderRuns(block.runs, `b${key}`, ctx.links)
 }
 
-function blockNodes(blocks: RichBlock[], links: boolean): ReactNode[] {
+function blockNodes(blocks: RichBlock[], ctx: Zeichnen): ReactNode[] {
   const out: ReactNode[] = []
   let index = 0
   while (index < blocks.length) {
     const block = blocks[index] as RichBlock
-    if (!block.list) {
-      out.push(<div key={index}>{renderBlock(block, index, links)}</div>)
+    if (block.file) {
+      // Eine Datei ist nie ein Listenpunkt – sie steht immer für sich.
+      out.push(
+        <NoteFileBlock
+          key={`file-${index}`}
+          file={block.file}
+          kompakt={ctx.kompakt}
+          onOpen={ctx.onOpenFile}
+        />,
+      )
       index++
       continue
     }
-    const result = listNodes(blocks, index, 1, links)
+    if (!block.list) {
+      out.push(<div key={index}>{renderBlock(block, index, ctx)}</div>)
+      index++
+      continue
+    }
+    const result = listNodes(blocks, index, 1, ctx)
     out.push(<Fragment key={`list-${index}`}>{result.node}</Fragment>)
     index = result.next
   }
@@ -77,7 +116,7 @@ function listNodes(
   blocks: RichBlock[],
   start: number,
   level: number,
-  links: boolean,
+  ctx: Zeichnen,
 ): { node: ReactNode; next: number } {
   const items: ReactNode[] = []
   let index = start
@@ -88,11 +127,11 @@ function listNodes(
 
     if (blockLevel === level) {
       const key = index
-      const content = renderBlock(block, key, links)
+      const content = renderBlock(block, key, ctx)
       let sub: ReactNode = null
       const following = blocks[index + 1]
       if (following?.list && following.list > level) {
-        const nested = listNodes(blocks, index + 1, level + 1, links)
+        const nested = listNodes(blocks, index + 1, level + 1, ctx)
         sub = nested.node
         index = nested.next
       } else {
@@ -110,7 +149,7 @@ function listNodes(
       // baut auch der Editor das Feld (`renderDocInto`). Spränge die Liste
       // direkt auf die Zielebene, stünde der Punkt beim Lesen weniger weit
       // eingerückt als beim Schreiben.
-      const nested = listNodes(blocks, index, level + 1, links)
+      const nested = listNodes(blocks, index, level + 1, ctx)
       items.push(<Fragment key={`deep-${index}`}>{nested.node}</Fragment>)
       index = nested.next
     }

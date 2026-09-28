@@ -122,6 +122,9 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
 │   ├── Steuererklaerung/
 │   └── Unsortiert/                      ← alles frisch Hochgeladene
 ├── 2025/
+├── Notizen/                             ← Bilder und PDFs, die in einer Notiz stehen
+│   └── 2026/
+│       └── 2026-09-28__Tafel__624d956f.jpg
 ├── DocBase/                             ← die medizinische Sammlung, gleich aufgebaut
 │   ├── 2026/
 │   │   ├── Studien/
@@ -147,6 +150,10 @@ dort, wo dein bestehendes Backup (Hybrid Backup Sync / Snapshots) ohnehin schon 
   dabei, statt ein zweites Mal eingerichtet werden zu müssen. Innerhalb davon gilt exakt
   dieselbe Struktur samt eigenem `.trash` und `.previews`; die Pfade in der Datenbank sind
   relativ zum jeweiligen Wurzelordner, weshalb jede Ablage-Funktion dieselbe bleibt.
+* **`Notizen/` gehört den Dateien in Notizen** (siehe 6.3) – je Sammlung ein eigener
+  Ordner, nach Jahr, ohne Kategorien: Eine Beilage wird gezeigt und geöffnet, nicht
+  einsortiert. Sie verschwindet mit ihrer Notiz, und was nie in einer gespeicherten Notiz
+  ankam, räumt der Server nach einem Tag weg.
 * Die Datenbank kennt nur den **relativen Pfad**. Wird der Storage-Ordner verschoben,
   ändert sich nur eine Umgebungsvariable.
 * Bei Änderung von Titel/Kategorie/Datum benennt die App die Datei atomar um und
@@ -228,6 +235,12 @@ erDiagram
   Aufzählungen) als JSON, `null` für reinen Text. Sie steht **neben** `body`, nicht darin:
   `body` bleibt lesbarer Text, den Suche, Vorschau und eine ältere App unverändert lesen.
   Abgelegt wird sie nur, wenn ihr Klartext Zeichen für Zeichen `body` entspricht (siehe 6.3)
+* `note_files` – die Bilder und PDFs, die in Notizen stehen: Name, Typ, Grösse, Pfad in
+  der Ablage, wer sie hochgeladen hat und – sobald die Notiz gespeichert ist – zu welcher
+  Notiz sie gehören (`note_id`, `set null`). Im Text der Notiz steht nur ihre Kennung
+  (siehe 6.3). Eigene Zeilen statt Dokumenten, weil eine Beilage keine Kategorie, keinen
+  Status und keine Texterkennung braucht – und in der Ablage nicht zwischen der Post
+  auftauchen soll
 * `notes.bereich` / `notes.category_id` – wie bei den Dokumenten: `manager` oder
   `docbase`, und in der DocBase dazu die Schublade. Dieselbe Spalte, dieselbe Wirkung –
   eine Notiz des Haushalts taucht nie in der Sammlung auf und umgekehrt. Die Kategorie
@@ -662,13 +675,14 @@ anderen App dadurch gar nicht erst.
 geöffnet hat, liegt ein Service Worker mit dem Geltungsbereich `/`. Der beantwortet
 weiterhin jede Navigation unterhalb der Wurzel aus seinem Zwischenspeicher – auch die zur
 neuen Adresse. Löschen lässt er sich nur, indem unter `/sw.js` eine andere Datei steht:
-`apps/web/legacy-root/sw.js` meldet sich beim Start selbst ab, räumt seine
-Zwischenspeicher weg (nur die eigenen, an der Adresse erkannt) und lädt die offenen
-Seiten neu. Eine Weiterleitung täte es nicht – auf eine Umleitung hin behält der Browser
-den alten Worker. Die Datei darf verschwinden, wenn absehbar kein Gerät mehr die alte
-Fassung kennt. **Eine bereits installierte Manager-App muss einmal neu installiert
-werden:** Ihre Verknüpfung zeigt auf den alten Bereich, und solange sie liegt, blockiert
-sie weiterhin die Installation der DocBase.
+`apps/web/legacy-root/sw.js` räumt die alten Zwischenspeicher weg (nur die eigenen, an der
+Adresse erkannt), lädt die Seiten neu, die noch an ihm hängen, und beantwortet selbst
+keine Navigation mehr. Eine Weiterleitung täte es nicht – auf eine Umleitung hin behält
+der Browser den alten Worker. **Eine bereits installierte Manager-App sollte einmal neu
+installiert werden:** Ihre Verknüpfung zeigt auf den alten Bereich, und solange sie
+liegt, blockiert sie weiterhin die Installation der DocBase. Bis dahin nimmt derselbe
+Worker das Teilen der alten Installation an (siehe 8.2) – früher meldete er sich nach
+dem Aufräumen selbst ab, und dann war niemand mehr da, der es annahm.
 
 ### 6.2 Einkaufsliste
 
@@ -833,6 +847,40 @@ passt (etwa beim blossen Anheften), und fällt weg, sobald der Text ein anderer 
 Checklisten bleiben unformatiert: Ihre Zeilen sind Einträge, keine Absätze. Übernommen ist
 das Ganze aus der BSS-App (`lib/richtext`, `lib/richdom`), ohne deren Erwähnungen und
 Zuordnungen an Personen.
+
+**Bilder und PDFs in der Notiz.** Unten im Fenster steht „Datei einfügen", derselbe
+Eintrag auch im Formatmenü. Nach der Auswahl – Foto, Bildschirmfoto oder PDF, auch
+mehrere auf einmal – fragt die App, wie sie hinein sollen:
+
+* **Ganze Datei einfügen.** Die Datei steht als eigener Block im Text: ein Bild als Bild,
+  ein PDF als Zeile mit seiner ersten Seite daneben. Antippen öffnet sie gross – ein PDF
+  Seite für Seite, gerastert vom Server wie bei den Dokumenten –, mit „Öffnen" und
+  „Herunterladen" für die Datei selbst.
+* **Text erkennen und einfügen.** Die Datei geht durch dieselbe Texterkennung wie die
+  Dokumente, in die Notiz kommt nur ihr Text – zum Weiterschreiben, Formatieren und
+  Durchsuchen. Die Datei selbst wird nicht aufbewahrt (siehe 7).
+
+Eingefügt wird **an der Stelle des Cursors**, steht keiner im Text, am Ende. Der Absatz
+wird dort geteilt wie mit der Eingabetaste, und über und unter einer Datei steht immer
+eine Zeile zum Schreiben; danach steht der Cursor in der Zeile darunter. Rücktaste und
+Entf löschen eine Datei nicht: Der Browser nähme sonst mit einem Tastendruck das ganze
+Bild weg, und wer unter einem Foto ein Wort zu viel löscht, wäre es los. Entfernt wird
+eine Datei über ihr Kreuz, mit Rückfrage. Bilder haben eine feste Höhe – im gelesenen
+Text wie im Editor –, damit ein Tipp in die gelesene Notiz auch neben einem Bild die
+richtige Zeile trifft.
+
+Im Formatfeld steht eine Datei als Block mit Kennung, Name, Typ und Grösse, in `body` als
+Zeile „📎 Name". So findet die Suche eine Notiz auch über den Dateinamen, und die
+Übersicht zeigt genau diese Zeile – ein Bild in einer Kachel wäre zu klein, um etwas zu
+erkennen, und nähme dem Text den Platz. Die Datei selbst liegt in `note_files` und in
+der Ablage unter `Notizen/`. Sehen darf sie, wer die Notiz sehen darf; wer sie
+hochgeladen hat, schon bevor die Notiz gespeichert ist. Zur Notiz gehört sie ab dem
+Speichern: Der Server liest die Kennungen aus dem Formatfeld und ordnet nur eigene, noch
+freie Dateien zu – eine fremde Kennung im Text macht die Datei dahinter nicht zur
+eigenen. Gelöst wird dabei nichts: Wer eine Datei aus dem Text nimmt, lässt sie bei der
+Notiz liegen, bis diese gelöscht wird. So kostet auch ein Speichern aus einer älteren
+App, die das Formatfeld nicht kennt, keine Datei. Mit der Notiz verschwinden ihre
+Dateien; was nie in einer gespeicherten Notiz ankam, räumt der Server nach einem Tag weg.
 
 Gespeichert wird **von selbst** – kurz nach dem letzten Tastendruck und noch einmal beim
 Schliessen. Einen Speichern-Knopf gibt es nicht; er war die einzige Möglichkeit,
@@ -1197,11 +1245,28 @@ buchstabengetreu und in Sekundenbruchteilen, während die Rasterung ihn nur nach
 – und die Rasterung bleibt für das, wofür sie gedacht ist, nämlich eingescanntes
 Papier.
 
+**Steuerzeichen sind so unlesbar wie der private Bereich.** Ein PDF, das ein Browser
+druckt, schreibt seine Zeichen mit zwei Bytes. `pdftotext` kommt damit zurecht, der
+eigene Leser nicht: Er macht aus „Rechnung" ein „\0R\0e\0c…". Bei einem kurzen PDF –
+wenig Text, also weniger Zeichen als die Schwelle für „lang genug" – ging die Erkennung
+genau diesen Weg, und die Nullzeichen machten den Salat scheinbar lang genug. Seither
+zählen Steuerzeichen wie Zeichen aus dem privaten Bereich als unlesbar; ein solches PDF
+geht in die Rasterung und kommt sauber zurück. Was trotzdem an Steuerzeichen durchkäme,
+entfernt `tidyText`, bevor Text gespeichert oder in eine Notiz eingefügt wird.
+
 **Was einmal falsch gelesen wurde, wird nachgeholt.** Beim Start sucht der Worker
-Dokumente, deren erkannter Text aus dem privaten Bereich stammt, und schickt sie
-erneut durch die Erkennung. Von selbst würde sich das nie ändern: Ihr Zustand steht
-auf „fertig". Danach ist der Schritt ein Leerlauf – ein Dokument, das einmal richtig
-gelesen wurde, fällt nie wieder auf.
+Dokumente, deren erkannter Text unlesbar ist – aus dem privaten Bereich oder voller
+Nullzeichen –, und schickt sie erneut durch die Erkennung. Von selbst würde sich das nie
+ändern: Ihr Zustand steht auf „fertig". Danach ist der Schritt ein Leerlauf – ein
+Dokument, das einmal richtig gelesen wurde, fällt nie wieder auf.
+
+**Texterkennung auf Abruf – für „Text erkennen und einfügen".** Dieselben Schritte, ohne
+etwas abzulegen: Die App schickt die Datei an `POST /api/texterkennung`, bekommt eine
+Kennung und fragt mit `GET /api/texterkennung/:id` nach, bis der Text da ist. Kein
+einzelner Aufruf, der wartet – ein Foto braucht auf dem NAS schnell eine halbe Minute,
+ein gescanntes PDF mehrere, und so lange hält Cloudflare eine Anfrage nicht offen. Die
+Aufträge laufen einer nach dem anderen, leben nur im Speicher (ein Neustart verliert die
+laufenden, die App meldet das) und löschen ihre Datei, sobald sie gelesen ist.
 
 ---
 
@@ -1218,8 +1283,9 @@ installierbar und liegen nebeneinander auf dem Startbildschirm – unterschiedli
 unterschiedliche Farben (Marineblau gegen Petrol), unterschiedliche Geltungsbereiche.
 Möglich wird das durch je ein eigenes Manifest und einen eigenen Service Worker – und
 dadurch, dass keiner der beiden Bereiche den anderen enthält (siehe 6.1a). Die Wurzel `/`
-leitet auf den Manager weiter. Die DocBase hat bewusst kein Teilen-Ziel:
-Das gehört zum Haushalt, wo täglich Post ankommt – in eine Sammlung legt man bewusst ab.
+leitet auf den Manager weiter. **Beide stehen im Teilen-Menü**, jede mit ihrem eigenen
+Ziel (siehe 8.2): Wer an die DocBase teilt, landet in der DocBase und legt in der Sammlung
+oder einer ihrer Notizen ab – nie im Haushalt, und umgekehrt.
 
 **Offline:** App-Shell und zuletzt geladene Listen werden vorgehalten, ein Hinweisband
 zeigt an, dass keine Verbindung besteht – man sieht also weiterhin, was auf der
@@ -1275,13 +1341,54 @@ Dies ist der einzige Punkt, an dem die Plattformen auseinanderlaufen:
 
   **Nicht nur Dateien.** Wer aus dem Browser teilt, teilt keine Datei, sondern Titel,
   Text und Adresse – dieselben Felder, die unter `share_target.params` angemeldet sind.
-  Solches Teilen lief früher in die Dokumente und verschwand dort wortlos, weil keine
-  Datei dabei war. Seither leitet der Worker auf `/app/teilen`, und dort wird das Ziel
-  gewählt: **Dokumente** für Dateien (Ablage samt Texterkennung), **Notizen** für Text
-  und Verweise (eine neue Notiz, die gleich zum Weiterschreiben aufgeht). Beide Ziele
-  stehen immer da; das für den geteilten Inhalt nicht mögliche ist blass und trägt den
-  Grund daneben – ein Menü, das je nach Inhalt anders aussieht, lässt einen jedes Mal
-  neu suchen.
+  Der Worker legt alles ab und leitet auf die Auswahlseite (`/app/teilen` bzw.
+  `/docbase/teilen`), und dort wird das Ziel gewählt:
+
+  * **Dokumente** im Manager, **Sammlung** in der DocBase – nur für Dateien, abgelegt
+    samt Texterkennung und Suche wie jedes hochgeladene Dokument.
+  * **Notiz** – eine neue oder, über eine Suche, ans Ende einer bestehenden. Dorthin
+    passt alles: Text und Verweise als Text (der Verweis bleibt anklickbar), Dateien
+    entweder **ganz** (sie stehen in der Notiz und öffnen sich per Tipp) oder als ihr
+    **erkannter Text** (siehe 6.3). Danach geht die Notiz gleich auf.
+
+  Beide Ziele stehen immer da; das für den geteilten Inhalt nicht mögliche ist blass und
+  trägt den Grund daneben – ein Menü, das je nach Inhalt anders aussieht, lässt einen
+  jedes Mal neu suchen. Weggeräumt wird das Geteilte erst, wenn es angekommen ist:
+  Scheitert unterwegs etwas, lässt es sich gleich nochmals verwenden.
+
+  **Zwei Apps, zwei Ziele.** Manager (`/app/share-target`) und DocBase
+  (`/docbase/share-target`) haben je ein eigenes Teilen-Ziel, eine eigene Auswahlseite und
+  einen eigenen Zwischenspeicher (`geteilte-dateien` bzw. `docbase-geteilt`). Die Cache
+  Storage gehört der ganzen Adresse; mit einem gemeinsamen Namen räumte jedes Teilen an
+  die eine App das Geteilte der anderen weg. Eine schon installierte DocBase erscheint im
+  Teilen-Menü, sobald Chrome ihr Paket erneuert hat – das geschieht beim Öffnen, meist
+  innerhalb eines Tages; sofort nach einer Neuinstallation.
+
+  **Warum das Teilen unzuverlässig war – und was dagegen steht:**
+
+  * *Der Dateityp.* Welche Art eine Datei hat, meldet die App, aus der geteilt wird – eine
+    Galerie ein Foto als `image/jpg`, ein Dateimanager ein PDF als
+    `application/octet-stream`, manche gar nichts. Der Server wies solche Dateien mit
+    „Dateityp wird nicht unterstützt" ab, obwohl sie passten. Jetzt gilt, was stimmt:
+    bekannte Schreibweisen werden übersetzt, sonst entscheidet die Dateiendung
+    (`uploadMimeType`) – in der App beim Abholen und im Server beim Annehmen.
+  * *Die alte Installation.* Android schreibt das Teilen-Ziel einer App bei der
+    Installation fest in ihr Paket. Ein Manager von vor dem Umzug nach `/app/` schickt
+    deshalb an `/share-target` – dort war niemand mehr: Netlify leitete um, aus dem POST
+    wurde ein gewöhnlicher Aufruf, die Datei war weg und die App zeigte ihre Startseite.
+    Jetzt nimmt der Worker an der Wurzel (`legacy-root/sw.js`) diesen Aufruf an und legt
+    ab wie der des Managers; angemeldet wird er vom Manager bei jedem Start
+    (`lib/legacyShare.ts`). Er liegt neben den Bereichen der beiden Apps, nicht über ihnen:
+    Unter `/app/` und `/docbase/` hat jeweils deren eigener Worker den passenderen Bereich.
+  * *Kein Worker zur Stelle.* Kommt das Teilen-Ziel trotzdem als gewöhnliche Seite an –
+    die App war eben erst installiert, der Worker noch nicht bereit –, steht dort jetzt,
+    was passiert ist und was zu tun ist, statt wortlos die Startseite.
+  * *Doppelt abgelegt.* Die Ablage holte geteilte Dateien in einem Effekt ab, der beim
+    nächsten Zeichnen ein zweites Mal lief, bevor die Adresse aufgeräumt war. Jede Datei
+    kam doppelt an – oder die zweite scheiterte mit „liegt bereits in der Ablage". Jetzt
+    wird genau einmal abgeholt.
+  * *Leere Dateifelder.* Manche Apps schicken beim Teilen eines Verweises ein leeres
+    Dateifeld mit. Es fällt weg, statt als namenlose Datei aufzutauchen.
 * **iOS/iPadOS:** Safari unterstützt Web Share Target **nicht** – auch 2026 nicht.
   Eine installierte PWA erscheint dort nicht im Teilen-Menü. Das lässt sich nicht
   umgehen, aber gleichwertig lösen:
@@ -1472,6 +1579,10 @@ nichts davon hält den täglichen Gebrauch auf.
 | Diagramme | **Mehrere Felder mit gemeinsamer Zeitachse, nie zwei Achsen** | kWh, m³, Franken und Preise je Einheit auf einer Skala erfinden einen Zusammenhang, den die Zahlen nicht hergeben |
 | Sichtbarkeit in der DocBase | **Kein Schalter – jede Notiz gehört allen** | Die Sammlung ist eine gemeinsame; eine Notiz neben einer Studie, die der andere nicht sieht, beantwortet niemandes Frage |
 | Formatierte Notizen | **Formatierung neben dem Text (`body_rich`), feste Palette und Stufen** | `body` bleibt lesbarer Text für Suche, Vorschau und ältere Apps; wie in der BSS-App nur die Grundlagen – Fett, Kursiv, Unterstrichen, Grösse, Farbe, Aufzählung |
+| Dateien in Notizen | **Eigene Tabelle `note_files`, im Text nur die Kennung** | Eine Beilage braucht weder Kategorie noch Status und soll nicht zwischen der Post stehen; `body` trägt „📎 Name" für Suche und ältere Apps |
+| Datei oder Text | **Beim Einfügen wählen: ganze Datei oder erkannter Text** | Ein Foto einer Wandtafel will man sehen, eine abfotografierte Seite weiterbearbeiten – beides ist dieselbe Handbewegung |
+| Teilen je App | **Eigenes Teilen-Ziel, eigene Auswahl, eigener Zwischenspeicher** | Was an die DocBase geteilt wird, landet nie im Haushalt; die beiden Apps räumen sich nichts gegenseitig weg |
+| Alte Installationen | **Worker an der Wurzel nimmt `/share-target` an** | Das Teilen-Ziel steht fest im installierten Paket; ohne ihn endete das Teilen aus einem alten Manager auf der Startseite |
 
 ## 14. Noch offen
 

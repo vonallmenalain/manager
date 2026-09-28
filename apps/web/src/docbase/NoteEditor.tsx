@@ -8,9 +8,11 @@ import {
   BREITE_KLASSEN,
   COLOR_STYLES,
   ColorPicker,
+  DateiKnopf,
   NoteText,
   WidthPicker,
   type Breite,
+  type NoteTextHandle,
 } from '../components/NoteParts'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useCategories } from '../lib/documents'
@@ -51,6 +53,7 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
   // Ab dem ersten Speichern wird dieselbe Notiz weitergeschrieben, statt eine
   // zweite anzulegen.
   const idRef = useRef(note?.id)
+  const texte = useRef<NoteTextHandle>(null)
 
   const autosave = useAutosave(
     {
@@ -103,9 +106,11 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
           </div>
         </>
       }
+      // Links die Büroklammer, rechts das Löschen – wie im Haushalt.
       footer={
-        savedId ? (
-          <div className="flex items-center">
+        <div className="flex items-center">
+          <DateiKnopf onClick={() => texte.current?.dateiEinfuegen()} />
+          {savedId ? (
             <button
               onClick={() => {
                 if (!window.confirm('Notiz löschen?')) return
@@ -118,8 +123,8 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
             >
               Löschen
             </button>
-          </div>
-        ) : undefined
+          ) : null}
+        </div>
       }
     >
       <>
@@ -147,10 +152,12 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
         </div>
 
         <NoteText
+          ref={texte}
           value={text}
           onChange={setText}
           startInEditing={!note || text.text === ''}
           akzent="teal"
+          bereich="docbase"
         />
       </>
     </Modal>

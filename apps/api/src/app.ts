@@ -16,8 +16,10 @@ import financeRoutes from './routes/finance.js'
 import hausRoutes from './routes/haus.js'
 import healthRoutes from './routes/health.js'
 import noteRoutes from './routes/notes.js'
+import noteFileRoutes from './routes/note-files.js'
 import setupRoutes from './routes/setup.js'
 import shoppingRoutes from './routes/shopping.js'
+import texterkennungRoutes from './routes/texterkennung.js'
 import userRoutes from './routes/users.js'
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -73,6 +75,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(documentRoutes)
   await app.register(shoppingRoutes)
   await app.register(noteRoutes)
+  await app.register(noteFileRoutes)
+  await app.register(texterkennungRoutes)
   await app.register(financeRoutes)
   await app.register(hausRoutes)
 

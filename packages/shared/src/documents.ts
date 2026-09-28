@@ -83,6 +83,66 @@ export const ALLOWED_MIME_TYPES = [
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
+export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number]
+
+const ALLOWED_MIME_SET = new Set<string>(ALLOWED_MIME_TYPES)
+
+/** Schreibweisen, die für dasselbe stehen – manche Apps schicken die alten. */
+const MIME_ALIASES: Record<string, AllowedMimeType> = {
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+  'image/x-png': 'image/png',
+  'application/x-pdf': 'application/pdf',
+  'image/heic-sequence': 'image/heic',
+  'image/heif-sequence': 'image/heif',
+  'image/tif': 'image/tiff',
+}
+
+const MIME_BY_EXTENSION: Record<string, AllowedMimeType> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  jpe: 'image/jpeg',
+  jfif: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+}
+
+/**
+ * Der Dateityp, mit dem eine Datei weiterverarbeitet wird.
+ *
+ * Nicht jede App sagt beim Teilen, was sie schickt: Manche liefern gar keinen
+ * Typ, manche „application/octet-stream" (also „irgendwelche Bytes"), andere
+ * eine veraltete Schreibweise wie „image/jpg". Die Datei ist trotzdem ein
+ * gewöhnliches PDF oder Foto – abgewiesen mit „Dateityp wird nicht
+ * unterstützt" hiess das für den, der teilt, nur: passt nicht. Deshalb zählt
+ * zuerst der mitgeschickte Typ, wenn er bekannt ist, und sonst die Endung des
+ * Dateinamens. Was dann noch unbekannt ist, bleibt, wie es kam, und wird vom
+ * Aufrufer abgelehnt.
+ */
+export function uploadMimeType(
+  claimed: string | null | undefined,
+  filename: string | null | undefined,
+): string {
+  const typ = (claimed ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
+  if (ALLOWED_MIME_SET.has(typ)) return typ
+  const alias = MIME_ALIASES[typ]
+  if (alias) return alias
+
+  const endung = (filename ?? '').split('.').pop()?.trim().toLowerCase() ?? ''
+  const nachName = (filename ?? '').includes('.') ? MIME_BY_EXTENSION[endung] : undefined
+  return nachName ?? typ
+}
+
+/** Darf ein Dateityp hochgeladen werden? */
+export function isAllowedMimeType(mimeType: string): mimeType is AllowedMimeType {
+  return ALLOWED_MIME_SET.has(mimeType)
+}
+
 /**
  * Wie nach „hat noch keine Kategorie" gefiltert wird.
  *

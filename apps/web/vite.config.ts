@@ -10,7 +10,7 @@ import { MANAGER_SCOPE } from './src/lib/appScopes'
 import { SHARE_TARGET_PATH } from './src/lib/shareConstants'
 
 /**
- * Legt den Abmelde-Worker in die Wurzel des Ausgabeordners.
+ * Legt den Worker für die alte Adresse `/` in die Wurzel des Ausgabeordners.
  *
  * Der Manager lag früher unter `/` und hatte dort einen Service Worker mit dem
  * Geltungsbereich `/`. Der lebt auf jedem Gerät weiter, auf dem die alte
@@ -21,13 +21,14 @@ import { SHARE_TARGET_PATH } from './src/lib/shareConstants'
  *
  * Ein Service Worker verschwindet nur, wenn der Browser unter derselben
  * Adresse eine *andere* Datei findet. Deshalb liegt dort weiterhin ein
- * `/sw.js` – eines, das sich beim Start selbst abmeldet und aufräumt.
+ * `/sw.js` – eines, das die alten Zwischenspeicher wegräumt und sonst nur
+ * noch das Teilen aus alten Installationen annimmt (siehe legacy-root/sw.js).
  * Weiterleiten liesse sich die Adresse nicht: Auf eine Umleitung antwortet der
  * Browser mit einem Fehler und behält den alten Worker.
  */
-function abmeldeWorkerAusliefern(): Plugin {
+function wurzelWorkerAusliefern(): Plugin {
   return {
-    name: 'alten-worker-abmelden',
+    name: 'wurzel-worker',
     enforce: 'post',
     async writeBundle(options) {
       const dir = options.dir ?? resolve('dist/app')
@@ -52,7 +53,7 @@ export default defineConfig({
 
   plugins: [
     react(),
-    abmeldeWorkerAusliefern(),
+    wurzelWorkerAusliefern(),
     tailwindcss(),
     VitePWA({
       // Eigener Service Worker statt eines erzeugten: Nur so lässt sich der
