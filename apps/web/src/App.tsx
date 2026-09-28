@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { MANAGER_BASENAME } from './lib/appScopes'
 import { useSession } from './lib/session'
-import { SHARE_LANDING_ROUTE } from './lib/shareConstants'
+import { SHARE_LANDING_ROUTE, SHARE_TARGET_ROUTE } from './lib/shareConstants'
 import { BackendUnreachable } from './screens/BackendUnreachable'
 import { Dashboard } from './screens/Dashboard'
 import { DocumentDetail } from './screens/DocumentDetail'
@@ -14,6 +14,7 @@ import { Login } from './screens/Login'
 import { Notes } from './screens/Notes'
 import { Setup } from './screens/Setup'
 import { Share } from './screens/Share'
+import { ShareMissed } from './screens/ShareMissed'
 import { Shopping } from './screens/Shopping'
 
 export function App() {
@@ -41,7 +42,11 @@ export function App() {
           {/* Wo das Android-Teilen-Menü landet. Die Adresse steht in
               shareConstants, weil der Service Worker hierher weiterleitet –
               zwei Schreibweisen liessen das Teilen ins Leere laufen. */}
-          <Route path={SHARE_LANDING_ROUTE} element={<Share />} />
+          <Route path={SHARE_LANDING_ROUTE} element={<Share app="manager" />} />
+          {/* Das Teilen-Ziel als gewöhnliche Seite heisst: Das Geteilte kam
+              nicht an. Statt wortlos auf der Startseite zu landen, steht dort,
+              was zu tun ist. */}
+          <Route path={SHARE_TARGET_ROUTE} element={<ShareMissed app="manager" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

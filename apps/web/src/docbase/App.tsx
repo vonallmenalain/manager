@@ -6,8 +6,11 @@ import { Shell } from './Shell'
 import { UpdateBanner } from '../components/UpdateBanner'
 import { DOCBASE_BASENAME } from '../lib/appScopes'
 import { useSession } from '../lib/session'
+import { SHARE_LANDING_ROUTE, SHARE_TARGET_ROUTE } from '../lib/shareConstants'
 import { BackendUnreachable } from '../screens/BackendUnreachable'
 import { Login } from '../screens/Login'
+import { Share } from '../screens/Share'
+import { ShareMissed } from '../screens/ShareMissed'
 
 /**
  * DocBase – die medizinische Sammlung.
@@ -46,6 +49,10 @@ export function App() {
       <Routes>
         <Route element={<Shell user={user} />}>
           <Route index element={<Library />} />
+          {/* Vor `:id`, damit niemand „teilen" für die Kennung eines
+              Dokuments hält – das Teilen-Menü von Android führt hierher. */}
+          <Route path={SHARE_LANDING_ROUTE} element={<Share app="docbase" />} />
+          <Route path={SHARE_TARGET_ROUTE} element={<ShareMissed app="docbase" />} />
           <Route path=":id" element={<Detail />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

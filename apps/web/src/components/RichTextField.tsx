@@ -5,6 +5,7 @@ import {
   clearMarks,
   docOfValue,
   editTextOf,
+  fileBeside,
   listStateAt,
   marksAt,
   normalizeDoc,
@@ -12,28 +13,36 @@ import {
   toggleList,
   toRichValue,
   TEXT_SIZE_LABELS,
+  withWritingLines,
   wordRangeAt,
   type MarkKey,
   type RichDoc,
+  type RichFile,
   type RichMarks,
   type RichValue,
 } from '@manager/shared'
 import {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
+  type Ref,
 } from 'react'
 import { createPortal } from 'react-dom'
 
+import { thumbnailUrl } from '../lib/noteFiles'
 import {
   docFromDom,
+  fileElementOf,
   needsNormalize,
   placeCaretAtPoint,
+  readFileAttr,
   renderDocInto,
   revealCaret,
   selectionOffsets,
@@ -82,10 +91,23 @@ const AKZENT: Record<Akzent, { offen: string; aktiv: string; ring: string }> = {
 
 /**
  * Wo der Cursor beim Erscheinen hingehört: an den Punkt, auf den getippt
- * wurde, oder ans Ende. Ohne Angabe steht das Feld still da, bis man es
+ * wurde, an eine Stelle im Text (nach dem Einfügen einer Datei: die Zeile
+ * darunter) oder ans Ende. Ohne Angabe steht das Feld still da, bis man es
  * antippt – etwa bei einer neuen Notiz, deren Titel den Cursor hat.
  */
-export type Einstieg = { x: number; y: number } | 'ende'
+export type Einstieg = { x: number; y: number } | { offset: number } | 'ende'
+
+/** Was das Feld von aussen preisgibt: wo der Cursor steht. */
+export interface RichTextFieldHandle {
+  /** Die Cursorstelle im Bearbeitungstext – `null`, wenn er nicht im Feld steht. */
+  caret: () => number | null
+}
+
+/**
+ * Das Modell, wie es im Feld steht: um jede Datei eine Zeile zum Schreiben
+ * (siehe `withWritingLines`).
+ */
+const fieldDocOf = (value: RichValue) => withWritingLines(docOfValue(value))
 
 /** Wie die Auswahl gerade aussieht – der Stand für das Menü. */
 interface MenuState {
@@ -114,6 +136,10 @@ export function RichTextField({
   className = '',
   wrapperClassName = '',
   akzent = 'brand',
+  onOpenFile,
+  onRemoveFile,
+  onDateiEinfuegen,
+  ref,
   'aria-label': ariaLabel,
 }: {
   value: RichValue
@@ -127,11 +153,18 @@ export function RichTextField({
   /** Klassen für die Hülle – der Abstand nach aussen, damit der Knopf bündig sitzt */
   wrapperClassName?: string
   akzent?: Akzent
+  /** Antippen einer Datei im Text – öffnet sie. */
+  onOpenFile?: (file: RichFile) => void
+  /** Das Kreuz an einer Datei. Die Rückfrage und das Entfernen macht, wer das Feld hält. */
+  onRemoveFile?: (file: RichFile) => void
+  /** „Datei einfügen" im Menü – ohne Angabe steht der Eintrag nicht da. */
+  onDateiEinfuegen?: () => void
+  ref?: Ref<RichTextFieldHandle>
   'aria-label'?: string
 }) {
   const farben = AKZENT[akzent]
   const rootRef = useRef<HTMLDivElement>(null)
-  const docRef = useRef<RichDoc>(docOfValue(value))
+  const docRef = useRef<RichDoc>(fieldDocOf(value))
   /** Der zuletzt selbst gemeldete Stand – nur Fremdes baut das Feld neu auf. */
   const emitted = useRef<string | null>(null)
 
@@ -165,11 +198,23 @@ export function RichTextField({
     const sig = signature(value)
     if (emitted.current === sig) return
     emitted.current = sig
-    const doc = docOfValue(value)
+    const doc = fieldDocOf(value)
     docRef.current = doc
-    renderDocInto(root, doc)
+    renderDocInto(root, doc, { thumbnail: thumbnailUrl })
     updateEmpty(root, doc)
   })
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      caret: () => {
+        const root = rootRef.current
+        const sel = root ? selectionOffsets(root) : null
+        return sel ? sel.end : null
+      },
+    }),
+    [],
+  )
 
   /*
    * Anwählen, ohne dass das Fenster springt: `preventScroll`, weil der Browser
@@ -184,6 +229,13 @@ export function RichTextField({
     const root = rootRef.current
     if (!start || !root) return
     root.focus({ preventScroll: true })
+    if (start !== 'ende' && 'offset' in start) {
+      // Nach dem Einfügen: die Zeile unter dem Eingefügten, mit etwas Luft im
+      // Bild – man soll sehen, was eben dazukam.
+      setSelectionOffsets(root, start.offset, start.offset)
+      revealCaret(root)
+      return
+    }
     if (start === 'ende' || !placeCaretAtPoint(root, start.x, start.y)) {
       const length = editTextOf(docRef.current).length
       setSelectionOffsets(root, length, length)
@@ -192,6 +244,29 @@ export function RichTextField({
   }, [])
 
   useEffect(() => () => window.clearTimeout(blurTimer.current), [])
+
+  /*
+   * Rücktaste und Entf an einer Datei tun nichts. Der Browser löschte sonst
+   * die ganze Datei mit einem Tastendruck (siehe `fileBeside`); entfernt wird
+   * sie über ihr Kreuz, mit Rückfrage.
+   *
+   * Über `beforeinput` und nicht über die Tasten: Die Handytastatur meldet
+   * ihre Rücktaste nicht als Taste, sondern nur als Eingabe, die gleich
+   * geschehen wird – und die lässt sich hier noch abwenden.
+   */
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const guard = (event: InputEvent) => {
+      const backward = event.inputType === 'deleteContentBackward'
+      if (!backward && event.inputType !== 'deleteContentForward') return
+      const sel = selectionOffsets(root)
+      if (!sel || sel.start !== sel.end) return
+      if (fileBeside(docRef.current, sel.start, backward ? -1 : 1)) event.preventDefault()
+    }
+    root.addEventListener('beforeinput', guard)
+    return () => root.removeEventListener('beforeinput', guard)
+  }, [])
 
   const emit = (doc: RichDoc) => {
     docRef.current = doc
@@ -256,8 +331,8 @@ export function RichTextField({
   const applyDoc = (doc: RichDoc, start: number, end: number) => {
     const root = rootRef.current
     if (!root) return
-    const normal = normalizeDoc(doc)
-    renderDocInto(root, normal)
+    const normal = withWritingLines(normalizeDoc(doc))
+    renderDocInto(root, normal, { thumbnail: thumbnailUrl })
     setSelectionOffsets(root, start, end)
     emit(normal)
     updateEmpty(root, normal)
@@ -276,6 +351,17 @@ export function RichTextField({
     const root = rootRef.current
     if (!root) return
     const doc = docFromDom(root)
+
+    // Ging die Zeile neben einer Datei verloren (eine Auswahl über sie hinweg
+    // gelöscht), kommt sie gleich wieder – sonst gäbe es dort keinen Platz
+    // mehr zum Schreiben.
+    if (!composing.current && withWritingLines(doc) !== doc) {
+      const length = editTextOf(doc).length
+      const caretNow = selectionOffsets(root) ?? { start: length, end: length }
+      applyDoc(doc, caretNow.start, caretNow.end)
+      revealCaret(root)
+      return
+    }
 
     // „- " am Zeilenanfang wird zur Aufzählung – die zwei Zeichen waren
     // Befehl, nicht Text (siehe `autoListBlock`).
@@ -407,6 +493,31 @@ export function RichTextField({
     if (root) revealCaret(root)
   }
 
+  /* ---------------- Dateien ---------------- */
+
+  /*
+   * Eine Datei nimmt beim Drücken den Fokus nicht an. Sonst verlöre das Feld
+   * ihn schon hier, würde zum gelesenen Text – und der Klick danach träfe ein
+   * Element, das es nicht mehr gibt: Die Datei ginge nicht auf, und das Kreuz
+   * fragte nie nach. Den Fokus gibt erst ab, wer die Datei dann öffnet.
+   */
+  const handleFileMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    const root = rootRef.current
+    if (root && fileElementOf(event.target, root)) event.preventDefault()
+  }
+
+  const handleFileClick = (event: MouseEvent<HTMLDivElement>) => {
+    const root = rootRef.current
+    if (!root) return
+    const box = fileElementOf(event.target, root)
+    if (!box) return
+    event.preventDefault()
+    const file = readFileAttr(box)
+    if (!file) return
+    if ((event.target as Element).closest('[data-rt-remove]')) onRemoveFile?.(file)
+    else onOpenFile?.(file)
+  }
+
   /* ---------------- Menü ---------------- */
 
   const closeMenu = () => {
@@ -522,6 +633,8 @@ export function RichTextField({
         }}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        onMouseDown={handleFileMouseDown}
+        onClick={handleFileClick}
         // Hineingezogenes käme als fremdes HTML – dafür gilt dasselbe wie beim
         // Einfügen, nur dass sich der Weg nicht abfangen lässt.
         onDrop={(event) => event.preventDefault()}
@@ -668,6 +781,19 @@ export function RichTextField({
                 <ClearFormatIcon />
                 Formatierung entfernen
               </MenuButton>
+
+              {onDateiEinfuegen ? (
+                <MenuButton
+                  onClick={() => {
+                    closeMenu()
+                    onDateiEinfuegen()
+                  }}
+                  wide
+                >
+                  <PaperclipIcon />
+                  Datei einfügen
+                </MenuButton>
+              ) : null}
 
               {!menu.hasSelection ? (
                 <p className="px-2 pt-1 text-[11px] text-slate-400 dark:text-slate-500">
@@ -907,6 +1033,21 @@ function ClearFormatIcon() {
         d="M4 7V4h12v3M10 4v16M8 20h4M15 14l6 6M21 14l-6 6"
         stroke="currentColor"
         strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** Die Büroklammer – eine Datei anhängen. */
+export function PaperclipIcon({ className = ICON }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="m20.5 11.5-8.3 8.3a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

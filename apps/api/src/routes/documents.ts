@@ -2,16 +2,17 @@ import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 
 import {
-  ALLOWED_MIME_TYPES,
   API_ERROR_CODES,
   buildSearchText,
   DOCUMENT_STATUSES,
   documentQuerySchema,
+  isAllowedMimeType,
   MAX_UPLOAD_BYTES,
   normalizeForSearch,
   OPEN_STATUSES,
   UNASSIGNED,
   updateDocumentSchema,
+  uploadMimeType,
   type Bereich,
   type DocumentStatus,
   type PreviewInfo,
@@ -73,7 +74,6 @@ import {
   type UploadMetadata,
 } from '../lib/upload-fields.js'
 
-const allowedMimeTypes = new Set<string>(ALLOWED_MIME_TYPES)
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -96,7 +96,10 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         .send(apiError(API_ERROR_CODES.validationFailed, 'Keine Datei empfangen.'))
     }
 
-    if (!allowedMimeTypes.has(upload.mimetype)) {
+    // Manche Apps schicken beim Teilen keinen oder einen allgemeinen Typ mit –
+    // dann entscheidet die Endung des Dateinamens (siehe uploadMimeType).
+    const mimeType = uploadMimeType(upload.mimetype, upload.filename)
+    if (!isAllowedMimeType(mimeType)) {
       // Den Datenstrom trotzdem leeren, sonst wartet der Client auf ein Ende,
       // das nie kommt.
       upload.file.resume()
@@ -105,7 +108,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         .send(
           apiError(
             'unsupported_type',
-            `Dateityp ${upload.mimetype} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
           ),
         )
     }
@@ -169,7 +172,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       bereich,
       documentId,
       stored,
-      mimeType: upload.mimetype,
+      mimeType,
       filename: upload.filename,
       title,
       docDate: today(),
@@ -550,14 +553,15 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
         .send(apiError(API_ERROR_CODES.validationFailed, 'Keine Datei empfangen.'))
     }
 
-    if (!allowedMimeTypes.has(upload.mimetype)) {
+    const mimeType = uploadMimeType(upload.mimetype, upload.filename)
+    if (!isAllowedMimeType(mimeType)) {
       upload.file.resume()
       return reply
         .status(415)
         .send(
           apiError(
             'unsupported_type',
-            `Dateityp ${upload.mimetype} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
+            `Dateityp ${mimeType || 'unbekannt'} wird nicht unterstützt. Erlaubt sind PDF und Bilder.`,
           ),
         )
     }
@@ -586,7 +590,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       parentCategoryName: ordner.parentCategoryName,
       title: before.title,
       documentId: id,
-      extension: extensionFor(upload.mimetype, upload.filename),
+      extension: extensionFor(mimeType, upload.filename),
     })
 
     try {
@@ -615,7 +619,7 @@ const documentRoutes: FastifyPluginAsync = async (fastify) => {
       .update(documents)
       .set({
         storagePath: nextPath,
-        mimeType: upload.mimetype,
+        mimeType,
         sizeBytes: stored.sizeBytes,
         sha256: stored.sha256,
         // Der erkannte Text gehörte zum alten Bild. Nach einem Beschnitt kann

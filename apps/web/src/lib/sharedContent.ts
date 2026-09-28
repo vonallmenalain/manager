@@ -9,15 +9,27 @@
  * Gelesen und geräumt wird getrennt: Die Auswahlseite muss zeigen können, was
  * angekommen ist, bevor entschieden ist, wohin es geht. Weggeräumt wird erst,
  * wenn es angekommen ist – sonst wäre ein Verweis nach einem Fehlversuch weg.
+ *
+ * Jede App hat ihren eigenen Zwischenspeicher (`SHARE_CACHE` im Manager,
+ * `DOCBASE_SHARE_CACHE` in der DocBase); welcher gemeint ist, sagt der
+ * Aufruf.
  */
 
+import { uploadMimeType, type Bereich } from '@manager/shared'
+
 import {
+  DOCBASE_SHARE_CACHE,
   SHARE_CACHE,
   SHARE_FILENAME_HEADER,
   SHARE_FILE_PREFIX,
   SHARE_TEXT_KEY,
 } from './shareConstants'
 import type { SharedText } from './shareNote'
+
+/** Der Zwischenspeicher der App, zu der ein Bereich gehört. */
+export function shareCacheFor(bereich: Bereich): string {
+  return bereich === 'docbase' ? DOCBASE_SHARE_CACHE : SHARE_CACHE
+}
 
 export interface SharedContent extends SharedText {
   files: File[]
@@ -38,8 +50,8 @@ export function istLeer(content: SharedContent): boolean {
  * Bleibt etwas liegen, weil jemand die Auswahl abbricht, ist das kein Schaden:
  * Der Worker leert den Zwischenspeicher zu Beginn jedes neuen Teilens.
  */
-export async function readSharedContent(): Promise<SharedContent> {
-  const cache = await oeffnen()
+export async function readSharedContent(cacheName: string): Promise<SharedContent> {
+  const cache = await oeffnen(cacheName)
   if (!cache) return LEER
 
   const files: File[] = []
@@ -70,9 +82,9 @@ export async function readSharedContent(): Promise<SharedContent> {
  * Aufräumen gehört hierher: Bliebe etwas liegen, tauchte es beim nächsten
  * Öffnen der App unerwartet wieder auf.
  */
-export async function collectSharedFiles(): Promise<File[]> {
-  const { files } = await readSharedContent()
-  await discardSharedContent()
+export async function collectSharedFiles(cacheName: string): Promise<File[]> {
+  const { files } = await readSharedContent(cacheName)
+  await discardSharedContent(cacheName)
   return files
 }
 
@@ -80,29 +92,38 @@ export async function collectSharedFiles(): Promise<File[]> {
  * Leert das Zwischenlager, ohne das Geteilte zu verwenden – nach dem Ablegen,
  * oder wenn jemand die Auswahl verwirft.
  */
-export async function discardSharedContent(): Promise<void> {
+export async function discardSharedContent(cacheName: string): Promise<void> {
   if (!('caches' in globalThis)) return
   try {
-    await caches.delete(SHARE_CACHE)
+    await caches.delete(cacheName)
   } catch {
     // Kein Cache vorhanden – nichts zu tun.
   }
 }
 
-async function oeffnen(): Promise<Cache | null> {
+async function oeffnen(cacheName: string): Promise<Cache | null> {
   if (!('caches' in globalThis)) return null
   try {
-    return await caches.open(SHARE_CACHE)
+    return await caches.open(cacheName)
   } catch {
     return null
   }
 }
 
+/**
+ * Eine geteilte Datei – mit einem Typ, den der Server annimmt.
+ *
+ * Was Android als Typ mitgibt, hängt an der App, aus der geteilt wird: Eine
+ * Galerie meldet ein Foto als „image/jpg", ein Dateimanager ein PDF als
+ * „application/octet-stream", manche gar nichts. Genau daran scheiterte das
+ * Teilen oft mit „Dateityp wird nicht unterstützt", obwohl die Datei passte.
+ * Der Name verrät meist, was es ist; `uploadMimeType` nimmt, was stimmt.
+ */
 async function lesenAlsDatei(response: Response): Promise<File> {
   const blob = await response.blob()
   const encodedName = response.headers.get(SHARE_FILENAME_HEADER)
   const name = encodedName ? decodeURIComponent(encodedName) : 'Geteiltes Dokument'
-  return new File([blob], name, { type: blob.type })
+  return new File([blob], name, { type: uploadMimeType(blob.type, name) })
 }
 
 async function lesenAlsText(response: Response): Promise<SharedText> {

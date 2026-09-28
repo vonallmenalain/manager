@@ -2,14 +2,22 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  appendBlocks,
   applyMark,
   autoListBlock,
+  blocksFromText,
+  cleanFileName,
   changeIndent,
   clearMarks,
   docFromPlain,
   docOfValue,
   editLengthOf,
   editTextOf,
+  fileBeside,
+  fileBlock,
+  fileBlocks,
+  fileIdsOf,
+  insertBlocksAt,
   isPlainDoc,
   listStateAt,
   marksAt,
@@ -17,14 +25,17 @@ import {
   normalizeRich,
   parseRichJson,
   plainTextOf,
+  removeFile,
   replaceRange,
   richDocFor,
   serializeDoc,
   toggleList,
   toRichValue,
   upsertNoteSchema,
+  withWritingLines,
   wordRangeAt,
   type RichDoc,
+  type RichFile,
 } from '@manager/shared'
 
 /*
@@ -250,5 +261,154 @@ describe('Formatierung beim Speichern einer Notiz', () => {
     // Route entscheidet dann anhand dessen, was schon gespeichert ist.
     assert.equal(upsertNoteSchema.parse({ body: 'Milch' }).bodyRich, undefined)
     assert.equal(upsertNoteSchema.parse({ body: 'Milch', bodyRich: null }).bodyRich, null)
+  })
+})
+
+describe('Dateien im Text', () => {
+  const pdf: RichFile = {
+    id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+    name: 'Rechnung März.pdf',
+    mime: 'application/pdf',
+    size: 48_213,
+  }
+  const foto: RichFile = {
+    id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    name: 'Tafel.jpg',
+    mime: 'image/jpeg',
+    size: 1_203_442,
+  }
+
+  it('steht im gespeicherten Text als Zeile mit Büroklammer', () => {
+    const value = doc({
+      blocks: [{ runs: [{ t: 'Oben' }] }, fileBlock(pdf), { runs: [{ t: 'Unten' }] }],
+    })
+    assert.equal(plainTextOf(value), 'Oben\n📎 Rechnung März.pdf\nUnten')
+    // Im Editor ist die Datei eine leere Zeile – dort zeichnet sie der Browser.
+    assert.equal(editTextOf(value), 'Oben\n\nUnten')
+    assert.deepEqual(fileIdsOf(value), [pdf.id])
+  })
+
+  it('übersteht die Rundreise durch JSON und den Wächter', () => {
+    const value = toRichValue(doc({ blocks: [fileBlock(foto), { runs: [] }] }))
+    // Eine Datei allein ist schon Formatierung – sie muss gespeichert werden.
+    assert.ok(value.rich)
+    const back = richDocFor(value.rich, value.text)
+    assert.ok(back)
+    assert.deepEqual(back.blocks[0]?.file, foto)
+  })
+
+  it('verwirft ein Formatfeld mit einer Datei, die sich nicht lesen lässt', () => {
+    const kaputt = JSON.stringify({
+      v: 1,
+      blocks: [
+        { runs: [], file: { id: '../../etc/passwd', name: 'x', mime: 'image/png', size: 1 } },
+      ],
+    })
+    assert.equal(parseRichJson(kaputt), null)
+  })
+
+  it('macht aus einem Dateinamen eine einzige, saubere Zeile', () => {
+    assert.equal(cleanFileName('Brief\nvom\tAmt.pdf'), 'Brief vom Amt.pdf')
+    assert.equal(cleanFileName('   '), 'Datei')
+    assert.equal(cleanFileName('a'.repeat(300)).length, 200)
+  })
+
+  it('fügt eine Datei ein und lässt oben und unten eine Zeile zum Schreiben', () => {
+    // Leere Notiz: eine Zeile darüber, eine darunter.
+    const leer = insertBlocksAt(docFromPlain(''), 0, [fileBlock(pdf)])
+    assert.equal(plainTextOf(leer.doc), '\n📎 Rechnung März.pdf\n')
+    assert.equal(leer.caret, 2)
+
+    // Mitten im Satz: geteilt wie mit der Eingabetaste.
+    const mitte = insertBlocksAt(docFromPlain('Hallo Welt'), 5, [fileBlock(pdf)])
+    assert.equal(plainTextOf(mitte.doc), 'Hallo\n📎 Rechnung März.pdf\n Welt')
+    assert.equal(mitte.caret, 7)
+
+    // Am Anfang einer zweiten Zeile: Die Zeile darüber genügt als Platz oben.
+    const zweite = insertBlocksAt(docFromPlain('Eins\nZwei'), 5, [fileBlock(pdf)])
+    assert.equal(plainTextOf(zweite.doc), 'Eins\n📎 Rechnung März.pdf\nZwei')
+  })
+
+  it('hängt Geteiltes ans Ende einer bestehenden Notiz an', () => {
+    const bestehend = docFromPlain('Rezepte')
+    const neu = appendBlocks(bestehend, [
+      ...blocksFromText('https://beispiel.ch/kuchen'),
+      fileBlock(foto),
+    ])
+    assert.equal(plainTextOf(neu), 'Rezepte\nhttps://beispiel.ch/kuchen\n📎 Tafel.jpg\n')
+  })
+
+  it('lässt Dateien bei Listen, Einzug und Marken in Ruhe', () => {
+    const value = doc({
+      blocks: [{ runs: [{ t: 'Eins' }] }, fileBlock(pdf), { runs: [{ t: 'Zwei' }] }],
+    })
+    const liste = toggleList(value, 0, editLengthOf(value))
+    assert.deepEqual(
+      liste.blocks.map((block) => (block.file ? 'datei' : block.list)),
+      [1, 'datei', 1],
+    )
+    const tiefer = changeIndent(liste, 0, editLengthOf(liste), 1)
+    assert.equal(tiefer.blocks[1]?.list, undefined)
+    const fett = applyMark(value, 0, editLengthOf(value), 'b', true)
+    assert.deepEqual(fett.blocks[1], fileBlock(pdf))
+  })
+
+  it('behält beim Einfügen eine Datei am Rand der Auswahl', () => {
+    const value = doc({
+      blocks: [{ runs: [{ t: 'Oben' }] }, fileBlock(pdf), { runs: [{ t: 'Unten' }] }],
+    })
+    // Der Cursor steht auf der Zeile der Datei: Der Text kommt darunter.
+    const { doc: next, caret } = replaceRange(value, 5, 5, 'Neu')
+    assert.equal(plainTextOf(next), 'Oben\n📎 Rechnung März.pdf\nNeu\nUnten')
+    assert.equal(caret, 9)
+    // Über die Datei hinweg markiert: Sie wird ersetzt wie der Text daneben.
+    const quer = replaceRange(value, 2, 8, '–')
+    assert.equal(plainTextOf(quer.doc), 'Ob–ten')
+  })
+
+  it('setzt mehrere Dateien mit einer Zeile dazwischen ein', () => {
+    const { doc: next } = insertBlocksAt(docFromPlain('Ferien'), 6, fileBlocks([foto, pdf]))
+    assert.equal(plainTextOf(next), 'Ferien\n📎 Tafel.jpg\n\n📎 Rechnung März.pdf\n')
+  })
+
+  it('zieht fehlende Schreibzeilen um Dateien nach', () => {
+    const nackt = doc({ blocks: [fileBlock(foto), fileBlock(pdf)] })
+    assert.equal(plainTextOf(withWritingLines(nackt)), '\n📎 Tafel.jpg\n\n📎 Rechnung März.pdf\n')
+    // Steht schon alles da, bleibt es dasselbe Modell.
+    const fertig = doc({ blocks: [{ runs: [{ t: 'Oben' }] }, fileBlock(foto), { runs: [] }] })
+    assert.equal(withWritingLines(fertig), fertig)
+  })
+
+  it('merkt, wenn Rücktaste oder Entf an eine Datei stossen', () => {
+    // Oben | Datei | Unten – im Bearbeitungstext 'Oben\n\nUnten'.
+    const value = doc({
+      blocks: [{ runs: [{ t: 'Oben' }] }, fileBlock(pdf), { runs: [{ t: 'Unten' }] }],
+    })
+    assert.equal(fileBeside(value, 6, -1), true, 'Anfang der Zeile unter der Datei')
+    assert.equal(fileBeside(value, 7, -1), false, 'mitten in der Zeile darunter')
+    assert.equal(fileBeside(value, 4, 1), true, 'Ende der Zeile über der Datei')
+    assert.equal(fileBeside(value, 3, 1), false, 'mitten in der Zeile darüber')
+    assert.equal(fileBeside(value, 5, -1), true, 'auf der Datei selbst')
+    assert.equal(fileBeside(value, 0, -1), false, 'ganz am Anfang')
+  })
+
+  it('nimmt eine Datei heraus, ohne ein Loch zu hinterlassen', () => {
+    const value = doc({
+      blocks: [
+        { runs: [] },
+        fileBlock(foto),
+        { runs: [] },
+        fileBlock(pdf),
+        { runs: [{ t: 'Ende' }] },
+      ],
+    })
+    // Leer darüber und darunter: Eine der beiden Zeilen bleibt, dort geht es weiter.
+    const ohneFoto = removeFile(value, foto.id)
+    assert.equal(plainTextOf(ohneFoto.doc), '\n📎 Rechnung März.pdf\nEnde')
+    assert.equal(ohneFoto.caret, 0)
+    // Text darunter: Er rückt nach, der Cursor steht an seinem Anfang.
+    const ohnePdf = removeFile(value, pdf.id)
+    assert.equal(plainTextOf(ohnePdf.doc), '\n📎 Tafel.jpg\n\nEnde')
+    assert.equal(ohnePdf.caret, 3)
   })
 })

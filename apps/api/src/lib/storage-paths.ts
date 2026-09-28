@@ -96,6 +96,30 @@ export function buildStoragePath(parts: StoragePathParts): string {
   return join(year, ...parent, category, name)
 }
 
+/** Der Ordner der Notiz-Dateien, je Ablage – neben den Jahresordnern der Dokumente. */
+export const NOTE_FILES_DIR = 'Notizen'
+
+/**
+ * Wohin eine Datei aus einer Notiz kommt: `Notizen/2026/2026-09-28__Tafel__7c9e6679.jpg`.
+ *
+ * Derselbe Aufbau wie bei den Dokumenten – Datum und Name im Klartext, die
+ * kurze Kennung hält gleichnamige Fotos auseinander –, nur in einem eigenen
+ * Ordner: Wer die Freigabe durchsieht, soll die Beilagen einer Notiz nicht für
+ * abgelegte Post halten.
+ */
+export function buildNoteFilePath(parts: {
+  date: string
+  name: string
+  fileId: string
+  extension: string
+}): string {
+  const year = parts.date.slice(0, 4)
+  const shortId = parts.fileId.replace(/-/g, '').slice(0, 8)
+  const withoutExtension = parts.name.replace(/\.[^./\\]+$/, '')
+  const name = `${parts.date}__${slugify(withoutExtension)}__${shortId}.${parts.extension}`
+  return join(NOTE_FILES_DIR, year, name)
+}
+
 /**
  * Der Pfad der .txt-Datei, die neben dem Original den erkannten Text trägt.
  *

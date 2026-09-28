@@ -1,14 +1,33 @@
 import {
+  docOfValue,
   NOTE_COLOR_LABELS,
   NOTE_COLORS,
+  removeFile,
   splitLinks,
+  toRichValue,
+  withWritingLines,
+  type Bereich,
   type NoteColor,
+  type RichFile,
   type RichValue,
 } from '@manager/shared'
-import { useRef, useState } from 'react'
+import { useImperativeHandle, useRef, useState, type Ref } from 'react'
 
+import { EinfuegenDialog, FortschrittAnzeige, NoteFileViewer } from './NoteFiles'
 import { RichText } from './RichText'
-import { RichTextField, type Akzent, type Einstieg } from './RichTextField'
+import {
+  PaperclipIcon,
+  RichTextField,
+  type Akzent,
+  type Einstieg,
+  type RichTextFieldHandle,
+} from './RichTextField'
+import {
+  dateienAlsBloecke,
+  inNotizEinsetzen,
+  type EinfuegeArt,
+  type Fortschritt,
+} from '../lib/noteFiles'
 
 /**
  * Die Bausteine, aus denen eine Notiz besteht – Farbe, Breite, Text.
@@ -113,6 +132,15 @@ export function LinkedText({ text }: { text: string }) {
 const ABSTAND = 'mt-3'
 const NOTIZTEXT = 'min-h-40 w-full text-base'
 
+/** Was der Text einer Notiz von aussen annimmt: den Griff zur Büroklammer. */
+export interface NoteTextHandle {
+  /**
+   * Öffnet die Auswahl für Bilder und PDFs. Eingefügt wird an der Stelle des
+   * Cursors – steht keiner im Text, am Ende der Notiz.
+   */
+  dateiEinfuegen: () => void
+}
+
 /**
  * Der Text einer Notiz – zum Lesen mit anklickbaren Verweisen, zum Schreiben
  * das formatierbare Feld.
@@ -129,72 +157,232 @@ const NOTIZTEXT = 'min-h-40 w-full text-base'
  *
  * Eine frische oder leere Notiz beginnt gleich im Schreibmodus: Dort gibt es
  * nichts zu lesen und nichts anzutippen.
+ *
+ * Dateien: Mit `bereich` lassen sich Bilder und PDFs einfügen – als ganze
+ * Datei, die in der Notiz steht und sich per Tipp öffnet, oder nur ihr
+ * erkannter Text. Danach steht der Cursor in der Zeile darunter, und es geht
+ * mit Schreiben weiter.
  */
 export function NoteText({
   value,
   onChange,
   startInEditing,
   akzent,
+  bereich,
+  ref,
 }: {
   value: RichValue
   onChange: (value: RichValue) => void
   startInEditing: boolean
   /** Die Farbe der Knöpfe im Formatmenü – petrol in der DocBase. */
   akzent?: Akzent
+  /** Wohin eingefügte Dateien gehören. Ohne Angabe lassen sich keine einfügen. */
+  bereich?: Bereich
+  ref?: Ref<NoteTextHandle>
 }) {
   // null: gelesen. Sonst geschrieben – mit dem Ort, an den der Cursor gehört;
-  // ohne Ort (eine leere Notiz) wartet das Feld, bis man es antippt.
-  const [schreibt, setSchreibt] = useState<{ einstieg: Einstieg | null } | null>(
-    startInEditing ? { einstieg: null } : null,
+  // ohne Ort (eine leere Notiz) wartet das Feld, bis man es antippt. `nr`
+  // zählt die Einstiege: Nach dem Einfügen einer Datei beginnt das Feld neu,
+  // mit dem Cursor unter dem Eingefügten.
+  const [schreibt, setSchreibt] = useState<{ einstieg: Einstieg | null; nr: number } | null>(
+    startInEditing ? { einstieg: null, nr: 0 } : null,
   )
   /** Stand beim Drücken: War schon etwas markiert, ist der Griff keine neue Markierung. */
   const markiertBeimDruck = useRef(false)
+  const feldRef = useRef<RichTextFieldHandle>(null)
 
-  if (schreibt) {
-    return (
-      <RichTextField
-        value={value}
-        onChange={onChange}
-        einstieg={schreibt.einstieg}
-        onBlur={() => setSchreibt(null)}
-        placeholder="Text …"
-        aria-label="Text"
-        akzent={akzent}
-        wrapperClassName={ABSTAND}
-        className={NOTIZTEXT}
-      />
-    )
+  // Der Wert, wie er gerade ist – das Einfügen läuft über Sekunden, und in
+  // der Zwischenzeit ist `value` aus dem ersten Aufruf veraltet.
+  const valueRef = useRef(value)
+  valueRef.current = value
+
+  const [offen, setOffen] = useState<RichFile | null>(null)
+  const [gewaehlt, setGewaehlt] = useState<File[] | null>(null)
+  const [fortschritt, setFortschritt] = useState<Fortschritt | null>(null)
+  const [meldung, setMeldung] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  /** Wo eingefügt wird – gemerkt beim Griff zur Büroklammer, bevor der Fokus geht. */
+  const stelle = useRef<number | null>(null)
+  const abbruch = useRef<AbortController | null>(null)
+
+  /** Das Modell, wie es im Feld steht – mit den Zeilen um jede Datei. */
+  const aktuellesModell = () => withWritingLines(docOfValue(valueRef.current))
+
+  const weiterschreiben = (offset: number) =>
+    setSchreibt((alt) => ({ einstieg: { offset }, nr: (alt?.nr ?? 0) + 1 }))
+
+  const dateiEinfuegen = () => {
+    if (!bereich) return
+    stelle.current = feldRef.current?.caret() ?? null
+    setMeldung(null)
+    inputRef.current?.click()
+  }
+  const dateiEinfuegenRef = useRef(dateiEinfuegen)
+  dateiEinfuegenRef.current = dateiEinfuegen
+  useImperativeHandle(ref, () => ({ dateiEinfuegen: () => dateiEinfuegenRef.current() }), [])
+
+  async function einfuegen(files: File[], art: EinfuegeArt) {
+    if (!bereich) return
+    setGewaehlt(null)
+    const controller = new AbortController()
+    abbruch.current = controller
+    setFortschritt({ art, schritt: 1, von: files.length })
+    try {
+      const bloecke = await dateienAlsBloecke(files, art, bereich, {
+        signal: controller.signal,
+        onFortschritt: setFortschritt,
+      })
+      const { doc, caret, gekuerzt } = inNotizEinsetzen(aktuellesModell(), stelle.current, bloecke)
+      onChange(toRichValue(doc))
+      weiterschreiben(caret)
+      if (gekuerzt) {
+        setMeldung('Der erkannte Text war länger, als eine Notiz sein darf – der Rest fehlt.')
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setMeldung(error instanceof Error ? error.message : 'Das Einfügen hat nicht geklappt.')
+    } finally {
+      if (abbruch.current === controller) abbruch.current = null
+      setFortschritt(null)
+    }
+  }
+
+  const entfernen = (file: RichFile) => {
+    if (!window.confirm(`„${file.name}" aus der Notiz entfernen?`)) return
+    const { doc, caret } = removeFile(aktuellesModell(), file.id)
+    onChange(toRichValue(doc))
+    weiterschreiben(caret)
+  }
+
+  const oeffnen = (file: RichFile) => {
+    // Sonst bliebe die Tastatur über dem Betrachter offen.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    setOffen(file)
   }
 
   return (
-    <div
-      role="textbox"
-      tabIndex={0}
-      aria-label="Text"
-      onPointerDown={() => {
-        markiertBeimDruck.current = window.getSelection()?.isCollapsed === false
-      }}
-      onClick={(event) => {
-        // Wer eben mit der Maus etwas markiert hat, will es kopieren – nicht
-        // mit dem Loslassen in den Schreibmodus fallen. Ein Klick in eine
-        // schon bestehende Markierung meint dagegen: hier schreiben.
-        const markiert = window.getSelection()?.isCollapsed === false
-        if (markiert && !markiertBeimDruck.current) return
-        setSchreibt({ einstieg: { x: event.clientX, y: event.clientY } })
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
-        event.preventDefault()
-        setSchreibt({ einstieg: 'ende' })
-      }}
-      className={`${ABSTAND} ${NOTIZTEXT} cursor-text whitespace-pre-wrap break-words outline-none`}
-    >
-      {value.text ? (
-        <RichText text={value.text} rich={value.rich} />
+    <>
+      {meldung ? (
+        <p
+          role="status"
+          className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          <span className="min-w-0 flex-1">{meldung}</span>
+          <button
+            type="button"
+            onClick={() => setMeldung(null)}
+            aria-label="Meldung schliessen"
+            className="shrink-0 px-1"
+          >
+            ✕
+          </button>
+        </p>
+      ) : null}
+
+      {schreibt ? (
+        <RichTextField
+          key={schreibt.nr}
+          ref={feldRef}
+          value={value}
+          onChange={onChange}
+          einstieg={schreibt.einstieg}
+          onBlur={() => setSchreibt(null)}
+          placeholder="Text …"
+          aria-label="Text"
+          akzent={akzent}
+          wrapperClassName={ABSTAND}
+          className={NOTIZTEXT}
+          onOpenFile={oeffnen}
+          onRemoveFile={entfernen}
+          onDateiEinfuegen={bereich ? dateiEinfuegen : undefined}
+        />
       ) : (
-        <span className="text-slate-400">Text …</span>
+        <div
+          role="textbox"
+          tabIndex={0}
+          aria-label="Text"
+          onPointerDown={() => {
+            markiertBeimDruck.current = window.getSelection()?.isCollapsed === false
+          }}
+          onClick={(event) => {
+            // Wer eben mit der Maus etwas markiert hat, will es kopieren – nicht
+            // mit dem Loslassen in den Schreibmodus fallen. Ein Klick in eine
+            // schon bestehende Markierung meint dagegen: hier schreiben.
+            const markiert = window.getSelection()?.isCollapsed === false
+            if (markiert && !markiertBeimDruck.current) return
+            setSchreibt({ einstieg: { x: event.clientX, y: event.clientY }, nr: 0 })
+          }}
+          onKeyDown={(event) => {
+            // Enter auf einer Datei öffnet die Datei, nicht das Schreiben.
+            if (event.target !== event.currentTarget) return
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            setSchreibt({ einstieg: 'ende', nr: 0 })
+          }}
+          className={`${ABSTAND} ${NOTIZTEXT} cursor-text whitespace-pre-wrap break-words outline-none`}
+        >
+          {value.text ? (
+            <RichText text={value.text} rich={value.rich} onOpenFile={oeffnen} />
+          ) : (
+            <span className="text-slate-400">Text …</span>
+          )}
+        </div>
       )}
-    </div>
+
+      {bereich ? (
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/pdf,image/*"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? [])
+            // Leeren, damit dieselbe Datei gleich nochmals gewählt werden kann.
+            event.target.value = ''
+            if (files.length > 0) setGewaehlt(files)
+          }}
+        />
+      ) : null}
+
+      {gewaehlt ? (
+        <EinfuegenDialog
+          files={gewaehlt}
+          akzent={akzent}
+          onWahl={(art) => void einfuegen(gewaehlt, art)}
+          onAbbrechen={() => setGewaehlt(null)}
+        />
+      ) : null}
+
+      {fortschritt ? (
+        <FortschrittAnzeige
+          fortschritt={fortschritt}
+          onAbbrechen={() => abbruch.current?.abort()}
+        />
+      ) : null}
+
+      {offen ? <NoteFileViewer file={offen} onClose={() => setOffen(null)} /> : null}
+    </>
+  )
+}
+
+/**
+ * „Datei einfügen" – ein Bild oder PDF in den Text der Notiz.
+ *
+ * Der Knopf nimmt den Fokus nicht an: Steht der Cursor gerade im Text, bleibt
+ * er dort, und die Datei kommt genau an diese Stelle.
+ */
+export function DateiKnopf({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm font-medium text-slate-600 transition active:bg-black/5 dark:text-slate-300 dark:active:bg-white/10"
+    >
+      <PaperclipIcon className="size-5 shrink-0" />
+      Datei einfügen
+    </button>
   )
 }
 

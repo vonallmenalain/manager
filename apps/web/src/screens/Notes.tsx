@@ -20,11 +20,13 @@ import {
   BREITE_KLASSEN,
   COLOR_STYLES,
   ColorPicker,
+  DateiKnopf,
   formatEdited,
   LinkedText,
   NoteText,
   WidthPicker,
   type Breite,
+  type NoteTextHandle,
 } from '../components/NoteParts'
 import { RichText } from '../components/RichText'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
@@ -403,7 +405,7 @@ function NoteCard({
         <div
           className={`pointer-events-none relative mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-600 dark:text-slate-300 ${regel.textZeilen}`}
         >
-          <RichText text={note.body} rich={note.bodyRich} />
+          <RichText text={note.body} rich={note.bodyRich} dateien="kompakt" />
         </div>
       ) : null}
     </div>
@@ -493,6 +495,7 @@ function NoteEditor({
   // Ab dem ersten Speichern wird dieselbe Notiz weitergeschrieben, statt eine
   // zweite anzulegen.
   const idRef = useRef(note?.id)
+  const texte = useRef<NoteTextHandle>(null)
 
   const autosave = useAutosave(
     // `bereich` und `categoryId` gehören der DocBase: Dort liegt die Notiz in
@@ -559,23 +562,29 @@ function NoteEditor({
           </div>
         </>
       }
-      // Ohne Notiz zum Löschen gibt es nichts zu zeigen – und der Fuss würde
-      // dem Text nur Höhe wegnehmen.
+      // Im Fuss: links die Büroklammer, rechts das Löschen. Eine Checkliste
+      // kennt keine Dateien – ihre Zeilen sind Einträge –, und eine neue ohne
+      // Notiz zum Löschen braucht gar keinen Fuss: Er nähme dem Text nur Höhe.
       footer={
-        savedId ? (
+        kind !== 'liste' || savedId ? (
           <div className="flex items-center">
-            <button
-              onClick={() => {
-                if (!window.confirm('Notiz löschen?')) return
-                // Verhindert, dass das Speichern beim Schliessen die eben
-                // gelöschte Notiz wieder anlegt.
-                autosave.stop()
-                remove.mutate(savedId, { onSuccess: onClose })
-              }}
-              className="ml-auto min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 dark:text-red-400"
-            >
-              Löschen
-            </button>
+            {kind !== 'liste' ? (
+              <DateiKnopf onClick={() => texte.current?.dateiEinfuegen()} />
+            ) : null}
+            {savedId ? (
+              <button
+                onClick={() => {
+                  if (!window.confirm('Notiz löschen?')) return
+                  // Verhindert, dass das Speichern beim Schliessen die eben
+                  // gelöschte Notiz wieder anlegt.
+                  autosave.stop()
+                  remove.mutate(savedId, { onSuccess: onClose })
+                }}
+                className="ml-auto min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 dark:text-red-400"
+              >
+                Löschen
+              </button>
+            ) : null}
           </div>
         ) : undefined
       }
@@ -594,7 +603,13 @@ function NoteEditor({
         {kind === 'liste' ? (
           <Checklist items={items} onChange={setItems} />
         ) : (
-          <NoteText value={text} onChange={setText} startInEditing={!note || text.text === ''} />
+          <NoteText
+            ref={texte}
+            value={text}
+            onChange={setText}
+            startInEditing={!note || text.text === ''}
+            bereich="manager"
+          />
         )}
       </>
     </Modal>

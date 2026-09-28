@@ -2,6 +2,13 @@
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
 
+import {
+  DOCBASE_SHARE_CACHE,
+  DOCBASE_SHARE_LANDING_PATH,
+  DOCBASE_SHARE_TARGET_PATH,
+} from '../lib/shareConstants'
+import { receiveShare } from '../lib/shareReceiver'
+
 declare const self: ServiceWorkerGlobalScope
 
 /**
@@ -13,8 +20,11 @@ declare const self: ServiceWorkerGlobalScope
  * Worker mit dem längsten passenden Bereich – unter `/docbase/` also diesen,
  * überall sonst den des Managers.
  *
- * Deutlich schlichter als sein Gegenstück: Kein Teilen-Ziel. Das gehört zum
- * Haushalt, wo täglich Post ankommt; in eine Sammlung legt man bewusst ab.
+ * Seit die Sammlung auch Geteiltes aufnimmt, hat er ein eigenes Teilen-Ziel:
+ * Wer im Teilen-Menü von Android „DocBase" wählt, landet in der DocBase und
+ * entscheidet dort zwischen Sammlung und Notiz – nicht im Haushalt. Abgelegt
+ * wird in einem eigenen Zwischenspeicher, damit sich die beiden Apps nicht
+ * gegenseitig ihr Geteiltes wegräumen.
  */
 
 precacheAndRoute(self.__WB_MANIFEST)
@@ -25,11 +35,12 @@ cleanupOutdatedCaches()
  * gespeicherten Hülle bedient – sonst zeigt ein Aufruf ohne Verbindung die
  * Dinosaurier-Seite, obwohl die App installiert ist.
  *
- * API-Aufrufe sind ausgenommen: Die müssen immer echt zum Server.
+ * API-Aufrufe sind ausgenommen: Die müssen immer echt zum Server. Ebenso das
+ * Teilen-Ziel, das weiter unten eigens behandelt wird.
  */
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'), {
-    denylist: [/^\/api\//],
+    denylist: [/^\/api\//, new RegExp(`^${DOCBASE_SHARE_TARGET_PATH}`)],
   }),
 )
 
@@ -49,4 +60,14 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
+})
+
+self.addEventListener('fetch', (event: FetchEvent) => {
+  const url = new URL(event.request.url)
+
+  if (event.request.method === 'POST' && url.pathname === DOCBASE_SHARE_TARGET_PATH) {
+    event.respondWith(
+      receiveShare(event.request, DOCBASE_SHARE_CACHE, DOCBASE_SHARE_LANDING_PATH),
+    )
+  }
 })

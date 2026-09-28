@@ -379,6 +379,43 @@ export const notes = sqliteTable(
 export type NoteRow = typeof notes.$inferSelect
 
 /**
+ * Dateien, die in einer Notiz stehen – das Foto der Wandtafel, das PDF zum
+ * Rezept. Sie gehören zur Notiz und nicht in die Ablage: In den Dokumenten
+ * tauchen sie nicht auf, und mit der Notiz verschwinden sie.
+ *
+ * Hochgeladen wird, bevor die Notiz gespeichert ist – beim Einfügen gibt es
+ * sie womöglich noch gar nicht. `note_id` ist deshalb zunächst leer und wird
+ * gesetzt, sobald eine Notiz gespeichert wird, deren Text die Datei nennt.
+ * Was einen Tag lang ohne Notiz bleibt, räumt der Server weg (siehe index.ts).
+ */
+export const noteFiles = sqliteTable(
+  'note_files',
+  {
+    id: text('id').primaryKey(),
+    /** In welcher Ablage die Datei liegt – wie bei den Dokumenten. */
+    bereich: text('bereich').notNull().default('manager'),
+    noteId: text('note_id').references(() => notes.id, { onDelete: 'set null' }),
+    /** Der Name, unter dem sie ankam – für Anzeige und Herunterladen. */
+    filename: text('filename').notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    /** Relativ zur Ablage des Bereichs, lesbar wie bei den Dokumenten. */
+    storagePath: text('storage_path').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [
+    // Nach der Notiz fragen das Löschen und das Zuordnen, nach „ohne Notiz,
+    // älter als ein Tag" das Aufräumen – beides beantwortet derselbe Index.
+    index('note_files_note_idx').on(table.noteId, table.createdAt),
+  ],
+)
+
+export type NoteFileRow = typeof noteFiles.$inferSelect
+
+/**
  * Die Steuern je Steuerjahr – eine Zeile je Betrag, etwa Bundessteuer und
  * Staats- und Gemeindesteuer. Verrechenbar ist ein Zehntel ihrer Summe; wann,
  * entscheidet sich bei jeder Zahlung.

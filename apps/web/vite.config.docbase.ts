@@ -7,6 +7,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 import { DOCBASE_SCOPE } from './src/lib/appScopes'
+import { DOCBASE_SHARE_TARGET_PATH } from './src/lib/shareConstants'
 
 /**
  * Macht aus `docbase.html` die `index.html` des Ordners.
@@ -88,6 +89,32 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
+
+        /**
+         * Die DocBase im Teilen-Menü von Android – neben dem Manager, als
+         * eigene App mit eigenem Ziel. Wer eine Studie aus dem Mailprogramm
+         * teilt, wählt schon dort, wohin sie gehört: „DocBase" legt sie in
+         * die Sammlung oder in eine Notiz der Sammlung, nie in den Haushalt.
+         *
+         * Dieselben Felder wie beim Manager; den POST fängt der Worker der
+         * DocBase ab (src/docbase/sw.ts).
+         */
+        share_target: {
+          action: DOCBASE_SHARE_TARGET_PATH,
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [
+              {
+                name: 'files',
+                accept: ['application/pdf', 'image/*'],
+              },
+            ],
+          },
+        },
       },
 
       injectManifest: {

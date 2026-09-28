@@ -50,7 +50,7 @@ export function NoteTile({
               <NoteIcon className="size-4" />
             </span>
             {note.body ? (
-              <RichText text={note.body} rich={note.bodyRich} links={false} />
+              <RichText text={note.body} rich={note.bodyRich} links={false} dateien="kompakt" />
             ) : (
               <span className="text-slate-400">Ohne Text</span>
             )}

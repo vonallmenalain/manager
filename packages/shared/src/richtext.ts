@@ -30,6 +30,14 @@
  *   Aufzählungszeichen, denn die zeichnet der Browser als Marker vor die
  *   Zeile. Auf diesem Text rechnen Cursor und Auswahl.
  *
+ * ## Dateien im Text
+ *
+ * Ein Bild oder PDF steht als eigener Block zwischen den Absätzen – oben und
+ * unten lässt sich weiterschreiben. Im gespeicherten Text erscheint es als
+ * Zeile „📎 Dateiname": So findet die Suche es am Namen, und eine ältere App
+ * zeigt wenigstens, dass hier etwas lag. Die Datei selbst liegt auf dem Server
+ * (`note_files`), der Block trägt nur ihre Kennung, ihren Namen und ihren Typ.
+ *
  * Das Modell steht im geteilten Paket, weil beide Seiten es brauchen: Die App
  * rechnet damit beim Schreiben, der Server prüft damit, ob ein Formatfeld
  * überhaupt zum Text passt, bevor er es ablegt (`normalizeRich`). Die
@@ -60,10 +68,26 @@ export interface RichRun extends RichMarks {
   t: string
 }
 
+/** Eine Datei, die als eigener Block im Text steht – Bild oder PDF. */
+export interface RichFile {
+  /** Kennung in `note_files` – darüber holt die App Vorschau und Datei. */
+  id: string
+  /** Der Name, unter dem sie hochgeladen wurde – für Anzeige und Suche. */
+  name: string
+  mime: string
+  /** Grösse in Bytes – steht klein neben dem Namen. */
+  size: number
+}
+
 export interface RichBlock {
   /** Listenpunkt dieser Ebene (1–4); fehlt die Angabe, ist es ein Absatz. */
   list?: number
   runs: RichRun[]
+  /**
+   * Ein Block, der eine Datei trägt statt Text. Er hat dann keine Läufe und
+   * ist nie ein Listenpunkt.
+   */
+  file?: RichFile
 }
 
 export interface RichDoc {
@@ -85,6 +109,9 @@ export const MAX_LIST_LEVEL = 4
 
 /** Aufzählungszeichen je Ebene – so steht die Liste auch im reinen Text da. */
 const LIST_MARKERS = ['•', '◦', '▪', '▫']
+
+/** So steht eine Datei im gespeicherten Text: „📎 Rechnung.pdf". */
+export const FILE_MARKER = '📎'
 
 /* ------------------------------------------------------------------ */
 /* Palette und Grössen                                                 */
@@ -248,6 +275,7 @@ export function editTextOf(doc: RichDoc): string {
 export function plainTextOf(doc: RichDoc): string {
   return doc.blocks
     .map((block) => {
+      if (block.file) return `${FILE_MARKER} ${block.file.name}`
       const text = blockText(block)
       if (!block.list) return text
       const level = clampLevel(block.list)
@@ -266,7 +294,9 @@ export function editLengthOf(doc: RichDoc): number {
  * begrenzen. Alles Weitere setzt einen aufgeräumten Stand voraus.
  */
 export function normalizeDoc(doc: RichDoc): RichDoc {
-  const blocks = doc.blocks.map((block) => {
+  const blocks = doc.blocks.map((block): RichBlock => {
+    // Ein Dateiblock trägt nur die Datei – keinen Text, keine Listenebene.
+    if (block.file) return { runs: [], file: cleanFile(block.file) }
     const runs: RichRun[] = []
     for (const raw of block.runs) {
       const t = raw.t.replace(/\r/g, '').replace(/\n/g, ' ')
@@ -283,9 +313,47 @@ export function normalizeDoc(doc: RichDoc): RichDoc {
   return { blocks: blocks.length > 0 ? blocks : [{ runs: [] }] }
 }
 
-/** Trägt das Modell überhaupt eine Formatierung? */
+/** Trägt das Modell überhaupt eine Formatierung – oder eine Datei? */
 export function isPlainDoc(doc: RichDoc): boolean {
-  return doc.blocks.every((block) => !block.list && block.runs.every((run) => !hasMarks(run)))
+  return doc.blocks.every(
+    (block) => !block.file && !block.list && block.runs.every((run) => !hasMarks(run)),
+  )
+}
+
+/**
+ * Der Name einer Datei, wie er im Text stehen darf: eine Zeile, ohne
+ * Steuerzeichen, nicht endlos lang. Sonst bräche ein Zeilenumbruch im Namen
+ * die Regel, dass jeder Block genau eine Zeile im gespeicherten Text ist.
+ */
+export function cleanFileName(name: string): string {
+  const flat = name
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_FILE_NAME)
+    .trim()
+  return flat || 'Datei'
+}
+
+const MAX_FILE_NAME = 200
+
+function cleanFile(file: RichFile): RichFile {
+  return {
+    id: file.id,
+    name: cleanFileName(file.name),
+    mime: file.mime,
+    size: Math.max(0, Math.round(file.size)),
+  }
+}
+
+/** Ein Block, der eine Datei trägt. */
+export function fileBlock(file: RichFile): RichBlock {
+  return { runs: [], file: cleanFile(file) }
+}
+
+/** Die Kennungen aller Dateien im Text – für den Server, der sie der Notiz zuordnet. */
+export function fileIdsOf(doc: RichDoc): string[] {
+  return doc.blocks.flatMap((block) => (block.file ? [block.file.id] : []))
 }
 
 /* ------------------------------------------------------------------ */
@@ -305,6 +373,10 @@ const LIMITS = { blocks: 25_000, runs: 50_000 }
 
 export function serializeDoc(doc: RichDoc): string {
   const blocks = doc.blocks.map((block) => {
+    if (block.file) {
+      const { id, name, mime, size } = block.file
+      return { runs: [], file: { id, name, mime, size } }
+    }
     const runs = block.runs.map((run) => {
       const out: Record<string, unknown> = { t: run.t }
       if (run.b) out.b = true
@@ -344,8 +416,21 @@ export function parseRichJson(json: string): RichDoc | null {
   const blocks: RichBlock[] = []
   for (const entry of rawBlocks) {
     if (!entry || typeof entry !== 'object') return null
-    const { list, runs: rawRuns } = entry as { list?: unknown; runs?: unknown }
+    const {
+      list,
+      runs: rawRuns,
+      file,
+    } = entry as { list?: unknown; runs?: unknown; file?: unknown }
     if (!Array.isArray(rawRuns)) return null
+
+    if (file !== undefined) {
+      // Eine Datei, die sich nicht eindeutig lesen lässt, verwirft das ganze
+      // Feld: Ohne sie stimmte der Text nicht mehr, und dann gilt er allein.
+      const parsed = parseFile(file)
+      if (!parsed || rawRuns.length > 0) return null
+      blocks.push({ runs: [], file: parsed })
+      continue
+    }
 
     const block: RichBlock = { runs: [] }
     if (typeof list === 'number' && Number.isFinite(list)) block.list = clampLevel(list)
@@ -368,6 +453,17 @@ export function parseRichJson(json: string): RichDoc | null {
     blocks.push(block)
   }
   return normalizeDoc({ blocks })
+}
+
+const FILE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+function parseFile(raw: unknown): RichFile | null {
+  if (!raw || typeof raw !== 'object') return null
+  const { id, name, mime, size } = raw as Record<string, unknown>
+  if (typeof id !== 'string' || !FILE_ID.test(id)) return null
+  if (typeof name !== 'string' || typeof mime !== 'string' || mime.length > 100) return null
+  if (typeof size !== 'number' || !Number.isFinite(size) || size < 0) return null
+  return cleanFile({ id, name, mime, size })
 }
 
 /** Aus dem Modell das Paar machen, das gespeichert wird. */
@@ -615,12 +711,18 @@ export function listStateAt(
   return block?.list ? { active: true, level: clampLevel(block.list) } : { active: false, level: 0 }
 }
 
-/** Aufzählung ein- bzw. ausschalten – für alle Blöcke der Auswahl. */
+/**
+ * Aufzählung ein- bzw. ausschalten – für alle Blöcke der Auswahl. Eine Datei
+ * in der Auswahl bleibt, was sie ist: ein Block für sich.
+ */
 export function toggleList(doc: RichDoc, start: number, end: number): RichDoc {
   const [first, last] = blockIndexRange(doc, start, end)
-  const allList = doc.blocks.slice(first, last + 1).every((block) => block.list)
+  const allList = doc.blocks
+    .slice(first, last + 1)
+    .filter((block) => !block.file)
+    .every((block) => block.list)
   const blocks = doc.blocks.map((block, index) => {
-    if (index < first || index > last) return block
+    if (index < first || index > last || block.file) return block
     if (allList) return { runs: block.runs }
     return { ...block, list: block.list ?? 1 }
   })
@@ -634,7 +736,7 @@ export function toggleList(doc: RichDoc, start: number, end: number): RichDoc {
 export function changeIndent(doc: RichDoc, start: number, end: number, delta: 1 | -1): RichDoc {
   const [first, last] = blockIndexRange(doc, start, end)
   const blocks = doc.blocks.map((block, index) => {
-    if (index < first || index > last) return block
+    if (index < first || index > last || block.file) return block
     if (delta === 1) {
       return { ...block, list: block.list ? Math.min(MAX_LIST_LEVEL, block.list + 1) : 1 }
     }
@@ -652,6 +754,9 @@ export function changeIndent(doc: RichDoc, start: number, end: number, delta: 1 
  * fett Geschriebenen etwas einfügt, bekommt es fett, wie weitergetippt.
  * Mehrzeiliges spaltet Blöcke; neue Zeilen erben die Listenebene der
  * Einfügestelle.
+ *
+ * Eine Datei am Rand des Bereichs bleibt stehen – der Text kommt unter bzw.
+ * über sie. Nur was ganz innerhalb der Auswahl liegt, wird ersetzt.
  */
 export function replaceRange(
   doc: RichDoc,
@@ -665,8 +770,14 @@ export function replaceRange(
   const positions = blockPositions(doc)
   const [startIndex, endIndex] = blockIndexRange(doc, from, to)
 
-  const startBlock = doc.blocks[startIndex] as RichBlock
-  const endBlock = doc.blocks[endIndex] as RichBlock
+  const rawStart = doc.blocks[startIndex] as RichBlock
+  const rawEnd = doc.blocks[endIndex] as RichBlock
+  const keepBefore = rawStart.file ? [rawStart] : []
+  const keepAfter = rawEnd.file && endIndex !== startIndex ? [rawEnd] : []
+  // Für die Rechnung steht an der Stelle einer Datei ein leerer Absatz.
+  const startBlock: RichBlock = rawStart.file ? { runs: [] } : rawStart
+  const endBlock: RichBlock =
+    endIndex === startIndex ? startBlock : rawEnd.file ? { runs: [] } : rawEnd
   const startPos = positions[startIndex] as BlockPos
   const endPos = positions[endIndex] as BlockPos
   const localFrom = Math.min(from - startPos.start, blockText(startBlock).length)
@@ -701,10 +812,172 @@ export function replaceRange(
 
   const blocks = [
     ...doc.blocks.slice(0, startIndex),
+    ...keepBefore,
     ...inserted,
+    ...keepAfter,
     ...doc.blocks.slice(endIndex + 1),
   ]
-  return { doc: normalizeDoc({ blocks }), caret: from + clean.length }
+  // Blieb eine Datei vorne stehen, beginnt der eingesetzte Text eine Zeile
+  // tiefer – hinter ihrem Zeilenende.
+  return { doc: normalizeDoc({ blocks }), caret: from + keepBefore.length + clean.length }
+}
+
+/** Text als Absätze – je Zeile einer, ohne Marken. */
+export function blocksFromText(text: string): RichBlock[] {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => ({ runs: line ? [{ t: line }] : [] }))
+}
+
+/**
+ * Blöcke an der Cursorstelle einfügen – Dateien oder erkannter Text.
+ *
+ * Der Absatz unter dem Cursor wird dort geteilt, wie es die Eingabetaste
+ * täte: Was davor steht, bleibt oben, was danach steht, rückt unter die
+ * eingefügten Blöcke. Oben und unten steht danach immer ein Absatz – auch ein
+ * leerer –, damit sich über und unter einer Datei weiterschreiben lässt; eine
+ * Datei ganz am Anfang oder Ende hätte sonst keine Zeile neben sich, in die
+ * man tippen könnte.
+ *
+ * Zurück kommt die Stelle, an der es weitergeht: der Anfang des Absatzes
+ * unter dem Eingefügten.
+ */
+export function insertBlocksAt(
+  doc: RichDoc,
+  caret: number,
+  inserted: RichBlock[],
+): { doc: RichDoc; caret: number } {
+  if (inserted.length === 0) return { doc, caret }
+  const normal = normalizeDoc(doc)
+  const [from] = clampRange(normal, caret, caret)
+  const positions = blockPositions(normal)
+  const [index] = blockIndexRange(normal, from, from)
+  const block = normal.blocks[index] as RichBlock
+  const position = positions[index] as BlockPos
+
+  let above: RichBlock[]
+  let below: RichBlock
+  if (block.file) {
+    // Auf einer Datei: dahinter einfügen.
+    above = [block]
+    below = { runs: [] }
+  } else {
+    const local = Math.min(from - position.start, blockText(block).length)
+    const head = runsSlice(block.runs, 0, local)
+    const tail = runsSlice(block.runs, local, Number.POSITIVE_INFINITY)
+    // Ein leerer Anfang braucht keine eigene Zeile, wenn darüber schon Text
+    // steht – nur ganz oben oder unter einer Datei hält er den Platz frei.
+    const previous = normal.blocks[index - 1]
+    const headNeeded = head.length > 0 || !previous || Boolean(previous.file)
+    above = headNeeded ? [block.list ? { list: block.list, runs: head } : { runs: head }] : []
+    // Ein leerer Rest wird ein gewöhnlicher Absatz: Ein leerer Listenpunkt
+    // unter einem Bild sähe aus wie ein vergessener Strich.
+    below = block.list && tail.length > 0 ? { list: block.list, runs: tail } : { runs: tail }
+  }
+
+  const blocks = [...normal.blocks.slice(0, index), ...above, ...inserted, below]
+  const rest = normal.blocks.slice(index + 1)
+  const result = normalizeDoc({ blocks: [...blocks, ...rest] })
+
+  // Die Stelle, an der es weitergeht: der Anfang des Absatzes darunter.
+  const belowIndex = index + above.length + inserted.length
+  const startOfBelow = blockPositions(result)[belowIndex]?.start ?? editLengthOf(result)
+  return { doc: result, caret: startOfBelow }
+}
+
+/** Blöcke ans Ende anhängen – für Geteiltes, das zu einer bestehenden Notiz kommt. */
+export function appendBlocks(doc: RichDoc, inserted: RichBlock[]): RichDoc {
+  return insertBlocksAt(doc, editLengthOf(normalizeDoc(doc)), inserted).doc
+}
+
+/**
+ * Dateien so hintereinander, dass zwischen je zweien eine leere Zeile steht.
+ *
+ * Wer mehrere Bilder auf einmal einfügt, will zu jedem etwas schreiben können.
+ * Zwei Dateien direkt untereinander liessen keine Stelle dazwischen, an die
+ * sich der Cursor setzen liesse – im Editor ist eine Datei ein Block, in den
+ * man nicht hineintippt.
+ */
+export function fileBlocks(files: readonly RichFile[]): RichBlock[] {
+  return files.flatMap((file, index) =>
+    index === 0 ? [fileBlock(file)] : [{ runs: [] }, fileBlock(file)],
+  )
+}
+
+function isEmptyParagraph(block: RichBlock | undefined): boolean {
+  return Boolean(block && !block.file && !block.list && block.runs.length === 0)
+}
+
+/**
+ * Um jede Datei eine Zeile zum Schreiben: über einer Datei ganz oben, unter
+ * einer Datei ganz unten und zwischen zwei Dateien je ein leerer Absatz.
+ *
+ * Das Einfügen sorgt schon selbst dafür (`insertBlocksAt`). Verloren gehen
+ * kann eine solche Zeile trotzdem – wer im Editor die leere Zeile unter einem
+ * Bild löscht, hätte danach keine mehr, in die er tippen könnte. Der Editor
+ * zieht sie deshalb bei jedem Zeichnen nach. Steht schon alles da, kommt das
+ * Modell unverändert zurück – dasselbe Objekt, damit sich billig prüfen lässt,
+ * ob etwas zu tun war.
+ */
+export function withWritingLines(doc: RichDoc): RichDoc {
+  const blocks: RichBlock[] = []
+  for (const block of doc.blocks) {
+    const previous = blocks[blocks.length - 1]
+    if (block.file && (!previous || previous.file)) blocks.push({ runs: [] })
+    blocks.push(block)
+  }
+  if (blocks.length === 0 || blocks[blocks.length - 1]?.file) blocks.push({ runs: [] })
+  return blocks.length === doc.blocks.length ? doc : { blocks }
+}
+
+/**
+ * Stösst der Cursor an eine Datei – am Anfang einer Zeile, über der eine
+ * steht (`-1`), am Ende einer Zeile, unter der eine steht (`1`), oder auf der
+ * Zeile der Datei selbst?
+ *
+ * Der Editor fragt das vor Rücktaste und Entf. Der Browser löschte sonst die
+ * ganze Datei mit einem einzigen Tastendruck: Wer unter einem Bild ein Wort zu
+ * viel löscht, wäre das Bild los – ohne Rückfrage und ohne Weg zurück.
+ * Entfernt wird eine Datei deshalb nur über ihr Kreuz.
+ */
+export function fileBeside(doc: RichDoc, caret: number, direction: -1 | 1): boolean {
+  const positions = blockPositions(doc)
+  for (let index = 0; index < doc.blocks.length; index++) {
+    const { start, end } = positions[index] as BlockPos
+    if (caret < start || caret > end) continue
+    if (doc.blocks[index]?.file) return true
+    return direction === -1
+      ? caret === start && Boolean(doc.blocks[index - 1]?.file)
+      : caret === end && Boolean(doc.blocks[index + 1]?.file)
+  }
+  return false
+}
+
+/**
+ * Eine Datei aus dem Text nehmen.
+ *
+ * Standen über und unter ihr leere Zeilen, bleibt davon eine – sonst hinterliesse
+ * jedes Entfernen ein Loch. Zurück kommt die Stelle, an der es weitergeht: die
+ * leere Zeile, die geblieben ist, oder der Anfang dessen, was nachrückt.
+ */
+export function removeFile(doc: RichDoc, id: string): { doc: RichDoc; caret: number } {
+  const normal = normalizeDoc(doc)
+  const index = normal.blocks.findIndex((block) => block.file?.id === id)
+  if (index === -1) return { doc: normal, caret: editLengthOf(normal) }
+
+  const collapse =
+    isEmptyParagraph(normal.blocks[index - 1]) && isEmptyParagraph(normal.blocks[index + 1])
+  const blocks = [
+    ...normal.blocks.slice(0, index),
+    ...normal.blocks.slice(index + (collapse ? 2 : 1)),
+  ]
+  const result = normalizeDoc({ blocks })
+  const positions = blockPositions(result)
+  const target = collapse ? index - 1 : index
+  const caret =
+    positions[target]?.start ?? positions[positions.length - 1]?.end ?? editLengthOf(result)
+  return { doc: result, caret }
 }
 
 /**

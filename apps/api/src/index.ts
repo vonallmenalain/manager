@@ -6,6 +6,7 @@ import { deleteExpiredSessions } from './auth/session.js'
 import { closeDb, runMigrations } from './db/index.js'
 import { backfillSearchText, seedCategories } from './db/seed.js'
 import { env } from './env.js'
+import { removeOrphanedNoteFiles } from './lib/note-files.js'
 import { cleanStaleTemporaryFiles } from './lib/storage.js'
 import { startOcrWorker, stopOcrWorker } from './ocr/index.js'
 import { APP_VERSION } from './version.js'
@@ -44,6 +45,14 @@ async function main(): Promise<void> {
         if (count > 0) app.log.info({ count }, 'Verwaiste Upload-Reste entfernt')
       })
       .catch((error: unknown) => app.log.error({ err: error }, 'Aufräumen der Upload-Reste fehlgeschlagen'))
+
+    // Dateien, die nie in einer gespeicherten Notiz ankamen, oder deren
+    // Notiz gelöscht ist – nach einem Tag Frist.
+    void removeOrphanedNoteFiles(24 * HOUR_MS, app.log)
+      .then((count) => {
+        if (count > 0) app.log.info({ count }, 'Verwaiste Notiz-Dateien entfernt')
+      })
+      .catch((error: unknown) => app.log.error({ err: error }, 'Aufräumen der Notiz-Dateien fehlgeschlagen'))
   }, HOUR_MS)
   cleanup.unref()
 
