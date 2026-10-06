@@ -44,6 +44,7 @@ export function CategorySelect({
   value,
   onChange,
   label = 'Kategorie',
+  beschriftet = true,
   disabled = false,
   bereich = DEFAULT_BEREICH,
 }: {
@@ -52,6 +53,14 @@ export function CategorySelect({
   value: string
   onChange: (value: string) => void
   label?: string
+  /**
+   * Ob „Kategorie" sichtbar über der Auswahl steht. Wo sie allein steht – in
+   * der Notiz und beim Dokument der Sammlung –, sagt schon der Wert darin,
+   * worum es geht: „Trauma" ist eine Kategorie, „Unsortiert" das Fehlen einer.
+   * Neben Zuständig und Status braucht es die Zeile, sonst stünden drei
+   * Auswahlen ohne Namen nebeneinander.
+   */
+  beschriftet?: boolean
   disabled?: boolean
   /** In welcher Sammlung eine neu angelegte Kategorie entsteht. */
   bereich?: Bereich
@@ -62,7 +71,15 @@ export function CategorySelect({
   return (
     <>
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+        {/* Unsichtbar, aber nicht weg: Die Vorlesehilfe nennt die Auswahl
+            weiterhin „Kategorie" statt nur ihren Wert. */}
+        <span
+          className={
+            beschriftet
+              ? 'mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400'
+              : 'sr-only'
+          }
+        >
           {label}
         </span>
         <select

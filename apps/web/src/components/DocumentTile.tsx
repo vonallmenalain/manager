@@ -33,10 +33,40 @@ export function DocumentTile({
         to={`/${document.id}`}
         className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition active:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:active:bg-slate-800"
       >
+        {/* Der Titel steht oben, wie über einem Text: Gelesen wird eine Reihe
+            Kacheln von oben nach unten, und was man darin sucht, ist zuerst
+            der Name.
+
+            `flex-1` hält die Bilder auf einer Linie. Hat die Nachbarkachel den
+            längeren Titel, wächst dieser Block um den Unterschied, und alle
+            Bilder einer Reihe beginnen auf derselben Höhe. */}
+        <span className="min-w-0 flex-1 p-2">
+          {/* break-words: Bei vier Kacheln nebeneinander ist eine Kachel auf
+              dem Handy keine achtzig Bildpunkte breit, und „Antibiotikatherapie"
+              passt in keine Zeile. Ohne den Umbruch im Wort steht die zweite
+              Hälfte ausserhalb der Kachel und ist einfach weg.
+
+              Kein `block` daneben: `line-clamp` bringt seine eigene Anzeigeart
+              mit, und `block` gewinnt – dann würde gar nicht mehr abgeschnitten
+              und eine Kachel mit langem Titel zöge ihre ganze Reihe in die
+              Höhe. */}
+          <span className="line-clamp-2 break-words text-sm font-medium leading-snug">
+            {document.title}
+          </span>
+          <span className="mt-0.5 line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
+            {document.docDate}
+            {categoryName ? ` · ${categoryName}` : ''}
+          </span>
+        </span>
+
         {/* Feste Seitenverhältnisse: Ein Raster, in dem jede Kachel so hoch ist
             wie ihr Bild, springt beim Laden herum. 3:4 ist das Verhältnis eines
-            Blattes im Hochformat – dem Normalfall in einer Dokumentensammlung. */}
-        <span className="relative block aspect-3/4 w-full bg-slate-100 dark:bg-slate-950">
+            Blattes im Hochformat – dem Normalfall in einer Dokumentensammlung.
+
+            Die Linie oben trennt das Bild vom Titel: Der Kopf eines Blattes ist
+            meist weiss wie der Titelblock, und ohne sie läse sich der Titel als
+            Teil der Seite. */}
+        <span className="relative block aspect-3/4 w-full border-t border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
           {url ? (
             <img
               src={url}
@@ -56,25 +86,6 @@ export function DocumentTile({
               )}
             </span>
           )}
-        </span>
-
-        <span className="min-w-0 flex-1 p-2">
-          {/* break-words: Bei vier Kacheln nebeneinander ist eine Kachel auf
-              dem Handy keine achtzig Bildpunkte breit, und „Antibiotikatherapie"
-              passt in keine Zeile. Ohne den Umbruch im Wort steht die zweite
-              Hälfte ausserhalb der Kachel und ist einfach weg.
-
-              Kein `block` daneben: `line-clamp` bringt seine eigene Anzeigeart
-              mit, und `block` gewinnt – dann würde gar nicht mehr abgeschnitten
-              und eine Kachel mit langem Titel zöge ihre ganze Reihe in die
-              Höhe. */}
-          <span className="line-clamp-2 break-words text-sm font-medium leading-snug">
-            {document.title}
-          </span>
-          <span className="mt-0.5 line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
-            {document.docDate}
-            {categoryName ? ` · ${categoryName}` : ''}
-          </span>
         </span>
       </Link>
     </li>

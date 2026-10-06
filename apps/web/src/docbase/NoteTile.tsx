@@ -9,10 +9,11 @@ import { RichText } from '../components/RichText'
  *
  * Sie steht zwischen den Dokumenten, nicht in einer eigenen Liste daneben:
  * Was man sich zu einer Studie aufschreibt, sucht man dort, wo die Studie
- * liegt. Deshalb trägt sie denselben Aufbau wie eine Dokumentenkachel – Bild
- * oben, Titel und Einordnung unten – und dieselbe Kategorie darunter.
+ * liegt. Deshalb trägt sie denselben Aufbau wie eine Dokumentenkachel – Titel
+ * und Einordnung oben, das Bild darunter – und dieselbe Kategorie.
  *
- * Woran man sie trotzdem erkennt: an ihrer Farbe und am Zeichen oben rechts.
+ * Woran man sie trotzdem erkennt: an ihrer Farbe und am Zeichen oben rechts in
+ * der Vorschau.
  * Wo beim Dokument die erste Seite steht, steht bei ihr der Anfang ihres
  * Textes – auch das ist eine Vorschau, nur eben aus Buchstaben.
  *
@@ -34,9 +35,24 @@ export function NoteTile({
         onClick={onOpen}
         className={`flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition active:scale-[0.99] ${COLOR_STYLES[note.color]}`}
       >
+        {/* Titel oben und `flex-1` aus demselben Grund wie bei der
+            Dokumentenkachel: Der Name wird zuerst gelesen, und die Vorschauen
+            einer Reihe beginnen auf derselben Höhe. */}
+        <span className="min-w-0 flex-1 p-2">
+          {/* break-words wie bei der Dokumentenkachel: Bei vier Kacheln pro
+              Reihe ist jedes längere Wort breiter als die Kachel. */}
+          <span className="line-clamp-2 break-words text-sm font-medium leading-snug">
+            {note.title || <span className="text-slate-400">Ohne Titel</span>}
+          </span>
+          <span className="mt-0.5 line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
+            {note.updatedAt.slice(0, 10)}
+            {categoryName ? ` · ${categoryName}` : ''}
+          </span>
+        </span>
+
         {/* Dasselbe Seitenverhältnis wie bei einem Dokument: In einer Reihe
             aus beidem soll keine Kachel aus der Reihe fallen. */}
-        <span className="block aspect-3/4 w-full overflow-hidden border-b border-black/5 p-2 dark:border-white/10">
+        <span className="block aspect-3/4 w-full overflow-hidden border-t border-black/5 p-2 dark:border-white/10">
           <span className="block whitespace-pre-wrap break-words text-[11px] leading-snug text-slate-600 dark:text-slate-300">
             {/* Die Zeichen schwimmen im Text mit, statt darüber zu liegen: Auf
                 einer Kachel von achtzig Bildpunkten Breite verdeckte ein Zeichen
@@ -54,18 +70,6 @@ export function NoteTile({
             ) : (
               <span className="text-slate-400">Ohne Text</span>
             )}
-          </span>
-        </span>
-
-        <span className="min-w-0 flex-1 p-2">
-          {/* break-words wie bei der Dokumentenkachel: Bei vier Kacheln pro
-              Reihe ist jedes längere Wort breiter als die Kachel. */}
-          <span className="line-clamp-2 break-words text-sm font-medium leading-snug">
-            {note.title || <span className="text-slate-400">Ohne Titel</span>}
-          </span>
-          <span className="mt-0.5 line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
-            {note.updatedAt.slice(0, 10)}
-            {categoryName ? ` · ${categoryName}` : ''}
           </span>
         </span>
       </button>
