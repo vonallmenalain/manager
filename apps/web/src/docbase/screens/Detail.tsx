@@ -113,8 +113,10 @@ export function Detail() {
       />
 
       {/* Die einzige Angabe, die sich im Alltag ändert – und sie speichert
-          beim Loslassen, ohne Umweg über „Bearbeiten". */}
+          beim Loslassen, ohne Umweg über „Bearbeiten". Ohne „Kategorie"
+          darüber, wie in der Notiz: Der Wert in der Auswahl sagt das schon. */}
       <CategorySelect
+        beschriftet={false}
         bereich="docbase"
         categories={categories.data?.categories ?? []}
         value={document.categoryId ?? ''}

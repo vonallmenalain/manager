@@ -612,7 +612,10 @@ man durchblättert, oft die schnellere Frage: Ein Kursskript, einen EKG-Ausdruck
 Merkblatt unterscheidet man auf einen Blick, lange bevor man drei Titel gelesen hat. Wie
 viele Kacheln nebeneinander stehen, ist einstellbar (1 bis 4); eine Kachel pro Reihe ist
 keine Kachelansicht mehr, sondern eine Liste mit grossen Bildern – und genau das will man
-auf dem Handy manchmal.
+auf dem Handy manchmal. Titel, Datum und Kategorie stehen oben in der Kachel, das Bild
+darunter: Gelesen wird von oben nach unten, und gesucht wird zuerst der Name. Die Bilder
+einer Reihe beginnen trotzdem auf derselben Höhe – ein kürzerer Titel lässt darunter
+Platz, statt sein Bild nach oben zu ziehen.
 
 Die Einstellung liegt im `localStorage` und nicht in der Datenbank: Wie eine Liste
 angezeigt wird, ist keine Angabe über den Haushalt, sondern über den Bildschirm, auf den
@@ -649,6 +652,11 @@ Felder leer waren – also genau in dem Moment, in dem man eine Notiz anfängt u
 gerade zu tippen beginnt. Er mahnte etwas an, das niemand vergessen hatte, an der Stelle,
 an der sonst „Gespeichert" steht. Die Regel dahinter bleibt: Angelegt wird eine Notiz
 erst mit Inhalt, und wer das Fenster leer wieder schliesst, hinterlässt keine.
+
+**Kein „Kategorie" über der Auswahl.** In der Notiz und beim Dokument steht die Kategorie
+allein, und was darin steht – „Trauma", „Unsortiert" – sagt schon, worum es geht. Die
+Vorlesehilfe nennt die Auswahl weiterhin so. Beim Ablegen bleibt die Zeile: Dort stehen
+Titel und Notiz mit ihrer Beschriftung daneben.
 
 Notiz und Dokument stehen **in einer Liste**, nicht in zwei nebeneinander – als Kachel
 wie als Zeile, mit derselben Suche und demselben Kategorienfilter darüber. Zwei Listen

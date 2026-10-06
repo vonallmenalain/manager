@@ -135,9 +135,11 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
         {/* Die Kategorie steht oben und nicht im Fuss: Sie entscheidet, wo die
             Notiz später auftaucht, und das gehört zum Anlegen dazu – nicht zum
             Aufräumen danach. „Neue Kategorie …" führt dabei zum selben Fenster
-            wie bei einem Dokument. */}
+            wie bei einem Dokument. Ohne „Kategorie" darüber: Was in der
+            Auswahl steht, sagt das schon. */}
         <div className="mt-3">
           <CategorySelect
+            beschriftet={false}
             bereich="docbase"
             categories={categories.data?.categories ?? []}
             value={categoryId}
