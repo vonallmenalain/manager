@@ -291,20 +291,36 @@ function openDocumentText(xml: string): string {
   )
 }
 
-/** Der Text einer Office-Datei aus dem ZIP. */
-export function officeText(zip: Buffer, art: OfficeArt): string {
+/**
+ * Die Teile eines ZIP-Archivs, auf Verlangen entpackt.
+ *
+ * Mit einer Grenze für alle Teile zusammen: Tausend Folien à 30 MB wären
+ * Minuten Arbeit. Gebraucht für den Text der Suche und für die Zellen, die der
+ * Excel-Import der Hypothek liest (siehe `readXlsx`).
+ */
+function zipTeile(zip: Buffer): {
+  namen: string[]
+  lesen: (name: string) => string | null
+} {
   const eintraege = zipEintraege(zip)
   let entpackt = 0
-  const auspacken = (eintrag: ZipEintrag): string => {
-    const daten = zipTeil(zip, eintrag)
-    entpackt += daten.length
-    if (entpackt > MAX_GESAMT_BYTES) throw new Error('Datei entpackt zu gross')
-    return daten.toString('utf8')
+  return {
+    namen: eintraege.map((eintrag) => eintrag.name),
+    lesen: (name) => {
+      const eintrag = eintraege.find((kandidat) => kandidat.name === name)
+      if (!eintrag) return null
+      const daten = zipTeil(zip, eintrag)
+      entpackt += daten.length
+      if (entpackt > MAX_GESAMT_BYTES) throw new Error('Datei entpackt zu gross')
+      return daten.toString('utf8')
+    },
   }
-  const teil = (name: string): string | null => {
-    const eintrag = eintraege.find((kandidat) => kandidat.name === name)
-    return eintrag ? auspacken(eintrag) : null
-  }
+}
+
+/** Der Text einer Office-Datei aus dem ZIP. */
+export function officeText(zip: Buffer, art: OfficeArt): string {
+  const archiv = zipTeile(zip)
+  const teil = archiv.lesen
 
   switch (art) {
     case 'word': {
@@ -317,30 +333,25 @@ export function officeText(zip: Buffer, art: OfficeArt): string {
       // oder das Programm die Texte in die Blätter schreibt.
       const texte = [excelText(ohneVorsilbe(teil('xl/sharedStrings.xml') ?? ''))]
       let laenge = texte[0]?.length ?? 0
-      for (const eintrag of eintraege) {
+      for (const name of archiv.namen) {
         if (laenge > MAX_TEXT_CHARS) break
         // Die Blätter – Excel nummeriert sie (sheet1.xml …), andere Programme nicht unbedingt.
-        if (!/^xl\/worksheets\/[^/]+\.xml$/.test(eintrag.name)) continue
-        const text = blattText(ohneVorsilbe(auspacken(eintrag)))
+        if (!/^xl\/worksheets\/[^/]+\.xml$/.test(name)) continue
+        const text = blattText(ohneVorsilbe(teil(name) ?? ''))
         texte.push(text)
         laenge += text.length
       }
       return texte.filter(Boolean).join('\n')
     }
     case 'powerpoint': {
-      const folien = eintraege
-        .map((eintrag) => ({
-          eintrag,
-          nummer: /^ppt\/slides\/slide(\d+)\.xml$/.exec(eintrag.name)?.[1],
-        }))
-        .filter(
-          (folie): folie is { eintrag: ZipEintrag; nummer: string } => folie.nummer !== undefined,
-        )
+      const folien = archiv.namen
+        .map((name) => ({ name, nummer: /^ppt\/slides\/slide(\d+)\.xml$/.exec(name)?.[1] }))
+        .filter((folie): folie is { name: string; nummer: string } => folie.nummer !== undefined)
         .sort((a, b) => Number(a.nummer) - Number(b.nummer))
       const texte: string[] = []
       let laenge = 0
-      for (const { eintrag } of folien) {
-        const text = folienText(auspacken(eintrag))
+      for (const { name } of folien) {
+        const text = folienText(teil(name) ?? '')
         texte.push(text)
         laenge += text.length
         if (laenge > MAX_TEXT_CHARS) break
@@ -353,6 +364,143 @@ export function officeText(zip: Buffer, art: OfficeArt): string {
       return openDocumentText(xml)
     }
   }
+}
+
+// ------------------------------------------------------------ Excel-Zellen
+
+/**
+ * Die Zellen einer Excel-Datei (.xlsx), Blatt für Blatt – ohne Bibliothek.
+ *
+ * Eine .xlsx ist ein ZIP voller XML, und gelesen wird hier nur, was in den
+ * Zellen steht: Zahlen, Texte, Wahrheitswerte. Bei Formeln der Wert, den Excel
+ * beim letzten Speichern ausgerechnet hat – nachgerechnet wird nichts. Wer
+ * eine Tabelle übernimmt, will dieselben Zahlen sehen wie in Excel, und eine
+ * eigene Formelauswertung hätte genau dort ihre Fehler, wo es niemand merkt.
+ *
+ * Gebraucht vom Excel-Import der Hypothek. Die Teile werden über denselben
+ * Leser entpackt wie für die Volltextsuche, mit denselben Grenzen gegen
+ * präparierte Archive.
+ */
+
+export type Zellwert = number | string | boolean
+
+export interface Blatt {
+  name: string
+  /** Zeile → Spalte → Wert. Zeilen und Spalten zählen ab 1, wie in Excel. */
+  zeilen: Map<number, Map<number, Zellwert>>
+}
+
+/** „C" → 3, „AA" → 27. */
+export function spaltenNummer(buchstaben: string): number {
+  let nummer = 0
+  for (const zeichen of buchstaben.toUpperCase()) nummer = nummer * 26 + (zeichen.charCodeAt(0) - 64)
+  return nummer
+}
+
+function attribut(attribute: string, name: string): string | null {
+  const treffer = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'])([\\s\\S]*?)\\1`).exec(attribute)
+  return treffer ? entitaeten(treffer[2] ?? '') : null
+}
+
+/** Der Text eines `<si>` oder `<is>`: alle `<t>` darin, ohne Lautschrift. */
+function zellText(xml: string): string {
+  let text = ''
+  for (const [, inhalt = ''] of xml
+    .replace(/<rPh\b[\s\S]*?<\/rPh>/g, '')
+    .matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)) {
+    text += entitaeten(inhalt)
+  }
+  return text
+}
+
+function gemeinsameTexte(xml: string | null): string[] {
+  if (!xml) return []
+  return [...ohneVorsilbe(xml).matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map(([, inhalt = '']) =>
+    zellText(inhalt),
+  )
+}
+
+/** Wo die Blätter im Archiv liegen, in der Reihenfolge der Mappe. */
+function blattPfade(archiv: ReturnType<typeof zipTeile>): { name: string; pfad: string }[] {
+  const mappe = archiv.lesen('xl/workbook.xml')
+  const verweise = archiv.lesen('xl/_rels/workbook.xml.rels')
+  if (!mappe || !verweise) {
+    // Ohne Inhaltsverzeichnis: die Blätter, wie sie im Archiv liegen.
+    return archiv.namen
+      .filter((name) => /^xl\/worksheets\/[^/]+\.xml$/.test(name))
+      .sort()
+      .map((pfad, index) => ({ name: `Blatt ${index + 1}`, pfad }))
+  }
+
+  const ziele = new Map<string, string>()
+  for (const [, attribute = ''] of ohneVorsilbe(verweise).matchAll(/<Relationship\b([^>]*)\/?>/g)) {
+    const id = attribut(attribute, 'Id')
+    const ziel = attribut(attribute, 'Target')
+    if (id && ziel) ziele.set(id, ziel)
+  }
+
+  const blaetter: { name: string; pfad: string }[] = []
+  for (const [, attribute = ''] of ohneVorsilbe(mappe).matchAll(/<sheet\b([^>]*)\/?>/g)) {
+    const id = attribut(attribute, 'r:id') ?? attribut(attribute, '[\\w]+:id')
+    const ziel = id ? ziele.get(id) : undefined
+    if (!ziel) continue
+    // Absolut („/xl/worksheets/sheet1.xml") oder relativ zur Mappe.
+    const pfad = ziel.startsWith('/') ? ziel.slice(1) : `xl/${ziel.replace(/^\.\//, '')}`
+    blaetter.push({ name: attribut(attribute, 'name') ?? pfad, pfad })
+  }
+  return blaetter
+}
+
+function blattZellen(xml: string, texte: readonly string[]): Map<number, Map<number, Zellwert>> {
+  const zeilen = new Map<number, Map<number, Zellwert>>()
+
+  for (const [, attribute = '', inhalt = ''] of ohneVorsilbe(xml).matchAll(
+    /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g,
+  )) {
+    const ref = /^([A-Z]+)(\d+)$/i.exec(attribut(attribute, 'r') ?? '')
+    if (!ref) continue
+    const spalte = spaltenNummer(ref[1] ?? '')
+    const zeile = Number(ref[2])
+
+    const typ = attribut(attribute, 't') ?? 'n'
+    const roh = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(inhalt)?.[1]
+
+    let wert: Zellwert | null = null
+    if (typ === 'inlineStr') {
+      wert = zellText(/<is(?:\s[^>]*)?>([\s\S]*?)<\/is>/.exec(inhalt)?.[1] ?? '')
+    } else if (roh === undefined) {
+      continue
+    } else if (typ === 's') {
+      wert = texte[Number(roh)] ?? null
+    } else if (typ === 'str') {
+      wert = entitaeten(roh)
+    } else if (typ === 'b') {
+      wert = roh.trim() === '1'
+    } else if (typ === 'n') {
+      const zahl = Number(roh)
+      wert = Number.isFinite(zahl) ? zahl : null
+    }
+    // 'e' (Fehler wie #DIV/0!) und Unbekanntes bleiben leer.
+    if (wert === null || wert === '') continue
+
+    const reihe = zeilen.get(zeile) ?? new Map<number, Zellwert>()
+    reihe.set(spalte, wert)
+    zeilen.set(zeile, reihe)
+  }
+  return zeilen
+}
+
+/** Liest alle Blätter. Wirft, wenn die Datei kein lesbares .xlsx ist. */
+export function readXlsx(data: Buffer): Blatt[] {
+  const archiv = zipTeile(data)
+  const texte = gemeinsameTexte(archiv.lesen('xl/sharedStrings.xml'))
+  const pfade = blattPfade(archiv)
+  if (pfade.length === 0) throw new Error('Keine Tabellenblätter gefunden')
+
+  return pfade.map(({ name, pfad }) => ({
+    name,
+    zeilen: blattZellen(archiv.lesen(pfad) ?? '', texte),
+  }))
 }
 
 // --------------------------------------------------------------------- RTF

@@ -180,6 +180,8 @@ erDiagram
     FINANCE_YEAR ||--o{ DONATION : ""
     USER ||--o{ UTILITY_BILL : "erfasst"
     DOCUMENT ||--o| UTILITY_BILL : "Beleg"
+    MORTGAGE_LOAN ||--o{ MORTGAGE_INTEREST : "Zinsen je Quartal"
+    USER ||--o{ MORTGAGE_AMORTIZATION : "erfasst"
 ```
 
 **Kerntabellen**
@@ -271,6 +273,20 @@ erDiagram
   der Normalfall. Kennzahlen (Verbrauch, Ø Preis, Trend) werden **nicht** gespeichert,
   sondern bei jeder Abfrage gerechnet – gespeicherte Zwischenergebnisse wären beim ersten
   Nachdenken über den Preis pro Einheit veraltet, ohne dass es jemand merkt
+* `mortgage_settings` – die Grunddaten der Hypothek, genau eine Zeile: Liegenschaftswert,
+  Hypothek total und 1. Hypothek (daraus die zu amortisierende 2. Hypothek), Amortisation
+  pro Jahr, der Übertrag aus der eigenen Tabelle samt Stichtag und der SARON, mit dem die
+  SARON-Hypotheken gerechnet werden. Das Total steht fest und wird **nicht** aus den
+  Hypotheken summiert: Wer direkt amortisiert, sähe die Hypothek kleiner werden, und die
+  Amortisation zählte doppelt
+* `mortgage_loans` – je Vertrag eine Zeile: Bezeichnung, Art (`fest` oder `saron`),
+  Betrag, Zinssatz bzw. Marge, Beginn und „Laufzeit bis". Abgelaufene bleiben stehen – an
+  ihnen hängen die Zinsen der Quartale, in denen sie liefen
+* `mortgage_interest` – die bezahlten Zinsen, eine Zeile je Hypothek und Quartal
+  (Schlüssel aus beidem). Gespeichert wird je Quartal als Ganzes. `cascade`: Eine gelöschte
+  Hypothek nimmt ihre Zinsen mit – das Fenster sagt vorher, wie viele es sind
+* `mortgage_amortizations` – die Amortisation, eine Zeile je Tranche, mit Zahltag und dem
+  Jahr, für das sie zählt (nicht zwingend das des Zahltags)
 * `sessions` – angemeldete Geräte
 
 **Dokument-Status:** `pendent` → `erledigt` → `archiviert`. Bewusst nur drei, mit
@@ -1226,6 +1242,105 @@ die auseinanderlaufen können, wären eine Fehlerquelle ohne Gegenwert.
 Datei: je Sparte und Periode eine Zeile mit den Kennzahlen, dann die Rechnungen mit ihren
 Beträgen, die einzelnen Positionen und die Zählerstände.
 
+**Ein einzelnes Jahr zeigt Monate, nicht Perioden.** Mit einer Halbjahresabrechnung stand
+für „Strom 2026" eine einzige Säule im Diagramm – darüber, wie das Jahr verläuft, sagte
+sie nichts. Ist ein Jahr gewählt, wird deshalb jede Abrechnung gleichmässig auf die Tage
+ihrer Periode verteilt und je Monat aufsummiert (`packages/shared/src/haus-verlauf.ts`).
+Gleichmässig, weil die Rechnung nicht feiner sagt, wann verbraucht wurde; der Hinweis über
+dem Diagramm sagt das dazu. Neben jeder Säule steht als grauer Strich derselbe Monat des
+Vorjahres – er stapelt sich nicht mit, er ist Massstab. Der Ø Preis wird dabei zur Treppe:
+Er zeigt, ab welchem Monat ein neuer Tarif gilt.
+
+**Akonto als provisorisch.** Akontorechnungen zählen nicht als Verbrauch (siehe oben) –
+aber eine bezahlte Vorauszahlung für ein Quartal, das noch keine Abrechnung kennt, ist die
+einzige Zahl, die es für diese Monate gibt. Deshalb steht sie überall dort, wo nach dem
+Verlauf gefragt ist, **schraffiert** neben dem Abgerechneten: im Diagramm, in der Kopfkachel
+(„provisorisch · Akonto Jul–Sep 2026") und in der Rechnungsliste. Gezählt werden nur ihre
+Tage, die keine Abrechnung derselben Sparte deckt; kommt die Abrechnung, ist das Akonto
+darin aufgegangen und steht in der Liste als „verrechnet". Die Summen der Kacheln und der
+Ø Preis bleiben unberührt – sie rechnen weiterhin nur mit Abgerechnetem.
+
+**Der Stand des Jahres** steht als eigene Kachel unter den Kennzahlen: je Sparte zwölf
+Felder – gefüllt, was abgerechnet ist, schraffiert, was erst mit Akonto vorausbezahlt ist,
+leer, was noch offen ist – und darunter die Beträge dazu. Das beantwortet die Frage, mit
+der man ein angefangenes Jahr öffnet: Was ist schon verrechnet, und was kann noch kommen?
+
+**Verglichen wird mit denselben Tagen des Vorjahres.** Für 2026 lag nur das erste Halbjahr
+vor, und die Kacheln verglichen es mit dem ganzen Jahr 2025 – mit dem Hinweis „2025 deckt
+365 statt 181 Tage ab" statt eines Pfeils. Jetzt wird jede gewählte Periode um ein Jahr
+zurückgeschoben und aus den Abrechnungen des Vorjahres anteilig herausgeschnitten
+(`gleicherZeitraumVorjahr`): erstes Halbjahr gegen erstes Halbjahr, „vs. Jan–Jun 2025".
+Deckt das Vorjahr diese Tage nicht (weniger als 97 %), bleibt es beim bisherigen Vergleich
+mit dem ganzen Vorjahr und seinem Hinweis.
+
+### 6.6 Haus: Hypothek
+
+Was die Hypothek kostet und wie weit sie amortisiert ist – als eigene Sparte im Bereich
+Haus, hinter einem Trennstrich neben den Nebenkosten. „Alle Sparten" zählt sie nicht mit:
+Zinsen und Amortisation sind keine Nebenkosten, und eine Summe aus beidem beantwortete
+keine Frage, die man den Nebenkosten stellt.
+
+**Mehrere Verträge, eine Hypothek.** Die Hypothek besteht aus Festhypotheken mit eigenem
+Satz und eigener Laufzeit und aus SARON-Hypotheken, deren Zins mit dem Referenzzins
+wandert (Satz = SARON aus den Grunddaten + Marge des Vertrags). Läuft eine Festhypothek
+aus, kommt eine neue an ihre Stelle; die alte steht danach unter „Abgelaufen" und trägt
+weiter die Zinsen, die für sie bezahlt wurden. Jede Hypothek zeigt, wie viel ihrer Laufzeit
+verstrichen ist; ein Jahr vor dem Ende steht „Anschluss planen" daneben.
+
+**Erfasst wird, was bezahlt ist – gerechnet wird die Prognose.** Je Quartal und Hypothek
+trägt man den Zins ein, den die Bank abgebucht hat. Das Formular ist mit der Prognose
+vorausgefüllt: Betrag × Satz × Zinstage nach der Usanz **30/360**, mit der die Banken
+hierzulande abrechnen – darum kostet eine Festhypothek jedes Quartal genau einen Viertel
+ihres Jahreszinses, und die Prognose stimmt bei ihr auf den Rappen. Beginnt oder endet eine
+Hypothek mitten im Quartal, zählen nur ihre Tage. Bei der SARON-Hypothek rechnet die
+Prognose mit dem SARON von heute; für vergangene Quartale ist das nur eine Näherung,
+deshalb ersetzt sie nie einen erfassten Betrag. Wo noch nichts bezahlt ist, steht die
+Prognose schraffiert im Diagramm und mit „≈" in den Listen.
+
+**Der Ø Zinssatz kommt aus den bezahlten Zinsen.** Unter den Quartalszinsen steht als
+Linie, welchen Satz die bezahlten Beträge bedeuten (Quartalszins × 4 / Betrag). Nur so
+sieht man, wie der SARON-Zins über die Quartale gesunken oder gestiegen ist – die
+Grunddaten kennen nur den heutigen.
+
+**Amortisation in Tranchen.** Was zu amortisieren ist, ergibt sich aus den Grunddaten:
+Hypothek total minus 1. Hypothek (üblicherweise zwei Drittel des Liegenschaftswerts – das
+Formular bietet den Wert zum Übernehmen an). Bezahlt wird in so vielen Tranchen, wie man
+will; jede zählt für ein Jahr, das vom Zahltag abweichen darf. Je Jahr steht das Soll
+(im letzten Jahr nur noch der Rest), das Bezahlte und was fehlt; beim Erfassen ist der
+offene Rest vorausgefüllt. Was vor der Erfassung schon amortisiert war, steht als
+**Übertrag** mit Stichtag in den Grunddaten – die einzelnen Jahre beginnen danach. Daraus
+rechnet die Seite, wann die 2. Hypothek bei der geplanten Rate voraussichtlich
+amortisiert ist.
+
+**Kennzahlen eines angefangenen Jahres** vergleichen nur dieselben Quartale des Vorjahres
+(„vs. Q1–Q3 2025") und nur, wenn dort alle bezahlt sind – drei Quartale gegen vier wären
+eine Aussage über den Kalender. Die Kopfkachel zeigt unabhängig vom Jahr den Stand heute:
+Hypothek total, Ø Zinssatz nach Betrag gewichtet, Belehnung und was jeden Monat für Zins
+und Amortisation weggeht.
+
+**Farben nach Platz, nicht nach Vertrag.** Die Hypotheken bekommen ihre Farbe wie Plätze an
+einem Tisch (`loanSlots`): Wer gleichzeitig läuft, sitzt verschieden, eine
+Anschlusshypothek erbt den Platz der ausgelaufenen. So stehen in einem Quartal nie mehr
+Farben übereinander als Verträge laufen, und es sind die ersten Plätze der geprüften
+Palette – die, die sich auch nebeneinander sicher unterscheiden.
+
+**Übernahme aus der eigenen Excel-Tabelle.** Wie beim Rechnungsimport zweistufig: Der
+Server liest die .xlsx (ohne Bibliothek, über denselben ZIP-Leser wie die Volltextsuche,
+`readXlsx` in `apps/api/src/ocr/office.ts`), die Vorschau zeigt Hypotheken, Zinsen je
+Quartal und Grunddaten samt Hinweisen, und gespeichert wird erst mit „Übernehmen". Gelesen
+wird an den Beschriftungen entlang (`apps/api/src/lib/hypothek-excel.ts`): eine Kopfzeile
+mit Quartalen („IST Q3 2024"), je Hypothek eine Zeile mit „…hypothek" und Betrag, darunter
+Zinssatz oder Marge, „Laufzeit bis …" und die erste Zeile mit Quartalswerten; dazu
+Liegenschaftswert, Total Hypothek, 1. Hypothek, Amortisation pro Jahr, „Bereits
+amortisiert (per …)" und der Leitzins, auf welchem Blatt auch immer. Was die Tabelle nicht
+nennt, wird abgeleitet und als Hinweis gesagt – der Beginn einer Hypothek aus ihrer ersten
+Zinszahlung, ihr Ende aus der letzten, wenn danach andere weiterzahlen. Bei Formeln zählt
+der Wert, den Excel zuletzt gerechnet hat. Übernommen wird nur in eine leere Sparte; ein
+zweiter Import legte jede Hypothek doppelt an.
+
+**Export als CSV** wie bei den Rechnungen: die Hypotheken, die Zinsen je Quartal mit
+Prognose und Bezahltem, die Tranchen samt Übertrag und je Jahr Zinsen und Amortisation.
+
 ---
 
 ## 7. OCR-Pipeline
@@ -1646,6 +1761,7 @@ eine funktionierende App auf dem Handy.
 | **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben, Formatierung und Suche | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** ✅ | **Haus** | PDF-Import der Rechnungen für Strom, Wasser, Abwasser und Kehricht, Verbrauch und Ø Preis je Sparte, Perioden- und Vorjahresvergleich, Diagramme, Ablage des Belegs in den Dokumenten, CSV-Export | Die Nebenkosten des Hauses stehen nicht mehr in einer Tabelle auf dem Desktop |
+| **6a** ✅ | **Hypothek** | Festhypotheken und SARON mit Laufzeit, Zinsen je Quartal mit Prognose nach 30/360, Ø Zinssatz aus den bezahlten Zinsen, Amortisation der 2. Hypothek in Tranchen, Übernahme aus der eigenen Excel-Tabelle, CSV-Export – dazu bei den Nebenkosten der Jahresverlauf je Monat mit Akonto als provisorisch | Auch die Hypothek steht nicht mehr in einer Tabelle auf dem Desktop |
 | **7** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
 
 Etappen 0 bis 6 sind gebaut. Was in Etappe 7 noch aussteht, steht in der Tabelle oben;
@@ -1684,6 +1800,12 @@ nichts davon hält den täglichen Gebrauch auf.
 | Dateien in Notizen | **Eigene Tabelle `note_files`, im Text nur die Kennung** | Eine Beilage braucht weder Kategorie noch Status und soll nicht zwischen der Post stehen; `body` trägt „📎 Name" für Suche und ältere Apps |
 | Datei oder Text | **Beim Einfügen wählen: ganze Datei oder erkannter Text** | Ein Foto einer Wandtafel will man sehen, eine abfotografierte Seite weiterbearbeiten – beides ist dieselbe Handbewegung |
 | Teilen je App | **Eigenes Teilen-Ziel, eigene Auswahl, eigener Zwischenspeicher** | Was an die DocBase geteilt wird, landet nie im Haushalt; die beiden Apps räumen sich nichts gegenseitig weg |
+| Jahresansicht Haus | **Monate statt Perioden, Rechnungen gleichmässig auf ihre Tage verteilt** | Eine Halbjahresabrechnung ergab für ein Jahr eine einzige Säule; feiner als „gleichmässig" weiss die Rechnung es nicht |
+| Akonto im Verlauf | **Schraffiert als provisorisch, nur für Tage ohne Abrechnung** | Für ein noch nicht abgerechnetes Quartal ist das Akonto die einzige Zahl; daneben gezählt, wo die Abrechnung schon da ist, verdoppelte es die Kosten |
+| Vergleich eines angefangenen Jahres | **Dieselben Tage des Vorjahres** | Ein Halbjahr gegen ein ganzes Jahr wäre eine Aussage über die Zahl der Rechnungen |
+| Hypothekarzins | **Bezahltes erfassen, Prognose nach 30/360 daneben** | So rechnen die Banken; bei der Festhypothek stimmt die Prognose auf den Rappen, bei SARON ersetzt sie nie einen bezahlten Betrag |
+| Ausgangslage der Amortisation | **Fest in den Grunddaten, nicht aus den Hypotheken summiert** | Direkt amortisiert würde die Hypothek kleiner, und die Amortisation zählte doppelt |
+| Zinssätze | **Tausendstelprozent statt Basispunkte** | Margen und SARON kommen mit drei Nachkommastellen |
 | Alte Installationen | **Worker an der Wurzel nimmt `/share-target` an** | Das Teilen-Ziel steht fest im installierten Paket; ohne ihn endete das Teilen aus einem alten Manager auf der Startseite |
 
 ## 14. Noch offen

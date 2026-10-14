@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 /**
  * Die Entwicklung der Hauskosten als Diagramm.
@@ -24,6 +24,19 @@ export interface ChartSeries {
   color: string
   /** Ein Wert je Periode, in der Reihenfolge von `labels`. null heisst „keine Angabe". */
   values: (number | null)[]
+  /**
+   * Wie die Reihe gezeichnet wird.
+   *
+   * `provisorisch` – eine Zahl, die noch nicht feststeht: eine Akontorechnung,
+   * die erst die Abrechnung ersetzt, die Prognose eines Zinses, der noch nicht
+   * bezahlt ist. Sie stapelt sich wie die anderen, aber schraffiert statt
+   * gefüllt, damit niemand sie für abgerechnet hält.
+   *
+   * `vergleich` – dieselbe Grösse zu einer anderen Zeit, etwa das Vorjahr.
+   * Sie stapelt sich nicht mit, sondern steht als Marke über der Säule
+   * beziehungsweise als dünne graue Linie.
+   */
+  art?: 'normal' | 'provisorisch' | 'vergleich'
 }
 
 export interface ChartPanel {
@@ -55,6 +68,17 @@ const MAX_BAR = 24
 const DOT_RADIUS = 4
 const STACK_HEIGHT = 150
 const LINE_HEIGHT = 116
+
+const istVergleich = (serie: ChartSeries): boolean => serie.art === 'vergleich'
+
+/**
+ * Die Schraffur des Provisorischen: 45°, in der Farbe der Reihe auf einem
+ * hellen Hauch derselben Farbe – so bleibt die Reihe erkennbar und ist doch
+ * sichtbar etwas anderes als eine gefüllte Fläche.
+ */
+function schraffurCss(color: string): string {
+  return `repeating-linear-gradient(45deg, ${color} 0 2px, transparent 2px 5px)`
+}
 
 // ------------------------------------------------------------------ Werkzeug
 
@@ -147,13 +171,25 @@ function panelHeight(panel: ChartPanel): number {
 
 export function HausChart({ data }: { data: ChartData }) {
   const { ref, width } = useWidth()
+  // useId liefert Zeichen wie « » oder :, die in url(#…) nicht taugen.
+  const musterId = `muster${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const [selected, setSelected] = useState<number | null>(null)
 
   const anzahl = data.labels.length
-  // Ohne eigene Wahl steht die jüngste Periode in der Werteanzeige: Das ist
-  // die Zahl, wegen der man den Bildschirm geöffnet hat.
-  const active = selected !== null && selected < anzahl ? selected : anzahl - 1
+  // Ohne eigene Wahl steht die jüngste Periode mit Zahlen in der
+  // Werteanzeige: Das ist die Zahl, wegen der man den Bildschirm geöffnet hat.
+  // Ein Dezember, der erst noch kommt, hat nur das Vorjahr zu bieten.
+  const juengste = useMemo(() => {
+    for (let index = data.labels.length - 1; index >= 0; index -= 1) {
+      const belegt = data.panels.some((panel) =>
+        panel.series.some((serie) => serie.art !== 'vergleich' && serie.values[index] != null),
+      )
+      if (belegt) return index
+    }
+    return data.labels.length - 1
+  }, [data])
+  const active = selected !== null && selected < anzahl ? selected : juengste
 
   const alleSerien = useMemo(
     () => data.panels.flatMap((panel) => panel.series),
@@ -202,9 +238,28 @@ export function HausChart({ data }: { data: ChartData }) {
             role="img"
             aria-label={beschreibung(data, panels)}
           >
+            <defs>
+              {alleSerien
+                .filter((serie) => serie.art === 'provisorisch')
+                .map((serie) => (
+                  <pattern
+                    key={serie.key}
+                    id={`${musterId}-${serie.key}`}
+                    width={5}
+                    height={5}
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(45)"
+                  >
+                    <rect width={5} height={5} fill={serie.color} opacity={0.18} />
+                    <rect width={2} height={5} fill={serie.color} />
+                  </pattern>
+                ))}
+            </defs>
+
             {panels.map((panel, index) => (
               <PanelBody
                 key={panel.id}
+                musterId={musterId}
                 panel={panel}
                 top={TOP_PAD + panels.slice(0, index).reduce((sum, p) => sum + panelHeight(p), 0)}
                 width={width}
@@ -287,6 +342,7 @@ function beschreibung(data: ChartData, panels: ChartPanel[]): string {
 // -------------------------------------------------------------------- Felder
 
 interface PanelBodyProps {
+  musterId: string
   panel: ChartPanel
   top: number
   width: number
@@ -296,7 +352,7 @@ interface PanelBodyProps {
   bandX: (index: number) => number
 }
 
-function PanelBody({ panel, top, width, band, barWidth, active, bandX }: PanelBodyProps) {
+function PanelBody({ musterId, panel, top, width, band, barWidth, active, bandX }: PanelBodyProps) {
   const plotTop = top + 20
   const plotBottom = top + panelHeight(panel) - 8
   const plotHeight = plotBottom - plotTop
@@ -308,14 +364,21 @@ function PanelBody({ panel, top, width, band, barWidth, active, bandX }: PanelBo
   // Gestapelt zählt die Summe der Reihen, als Linie jeder Wert für sich: Zwei
   // Preise übereinanderzulegen ergäbe eine Achse, auf der keiner von beiden
   // liegt.
+  //
+  // Eine Vergleichsreihe stapelt sich nicht mit, zählt aber für die Skala:
+  // Eine Marke über dem Rand wäre eine, die niemand sieht.
   const werte: number[] = []
   for (let index = 0; index < anzahl; index += 1) {
-    const spalte = panel.series
-      .map((serie) => serie.values[index])
-      .filter((wert): wert is number => wert !== null && wert !== undefined)
-    if (spalte.length === 0) continue
-    if (panel.kind === 'stapel') werte.push(spalte.reduce((sum, wert) => sum + wert, 0))
-    else werte.push(...spalte)
+    const wertVon = (serie: ChartSeries) => serie.values[index]
+    const istZahl = (wert: number | null | undefined): wert is number => wert !== null && wert !== undefined
+    const spalte = panel.series.filter((serie) => !istVergleich(serie)).map(wertVon).filter(istZahl)
+    const vergleich = panel.series.filter(istVergleich).map(wertVon).filter(istZahl)
+    if (panel.kind === 'stapel') {
+      if (spalte.length > 0) werte.push(spalte.reduce((sum, wert) => sum + wert, 0))
+      werte.push(...vergleich)
+    } else {
+      werte.push(...spalte, ...vergleich)
+    }
   }
 
   const scale =
@@ -368,14 +431,34 @@ function PanelBody({ panel, top, width, band, barWidth, active, bandX }: PanelBo
 
       {panel.kind === 'stapel' ? (
         Array.from({ length: anzahl }, (_, index) => (
-          <Stack
-            key={index}
-            series={panel.series}
-            index={index}
-            x={bandX(index) + (band - barWidth) / 2}
-            width={barWidth}
-            y={y}
-          />
+          <g key={index}>
+            <Stack
+              musterId={musterId}
+              series={panel.series.filter((serie) => !istVergleich(serie))}
+              index={index}
+              x={bandX(index) + (band - barWidth) / 2}
+              width={barWidth}
+              y={y}
+            />
+            {panel.series.filter(istVergleich).map((serie) => {
+              const wert = serie.values[index]
+              if (wert === null || wert === undefined) return null
+              // Die Marke ragt links und rechts über die Säule hinaus: So
+              // bleibt sie sichtbar, auch wo die Säule höher ist.
+              return (
+                <line
+                  key={serie.key}
+                  x1={bandX(index) + (band - barWidth) / 2 - 3}
+                  x2={bandX(index) + (band + barWidth) / 2 + 3}
+                  y1={y(wert)}
+                  y2={y(wert)}
+                  stroke={serie.color}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+              )
+            })}
+          </g>
         ))
       ) : (
         panel.series.map((serie) => (
@@ -395,12 +478,14 @@ function PanelBody({ panel, top, width, band, barWidth, active, bandX }: PanelBo
 }
 
 function Stack({
+  musterId,
   series,
   index,
   x,
   width,
   y,
 }: {
+  musterId: string
   series: ChartSeries[]
   index: number
   x: number
@@ -429,7 +514,11 @@ function Stack({
           <path
             key={teil.serie.key}
             d={barPath(x, yTop, width, höhe, position === teile.length - 1 ? 4 : 0)}
-            fill={teil.serie.color}
+            fill={
+              teil.serie.art === 'provisorisch'
+                ? `url(#${musterId}-${teil.serie.key})`
+                : teil.serie.color
+            }
           />
         )
       })}
@@ -460,7 +549,11 @@ function Line({
     .map((entry, position) => `${position === 0 ? 'M' : 'L'}${bandX(entry.index) + band / 2} ${y(entry.value)}`)
     .join(' ')
 
-  const letzter = gesetzt[gesetzt.length - 1]
+  // Die Vergleichslinie tritt zurück: dünner, kleinere Punkte, keine
+  // Beschriftung – sie ist der Massstab, nicht die Aussage.
+  const vergleich = istVergleich(series)
+  const letzter = vergleich ? undefined : gesetzt[gesetzt.length - 1]
+  const radius = vergleich ? DOT_RADIUS - 1 : DOT_RADIUS
 
   return (
     <g>
@@ -468,7 +561,7 @@ function Line({
         d={d}
         fill="none"
         stroke={series.color}
-        strokeWidth={2}
+        strokeWidth={vergleich ? 1.5 : 2}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -477,7 +570,7 @@ function Line({
           key={entry.index}
           cx={bandX(entry.index) + band / 2}
           cy={y(entry.value)}
-          r={entry.index === active ? DOT_RADIUS + 1 : DOT_RADIUS}
+          r={entry.index === active ? radius + 1 : radius}
           fill={series.color}
           // Der Ring in der Flächenfarbe hält den Punkt lesbar, wo er die
           // Linie kreuzt – eine Umrandung wäre Tinte ohne Aussage.
@@ -512,11 +605,33 @@ function Readout({
   index: number
   hidden: Set<string>
 }) {
-  const zeilen = data.panels.flatMap((panel) =>
-    panel.series
-      .filter((serie) => !hidden.has(serie.key) && serie.values[index] !== null)
-      .map((serie) => ({ serie, digits: panel.digits, unit: panel.unit })),
-  )
+  const zeilen = data.panels.flatMap((panel) => {
+    const sichtbar = panel.series.filter(
+      (serie) => !hidden.has(serie.key) && serie.values[index] !== null && serie.values[index] !== undefined,
+    )
+    const zeilenDesFelds = sichtbar.map((serie) => ({
+      key: serie.key,
+      label: serie.label,
+      color: serie.color,
+      art: serie.art ?? 'normal',
+      wert: serie.values[index] as number,
+      digits: panel.digits,
+    }))
+    // Bei einem Stapel aus mehreren Teilen gehört die Summe dazu – sie ist
+    // die Höhe der Säule, und die lässt sich am Bildschirm nicht nachrechnen.
+    const gestapelt = sichtbar.filter((serie) => !istVergleich(serie))
+    if (panel.kind === 'stapel' && gestapelt.length > 1) {
+      zeilenDesFelds.push({
+        key: `${panel.id}-summe`,
+        label: `Total ${panel.title}`,
+        color: '',
+        art: 'normal',
+        wert: gestapelt.reduce((sum, serie) => sum + (serie.values[index] ?? 0), 0),
+        digits: panel.digits,
+      })
+    }
+    return zeilenDesFelds
+  })
 
   if (zeilen.length === 0) return null
 
@@ -526,20 +641,24 @@ function Readout({
         {data.periods[index]}
       </p>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
-        {zeilen.map(({ serie, digits }) => (
-          <div key={serie.key} className="flex items-center justify-between gap-2">
+        {zeilen.map((zeile) => (
+          <div key={zeile.key} className="flex items-center justify-between gap-2">
             <dt className="flex min-w-0 items-center gap-1.5">
+              {zeile.color ? <Kennung color={zeile.color} art={zeile.art} aktiv /> : (
+                <span className="size-2.5 shrink-0" aria-hidden="true" />
+              )}
               <span
-                className="size-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: serie.color }}
-                aria-hidden="true"
-              />
-              <span className="truncate text-xs text-slate-600 dark:text-slate-300">
-                {serie.label}
+                className={`truncate text-xs ${
+                  zeile.color
+                    ? 'text-slate-600 dark:text-slate-300'
+                    : 'font-semibold text-slate-900 dark:text-slate-100'
+                }`}
+              >
+                {zeile.label}
               </span>
             </dt>
             <dd className="shrink-0 text-xs font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-              {formatTick(serie.values[index] as number, digits)}
+              {formatTick(zeile.wert, zeile.digits)}
             </dd>
           </div>
         ))}
@@ -573,19 +692,48 @@ function Legend({
                 : 'border-slate-200 bg-transparent text-slate-400 dark:border-slate-700 dark:text-slate-500'
             }`}
           >
-            <span
-              className="size-2.5 rounded-full border-2"
-              style={{
-                backgroundColor: aktiv ? serie.color : 'transparent',
-                borderColor: serie.color,
-              }}
-              aria-hidden="true"
-            />
+            <Kennung color={serie.color} art={serie.art ?? 'normal'} aktiv={aktiv} />
             {serie.label}
           </button>
         )
       })}
     </div>
+  )
+}
+
+/**
+ * Das Zeichen einer Reihe in Legende und Werteanzeige: ein Punkt für eine
+ * gewöhnliche Reihe, ein schraffierter für eine provisorische, ein Strich für
+ * den Vergleich – dieselbe Form wie im Diagramm, damit die Zuordnung ohne Farbe
+ * gelingt.
+ */
+function Kennung({
+  color,
+  art,
+  aktiv,
+}: {
+  color: string
+  art: NonNullable<ChartSeries['art']>
+  aktiv: boolean
+}) {
+  if (art === 'vergleich') {
+    return (
+      <span
+        className="h-0.5 w-3 shrink-0 rounded-full"
+        style={{ backgroundColor: aktiv ? color : 'transparent', outline: aktiv ? undefined : `1px solid ${color}` }}
+        aria-hidden="true"
+      />
+    )
+  }
+  return (
+    <span
+      className="size-2.5 shrink-0 rounded-full border-2"
+      style={{
+        background: aktiv ? (art === 'provisorisch' ? schraffurCss(color) : color) : 'transparent',
+        borderColor: color,
+      }}
+      aria-hidden="true"
+    />
   )
 }
 

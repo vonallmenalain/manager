@@ -1,4 +1,5 @@
 import {
+  abrechnungsstand,
   analyse,
   billSubject,
   billYear,
@@ -12,9 +13,15 @@ import {
   findPreviousYearEntry,
   formatAmount,
   formatMenge,
-  formatPercentChange,
   formatPeriod,
   formatPricePerUnit,
+  gleicherZeitraumVorjahr,
+  kurzerMonat,
+  kurzerZeitraum,
+  monateDesJahres,
+  monthListLabel,
+  monthName,
+  offenesAkonto,
   priceUnitLabel,
   priceValue,
   shortPeriodLabel,
@@ -24,6 +31,7 @@ import {
   type Division,
   type DivisionEntry,
   type ImportResult,
+  type Monat,
   type PeriodSummary,
   type Trend,
   type UtilityBill,
@@ -31,6 +39,18 @@ import {
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '../components/Button'
+import {
+  Abschnitt,
+  Abzeichen,
+  Fehlerbalken,
+  Kachel,
+  LEERER_TREND,
+  LoeschKnopf,
+  TrendZeichen,
+  Zeile,
+  ZeitraumWahl,
+  type Zeitraum,
+} from '../components/HausBausteine'
 import { HausChart, ShareBar, type ChartData, type ChartPanel, type ChartSeries } from '../components/HausChart'
 import { Modal, ModalCloseButton } from '../components/Modal'
 import { RechnungDetail, RechnungFormular } from '../components/HausRechnung'
@@ -44,56 +64,121 @@ import {
   useImportHausBill,
   useUpdateHausBill,
 } from '../lib/haus'
+import { Hypothek } from './Hypothek'
 
 /**
  * Der Bereich Haus: was das Haus verbraucht, was es kostet und wohin es sich
- * bewegt – Strom, Wasser, Abwasser und Kehricht.
+ * bewegt – Strom, Wasser, Abwasser und Kehricht, dazu die Hypothek.
  *
- * Aufgebaut wie die Frage, mit der man ihn öffnet: zuoberst die Filterzeile,
- * darunter die eine Zahl, um die es gerade geht, dann die Kennzahlen, die
- * Entwicklung als Diagramm und ganz unten die Rechnungen selbst. Wer nur
- * wissen will, ob es teurer wird, hört nach dem ersten Bildschirm auf zu
- * scrollen.
+ * Die Sparte wählt die Zeile unter dem Titel, und sie nimmt den ganzen
+ * Bildschirm mit. Die Hypothek steht dort als eigene Sparte neben den
+ * Nebenkosten: Sie hat andere Zahlen (Zinsen je Quartal, Amortisation), aber
+ * denselben Ort – wer wissen will, was das Haus kostet, sucht beides hier.
  */
 export function Haus() {
-  const query = useHausBills()
-  const [zeitraum, setZeitraum] = useState<Zeitraum>('alle')
   const [sparte, setSparte] = useLocalSetting<SparteWahl>(
     'haus.sparte',
-    ['alle', ...DIVISIONS],
+    ['alle', ...DIVISIONS, 'hypothek'],
     'alle',
   )
+  const query = useHausBills()
+  const bills = query.data?.bills
+  const divisions = useMemo(() => analyse(bills ?? []).divisions, [bills])
+
+  const wahl = <SpartenWahl divisions={divisions} value={sparte} onChange={setSparte} />
+  if (sparte === 'hypothek') return <Hypothek spartenWahl={wahl} />
+  return <Nebenkosten sparte={sparte} spartenWahl={wahl} />
+}
+
+/**
+ * Die Nebenkosten: Strom, Wasser, Abwasser und Kehricht.
+ *
+ * Aufgebaut wie die Frage, mit der man sie öffnet: zuoberst die eine Zahl, um
+ * die es gerade geht, dann die Kennzahlen, die Entwicklung als Diagramm und
+ * ganz unten die Rechnungen selbst. Wer nur wissen will, ob es teurer wird,
+ * hört nach dem ersten Bildschirm auf zu scrollen.
+ *
+ * Ist ein Jahr gewählt, zeigt das Diagramm die zwölf Monate statt der
+ * Abrechnungsperioden – eine einzelne Säule für ein Halbjahr sagt über den
+ * Verlauf nichts. Akontorechnungen, die noch keine Abrechnung kennt, stehen
+ * dann als provisorisch daneben.
+ */
+function Nebenkosten({ sparte, spartenWahl }: { sparte: NebenkostenWahl; spartenWahl: ReactNode }) {
+  const query = useHausBills()
+  const [zeitraum, setZeitraum] = useState<Zeitraum>('alle')
   const [sheet, setSheet] = useState<SheetState>(null)
 
   const bills = query.data?.bills
-  const { entries, akonto, years, divisions } = useMemo(() => analyse(bills ?? []), [bills])
+  const { entries, akonto, years } = useMemo(() => analyse(bills ?? []), [bills])
+  // Was von den Akontorechnungen noch nicht abgerechnet ist – provisorisch.
+  const akontoOffen = useMemo(() => offenesAkonto(akonto, entries), [akonto, entries])
 
+  const jahr = typeof zeitraum === 'number' ? zeitraum : null
   const gewaehlt = useMemo(
     () => entries.filter((entry) => passt(entry, zeitraum, sparte)),
     [entries, zeitraum, sparte],
   )
-  const vergleichsjahr = typeof zeitraum === 'number' ? zeitraum - 1 : null
-  const vorjahr = useMemo(
-    () =>
-      vergleichsjahr === null
-        ? []
-        : entries.filter((entry) => passt(entry, vergleichsjahr, sparte)),
-    [entries, vergleichsjahr, sparte],
+  const provisorisch = useMemo(
+    () => akontoOffen.filter((entry) => passt(entry, zeitraum, sparte)),
+    [akontoOffen, zeitraum, sparte],
   )
 
+  // Verglichen wird mit denselben Tagen des Vorjahres, wo es die gibt: Ein
+  // halbes Jahr gegen ein ganzes wäre eine Aussage über die Zahl der
+  // Rechnungen. Fehlen sie, bleibt es beim ganzen Vorjahr – mit Hinweis.
+  const { vergleich, vergleichLabel, gleicheTage } = useMemo(() => {
+    if (jahr === null) return { vergleich: null, vergleichLabel: null, gleicheTage: false }
+    const derSparte = entries.filter((entry) => sparte === 'alle' || entry.division === sparte)
+    const gleich = gleicherZeitraumVorjahr(gewaehlt, derSparte)
+    if (gleich) {
+      return {
+        vergleich: summarize(gleich.entries),
+        vergleichLabel: kurzerZeitraum(gleich.von, gleich.bis),
+        gleicheTage: true,
+      }
+    }
+    const vorjahr = entries.filter((entry) => passt(entry, jahr - 1, sparte))
+    return {
+      vergleich: vorjahr.length > 0 ? summarize(vorjahr) : null,
+      vergleichLabel: String(jahr - 1),
+      gleicheTage: false,
+    }
+  }, [entries, gewaehlt, jahr, sparte])
+
   const summe = summarize(gewaehlt)
-  const vergleich = vorjahr.length > 0 ? summarize(vorjahr) : null
-  const chart = useMemo(() => buildChart(gewaehlt, sparte), [gewaehlt, sparte])
+  const monate = useMemo(() => {
+    if (jahr === null) return null
+    const derSparte = (liste: DivisionEntry[]) =>
+      liste.filter((entry) => sparte === 'alle' || entry.division === sparte)
+    return {
+      jetzt: monateDesJahres(jahr, derSparte(entries), derSparte(akontoOffen)),
+      vorjahr: monateDesJahres(jahr - 1, derSparte(entries), []),
+    }
+  }, [entries, akontoOffen, jahr, sparte])
+
+  const chart = useMemo(
+    () =>
+      jahr !== null && monate
+        ? buildMonatsChart(jahr, monate.jetzt, monate.vorjahr, sparte)
+        : buildChart(gewaehlt, provisorisch, sparte),
+    [jahr, monate, gewaehlt, provisorisch, sparte],
+  )
 
   if (query.isLoading || !bills) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">Haus</h1>
+        {spartenWahl}
         <div className="h-40 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
         <div className="h-72 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
       </div>
     )
   }
+
+  const offeneAkontoRechnungen = new Set(akontoOffen.map((entry) => entry.bill.id))
+  const sparten = DIVISIONS.filter((division) =>
+    [...gewaehlt, ...provisorisch].some((entry) => entry.division === division),
+  )
 
   return (
     // Die Aktualisierung nach einer Änderung soll den Bildschirm nicht
@@ -106,6 +191,8 @@ export function Haus() {
         ) : null}
       </div>
 
+      {spartenWahl}
+
       {bills.length === 0 ? (
         <Leerzustand
           onImport={() => setSheet({ kind: 'import' })}
@@ -113,21 +200,35 @@ export function Haus() {
         />
       ) : (
         <>
-          <SpartenWahl divisions={divisions} value={sparte} onChange={setSparte} />
-
-          <Leitzahl summe={summe} vergleich={vergleich} vergleichsjahr={vergleichsjahr} sparte={sparte} entries={gewaehlt} />
+          <Leitzahl
+            summe={summe}
+            vergleich={vergleich}
+            vergleichLabel={vergleichLabel}
+            sparte={sparte}
+            entries={gewaehlt}
+            provisorisch={provisorisch}
+          />
 
           <Kennzahlen
             summe={summe}
             vergleich={vergleich}
-            vergleichsjahr={vergleichsjahr}
+            vergleichLabel={vergleichLabel}
+            gleicheTage={gleicheTage}
             kostenImKopf={summe.unit === null || summe.pricePerUnitHundredths === null}
           />
 
-          {chart.labels.length > 0 ? (
+          {jahr !== null && monate && sparten.length > 0 ? (
+            <Abrechnungsstand jahr={jahr} monate={monate.jetzt} divisions={sparten} />
+          ) : null}
+
+          {chart.labels.length > 0 && chart.panels.length > 0 ? (
             <Abschnitt
-              titel="Entwicklung"
-              hinweis="Reihen lassen sich unten ein- und ausblenden. Eine Spalte antippen zeigt ihre Werte."
+              titel={jahr !== null ? `Verlauf ${jahr}` : 'Entwicklung'}
+              hinweis={
+                jahr !== null
+                  ? `Je Monat, die Rechnungen gleichmässig auf ihre Tage verteilt. Schraffiert: Akonto, noch nicht abgerechnet. Grauer Strich: ${jahr - 1}. Eine Spalte antippen zeigt ihre Werte.`
+                  : 'Reihen lassen sich unten ein- und ausblenden. Schraffiert: Akonto, noch nicht abgerechnet. Eine Spalte antippen zeigt ihre Werte.'
+              }
             >
               <HausChart data={chart} />
             </Abschnitt>
@@ -145,6 +246,7 @@ export function Haus() {
 
           <Rechnungsliste
             bills={rechnungenIn([...gewaehlt, ...akonto.filter((e) => passt(e, zeitraum, sparte))])}
+            provisorisch={offeneAkontoRechnungen}
             onOpen={(bill) => setSheet({ kind: 'detail', bill })}
           />
 
@@ -181,8 +283,8 @@ export function Haus() {
   )
 }
 
-type Zeitraum = 'alle' | number
-type SparteWahl = 'alle' | Division
+type SparteWahl = 'alle' | Division | 'hypothek'
+type NebenkostenWahl = 'alle' | Division
 
 type SheetState =
   | null
@@ -191,7 +293,7 @@ type SheetState =
   | { kind: 'detail'; bill: UtilityBill }
   | { kind: 'bearbeiten'; bill: UtilityBill }
 
-function passt(entry: DivisionEntry, zeitraum: Zeitraum, sparte: SparteWahl): boolean {
+function passt(entry: DivisionEntry, zeitraum: Zeitraum, sparte: NebenkostenWahl): boolean {
   if (sparte !== 'alle' && entry.division !== sparte) return false
   if (zeitraum !== 'alle' && billYear(entry.bill) !== zeitraum) return false
   return true
@@ -223,10 +325,14 @@ const DIVISION_COLORS: Record<Division, string> = {
  * dem, was gerade gefragt ist – über alle Sparten hinweg nach Sparte, beim
  * Strom allein nach seinen drei Blöcken.
  */
-function buildChart(entries: DivisionEntry[], sparte: SparteWahl): ChartData {
+function buildChart(
+  entries: DivisionEntry[],
+  provisorisch: DivisionEntry[],
+  sparte: NebenkostenWahl,
+): ChartData {
   const perioden = [
     ...new Map(
-      entries.map((entry) => [
+      [...entries, ...provisorisch].map((entry) => [
         `${entry.bill.periodStart}|${entry.bill.periodEnd}`,
         { start: entry.bill.periodStart, end: entry.bill.periodEnd },
       ]),
@@ -274,6 +380,13 @@ function buildChart(entries: DivisionEntry[], sparte: SparteWahl): ChartData {
       const serie = kosten.find((eintrag) => eintrag.key === `kosten-${entry.division}`)
       if (serie) addiere(serie.values, spalte(entry), entry.costCents / 100)
     }
+  }
+
+  // Akonto, das noch keine Abrechnung kennt – als eigene, schraffierte Spalte.
+  if (provisorisch.length > 0) {
+    const serie = akontoSerie(sparte, leer())
+    for (const entry of provisorisch) addiere(serie.values, spalte(entry), entry.costCents / 100)
+    kosten.push(serie)
   }
   panels.push({ id: 'kosten', title: 'Kosten', unit: 'CHF', kind: 'stapel', digits: 2, series: kosten })
 
@@ -362,45 +475,176 @@ function buildChart(entries: DivisionEntry[], sparte: SparteWahl): ChartData {
   }
 }
 
+/**
+ * Die Reihe für das Akonto: in der Farbe der Sparte, wenn nur eine gewählt ist –
+ * über alle Sparten in der Farbe der Preise, damit sie sich von keiner Sparte
+ * eine Farbe borgt, die dort etwas anderes heisst.
+ */
+function akontoSerie(sparte: NebenkostenWahl, values: (number | null)[]): ChartSeries {
+  return {
+    key: 'akonto',
+    label: 'Akonto',
+    color: sparte === 'alle' ? 'var(--haus-preis)' : DIVISION_COLORS[sparte],
+    art: 'provisorisch',
+    values,
+  }
+}
+
+/**
+ * Das Diagramm eines einzelnen Jahres: zwölf Monate statt der
+ * Abrechnungsperioden.
+ *
+ * Jede Abrechnung ist gleichmässig auf ihre Tage verteilt (siehe
+ * `haus-verlauf.ts`). Darüber das Akonto, soweit es noch nicht abgerechnet
+ * ist, schraffiert – und als grauer Strich derselbe Monat des Vorjahres. Der
+ * Strich stapelt sich nicht mit: Er ist Massstab, nicht Teil der Kosten.
+ */
+function buildMonatsChart(
+  jahr: number,
+  monate: Monat[],
+  vormonate: Monat[],
+  sparte: NebenkostenWahl,
+): ChartData {
+  const summe = (liste: DivisionEntry[], wert: (entry: DivisionEntry) => number | null): number | null => {
+    const werte = liste.map(wert).filter((zahl): zahl is number => zahl !== null)
+    return werte.length === 0 ? null : werte.reduce((sum, zahl) => sum + zahl, 0)
+  }
+  const derSparte = (liste: DivisionEntry[], division: Division) =>
+    liste.filter((entry) => entry.division === division)
+
+  const vorhanden = new Set(monate.flatMap((monat) => [...monat.entries, ...monat.akonto]).map((e) => e.division))
+  const vorjahr = `${jahr - 1}`
+  const panels: ChartPanel[] = []
+
+  // 1. Kosten, gestapelt wie im Gesamtbild: beim Strom nach Block, sonst nach Sparte.
+  const kosten: ChartSeries[] =
+    sparte === 'strom'
+      ? COST_GROUPS.map((group) => ({
+          key: `kosten-${group}`,
+          label: COST_GROUP_SHORT[group],
+          color: `var(--haus-${group})`,
+          values: monate.map((monat) => summe(monat.entries, (entry) => (entry.groupCents?.[group] ?? 0) / 100)),
+        }))
+      : DIVISIONS.filter((division) => vorhanden.has(division)).map((division) => ({
+          key: `kosten-${division}`,
+          label: DIVISION_LABELS[division],
+          color: DIVISION_COLORS[division],
+          values: monate.map((monat) => summe(derSparte(monat.entries, division), (entry) => entry.costCents / 100)),
+        }))
+  kosten.push(akontoSerie(sparte, monate.map((monat) => summe(monat.akonto, (entry) => entry.costCents / 100))))
+  kosten.push({
+    key: 'kosten-vorjahr',
+    label: `Kosten ${vorjahr}`,
+    color: 'var(--haus-vorjahr)',
+    art: 'vergleich',
+    values: vormonate.map((monat) => summe(monat.entries, (entry) => entry.costCents / 100)),
+  })
+  panels.push({ id: 'kosten', title: 'Kosten', unit: 'CHF', kind: 'stapel', digits: 2, series: kosten })
+
+  // 2. Strom in Kilowattstunden, nach Tarif.
+  if (vorhanden.has('strom')) {
+    const stromVon = (monat: Monat) => derSparte(monat.entries, 'strom')
+    panels.push({
+      id: 'kwh',
+      title: 'Stromverbrauch',
+      unit: 'kWh',
+      kind: 'stapel',
+      digits: 0,
+      series: [
+        {
+          key: 'hochtarif',
+          label: 'Hochtarif',
+          color: 'var(--haus-hochtarif)',
+          values: monate.map((monat) => summe(stromVon(monat), (entry) => entry.highQuantity)),
+        },
+        {
+          key: 'niedertarif',
+          label: 'Niedertarif',
+          color: 'var(--haus-niedertarif)',
+          values: monate.map((monat) => summe(stromVon(monat), (entry) => entry.lowQuantity)),
+        },
+        {
+          key: 'kwh-vorjahr',
+          label: `kWh ${vorjahr}`,
+          color: 'var(--haus-vorjahr)',
+          art: 'vergleich',
+          values: vormonate.map((monat) => summe(stromVon(monat), (entry) => entry.quantity)),
+        },
+      ],
+    })
+  }
+
+  // 3. Wasser in Kubikmetern – das Abwasser läuft über denselben Zähler und
+  // wird deshalb nicht dazugezählt (siehe buildChart).
+  if (vorhanden.has('wasser') || vorhanden.has('abwasser')) {
+    const kubik = (monat: Monat): number | null => {
+      const mengen = monat.entries
+        .filter((entry) => DIVISION_UNITS[entry.division] === 'm³' && entry.quantity !== null)
+        .map((entry) => entry.quantity as number)
+      return mengen.length === 0 ? null : Math.max(...mengen)
+    }
+    panels.push({
+      id: 'm3',
+      title: 'Wasserverbrauch',
+      unit: 'm³',
+      kind: 'stapel',
+      digits: 1,
+      series: [
+        { key: 'wassermenge', label: 'Verbrauch', color: 'var(--haus-wasser)', values: monate.map(kubik) },
+        { key: 'm3-vorjahr', label: `m³ ${vorjahr}`, color: 'var(--haus-vorjahr)', art: 'vergleich', values: vormonate.map(kubik) },
+      ],
+    })
+  }
+
+  // 4. Ø Preis je Einheit – innerhalb einer Abrechnung gleich, deshalb eine
+  // Treppe: Sie zeigt, ab welchem Monat der neue Tarif gilt.
+  for (const einheit of ['kWh', 'm³'] as const) {
+    const sparten = DIVISIONS.filter((division) => vorhanden.has(division) && DIVISION_UNITS[division] === einheit)
+    if (sparten.length === 0) continue
+    const preis = (liste: DivisionEntry[]): number | null => {
+      const kostenSumme = summe(liste, (entry) => entry.costCents)
+      const menge = summe(liste, (entry) => entry.quantity)
+      if (kostenSumme === null || menge === null || menge <= 0) return null
+      return priceValue(Math.round((kostenSumme * 100) / menge), einheit)
+    }
+    const series: ChartSeries[] = sparten.map((division) => ({
+      key: `preis-${division}`,
+      label: `Ø ${DIVISION_LABELS[division]}`,
+      color: sparten.length > 1 ? DIVISION_COLORS[division] : 'var(--haus-preis)',
+      values: monate.map((monat) => preis(derSparte(monat.entries, division))),
+    }))
+    const [einzige] = sparten
+    if (sparten.length === 1 && einzige) {
+      series.push({
+        key: `preis-vorjahr-${einheit}`,
+        label: `Ø Preis ${vorjahr}`,
+        color: 'var(--haus-vorjahr)',
+        art: 'vergleich',
+        values: vormonate.map((monat) => preis(derSparte(monat.entries, einzige))),
+      })
+    }
+    panels.push({ id: `preis-${einheit}`, title: 'Ø Preis', unit: priceUnitLabel(einheit).label, kind: 'linie', digits: 2, series })
+  }
+
+  return {
+    labels: monate.map((monat) => kurzerMonat(monat.month)),
+    periods: monate.map((monat) => `${monthName(monat.month)} ${jahr}`),
+    // Ein Feld, in dem dieses Jahr nichts steht, bleibt weg – auch wenn das
+    // Vorjahr dort etwas hätte.
+    panels: panels.filter((panel) =>
+      panel.series.some((serie) => serie.art !== 'vergleich' && serie.values.some((v) => v !== null)),
+    ),
+  }
+}
+
 // ------------------------------------------------------------------- Filter
 
 /**
- * Die eine Filterzeile über allem, was sie betrifft.
+ * Welche Sparte gezeigt wird – die Wahl überlebt das Schliessen der App.
  *
- * Sie schaltet den ganzen Bildschirm um, nicht nur ein Diagramm: Zwei Kacheln,
- * die sich auf verschiedene Zeiträume beziehen, sind schlimmer als eine
- * Angabe zu wenig.
+ * Die Hypothek steht hinter einem Trennstrich: Sie ist eine Sparte des Hauses,
+ * aber keine der Nebenkosten, und „Alle Sparten" zählt sie nicht mit.
  */
-function ZeitraumWahl({
-  years,
-  value,
-  onChange,
-}: {
-  years: number[]
-  value: Zeitraum
-  onChange: (value: Zeitraum) => void
-}) {
-  return (
-    <div className="-mx-1 flex max-w-[60%] gap-1 overflow-x-auto px-1">
-      {(['alle', ...years] as Zeitraum[]).map((option) => (
-        <button
-          key={String(option)}
-          onClick={() => onChange(option)}
-          aria-pressed={value === option}
-          className={`min-h-9 shrink-0 rounded-full px-3 text-sm font-semibold transition ${
-            value === option
-              ? 'bg-brand-800 text-white'
-              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-          }`}
-        >
-          {option === 'alle' ? 'Alles' : option}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** Welche Sparte gezeigt wird – die Wahl überlebt das Schliessen der App. */
 function SpartenWahl({
   divisions,
   value,
@@ -410,35 +654,54 @@ function SpartenWahl({
   value: SparteWahl
   onChange: (value: SparteWahl) => void
 }) {
-  if (divisions.length <= 1) return null
+  const nebenkosten: NebenkostenWahl[] = divisions.length > 1 ? ['alle', ...divisions] : ['alle']
 
   return (
-    <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
-      {(['alle', ...divisions] as SparteWahl[]).map((option) => {
-        const aktiv = value === option
-        return (
-          <button
-            key={option}
-            onClick={() => onChange(option)}
-            aria-pressed={aktiv}
-            className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition ${
-              aktiv
-                ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                : 'border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300'
-            }`}
-          >
-            {option !== 'alle' ? (
-              <span
-                className="size-2.5 rounded-full"
-                style={{ backgroundColor: DIVISION_COLORS[option] }}
-                aria-hidden="true"
-              />
-            ) : null}
-            {option === 'alle' ? 'Alle Sparten' : DIVISION_LABELS[option]}
-          </button>
-        )
-      })}
+    <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1">
+      {nebenkosten.map((option) => (
+        <SpartenKnopf
+          key={option}
+          aktiv={value === option}
+          onClick={() => onChange(option)}
+          farbe={option === 'alle' ? null : DIVISION_COLORS[option]}
+        >
+          {option === 'alle' ? (divisions.length > 1 ? 'Alle Sparten' : 'Nebenkosten') : DIVISION_LABELS[option]}
+        </SpartenKnopf>
+      ))}
+      <span className="mx-0.5 h-6 w-px shrink-0 bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
+      <SpartenKnopf aktiv={value === 'hypothek'} onClick={() => onChange('hypothek')} farbe="var(--hypothek-marke)">
+        Hypothek
+      </SpartenKnopf>
     </div>
+  )
+}
+
+function SpartenKnopf({
+  aktiv,
+  onClick,
+  farbe,
+  children,
+}: {
+  aktiv: boolean
+  onClick: () => void
+  farbe: string | null
+  children: ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={aktiv}
+      className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition ${
+        aktiv
+          ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+          : 'border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300'
+      }`}
+    >
+      {farbe ? (
+        <span className="size-2.5 rounded-full" style={{ backgroundColor: farbe }} aria-hidden="true" />
+      ) : null}
+      {children}
+    </button>
   )
 }
 
@@ -455,15 +718,18 @@ function SpartenWahl({
 function Leitzahl({
   summe,
   vergleich,
-  vergleichsjahr,
+  vergleichLabel,
   sparte,
   entries,
+  provisorisch,
 }: {
   summe: PeriodSummary
   vergleich: PeriodSummary | null
-  vergleichsjahr: number | null
-  sparte: SparteWahl
+  vergleichLabel: string | null
+  sparte: NebenkostenWahl
   entries: DivisionEntry[]
+  /** Akonto, das noch keine Abrechnung kennt. */
+  provisorisch: DivisionEntry[]
 }) {
   const alsPreis = summe.unit !== null && summe.pricePerUnitHundredths !== null
   const trend = alsPreis
@@ -476,14 +742,24 @@ function Leitzahl({
           entries[0]?.bill.periodStart ?? '',
           entries[entries.length - 1]?.bill.periodEnd ?? '',
         )}`
-      : 'Noch nichts erfasst'
+      : 'Noch nichts abgerechnet'
+
+  const akontoVon = provisorisch.reduce<string | null>(
+    (min, entry) => (min === null || entry.bill.periodStart < min ? entry.bill.periodStart : min),
+    null,
+  )
+  const akontoBis = provisorisch.reduce<string | null>(
+    (max, entry) => (max === null || entry.bill.periodEnd > max ? entry.bill.periodEnd : max),
+    null,
+  )
+  const akontoCents = provisorisch.reduce((sum, entry) => sum + entry.costCents, 0)
 
   return (
     <section className="rounded-2xl bg-brand-800 p-4 text-white">
       <p className="text-sm text-white/70">
         {alsPreis
-          ? `Ø Preis ${sparte === 'alle' ? '' : DIVISION_LABELS[sparte as Division]}`.trim()
-          : `Kosten ${sparte === 'alle' ? 'gesamt' : DIVISION_LABELS[sparte as Division]}`}
+          ? `Ø Preis ${sparte === 'alle' ? '' : DIVISION_LABELS[sparte]}`.trim()
+          : `Kosten ${sparte === 'alle' ? 'gesamt' : DIVISION_LABELS[sparte]}`}
       </p>
       <p className="mt-1 flex items-baseline gap-2">
         {/* Der Blickfang der Seite – bewusst mit den normalen Ziffernbreiten:
@@ -498,14 +774,24 @@ function Leitzahl({
         </span>
       </p>
 
-      {trend.ratio !== null && vergleichsjahr !== null ? (
+      {trend.ratio !== null && vergleichLabel !== null ? (
         <p className="mt-2 text-sm">
           <TrendZeichen trend={trend} hell />
-          <span className="text-white/80"> gegenüber {vergleichsjahr}</span>
+          <span className="text-white/80"> gegenüber {vergleichLabel}</span>
         </p>
       ) : null}
 
-      <p className="mt-3 border-t border-white/15 pt-3 text-sm text-white/70">{spanne}</p>
+      <div className="mt-3 space-y-1 border-t border-white/15 pt-3 text-sm text-white/70">
+        <p>{spanne}</p>
+        {akontoVon !== null && akontoBis !== null ? (
+          <p className="flex flex-wrap items-center gap-x-1.5">
+            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold text-white">
+              provisorisch
+            </span>
+            Akonto {kurzerZeitraum(akontoVon, akontoBis)} · CHF {formatAmount(akontoCents)}
+          </p>
+        ) : null}
+      </div>
     </section>
   )
 }
@@ -513,12 +799,16 @@ function Leitzahl({
 function Kennzahlen({
   summe,
   vergleich,
-  vergleichsjahr,
+  vergleichLabel,
+  gleicheTage,
   kostenImKopf,
 }: {
   summe: PeriodSummary
   vergleich: PeriodSummary | null
-  vergleichsjahr: number | null
+  /** Womit verglichen wird: „Jan–Jun 2025" bei denselben Tagen, sonst das Vorjahr. */
+  vergleichLabel: string | null
+  /** Ob der Vergleich dieselben Tage des Vorjahres abdeckt. */
+  gleicheTage: boolean
   /** Ob die Gesamtkosten schon in der Kachel darüber stehen. */
   kostenImKopf: boolean
 }) {
@@ -537,17 +827,21 @@ function Kennzahlen({
    * Unterschied in der abgedeckten Zeit steht deshalb kein Pfeil, sondern der
    * Grund. Die hochgerechneten Kacheln daneben bleiben davon unberührt: Sie
    * sind gerade für diesen Fall gebaut.
+   *
+   * Meist kommt es gar nicht so weit: Für ein gewähltes Jahr wird mit
+   * denselben Tagen des Vorjahres verglichen, wo es die gibt (siehe
+   * `gleicherZeitraumVorjahr`) – dann decken beide gleich viele Tage ab.
    */
   const spanne = Math.max(summe.days, vergleich?.days ?? 0)
   const summenVergleichbar =
     vergleich !== null &&
     summe.days > 0 &&
     vergleich.days > 0 &&
-    Math.abs(summe.days - vergleich.days) / spanne <= 0.1
+    (gleicheTage || Math.abs(summe.days - vergleich.days) / spanne <= 0.1)
 
   const ungleich =
-    vergleich !== null && vergleichsjahr !== null && !summenVergleichbar
-      ? `${vergleichsjahr} deckt ${vergleich.days} statt ${summe.days} Tage ab`
+    vergleich !== null && vergleichLabel !== null && !summenVergleichbar
+      ? `${vergleichLabel} deckt ${vergleich.days} statt ${summe.days} Tage ab`
       : undefined
 
   const einheit = summe.unit
@@ -575,7 +869,7 @@ function Kennzahlen({
               ? trendBetween(summe.totalCostCents, vergleich?.totalCostCents ?? null)
               : LEERER_TREND
         }
-        vergleichsjahr={vergleichsjahr}
+        vergleich={vergleichLabel}
         hinweis={kostenImKopf ? 'Aus der Periodenlänge hochgerechnet' : ungleich}
       />
       <Kachel
@@ -583,7 +877,7 @@ function Kennzahlen({
         wert={proMonat === null ? '–' : formatAmount(Math.round(proMonat))}
         einheit="CHF"
         trend={trendBetween(proMonat, vergleichProMonat)}
-        vergleichsjahr={vergleichsjahr}
+        vergleich={vergleichLabel}
         hinweis="Aus der Periodenlänge hochgerechnet"
       />
       {einheit !== null ? (
@@ -597,7 +891,7 @@ function Kennzahlen({
                 ? trendBetween(summe.quantity, vergleich?.quantity ?? null)
                 : LEERER_TREND
             }
-            vergleichsjahr={vergleichsjahr}
+            vergleich={vergleichLabel}
             hinweis={ungleich}
           />
           <Kachel
@@ -609,7 +903,7 @@ function Kennzahlen({
                 ? trendBetween(summe.quantityPerDay, vergleich?.quantityPerDay ?? null)
                 : LEERER_TREND
             }
-            vergleichsjahr={vergleichsjahr}
+            vergleich={vergleichLabel}
             hinweis="Macht ungleich lange Perioden vergleichbar"
           />
         </>
@@ -633,7 +927,7 @@ function Kennzahlen({
                     ? trendBetween(eintrag.quantity, davor?.quantity ?? null)
                     : LEERER_TREND
                 }
-                vergleichsjahr={vergleichsjahr}
+                vergleich={vergleichLabel}
                 hinweis={ungleich}
               />
             )
@@ -643,72 +937,150 @@ function Kennzahlen({
   )
 }
 
-const LEERER_TREND: Trend = { ratio: null, direction: 'gleich', delta: null }
+// ------------------------------------------------------------ Abrechnungsstand
 
-function Kachel({
-  label,
-  wert,
-  einheit,
-  trend,
-  vergleichsjahr,
-  hinweis,
+type Monatsstatus = 'abgerechnet' | 'akonto' | 'offen'
+
+/**
+ * Wo das gewählte Jahr steht: je Sparte zwölf Felder – abgerechnet, mit
+ * Akonto erst vorausbezahlt, oder noch offen. Darunter die Beträge dazu.
+ *
+ * Die Antwort auf die Frage, mit der man ein angefangenes Jahr öffnet: Was
+ * davon ist schon verrechnet, und was kann noch kommen?
+ */
+function Abrechnungsstand({
+  jahr,
+  monate,
+  divisions,
 }: {
-  label: string
-  wert: string
-  einheit: string
-  trend: Trend
-  vergleichsjahr: number | null
-  hinweis?: string
+  jahr: number
+  monate: Monat[]
+  divisions: Division[]
 }) {
+  const stand = abrechnungsstand(monate, divisions)
+  const abgerechnet = monate.reduce((sum, monat) => sum + summarize(monat.entries).totalCostCents, 0)
+  const akonto = monate.reduce(
+    (sum, monat) => sum + monat.akonto.reduce((teil, entry) => teil + entry.costCents, 0),
+    0,
+  )
+
+  const status = (monat: { tage: number; abgerechnet: number; akonto: number }): Monatsstatus =>
+    monat.abgerechnet * 2 >= monat.tage ? 'abgerechnet' : monat.akonto * 2 >= monat.tage ? 'akonto' : 'offen'
+
+  // Bei einer einzelnen Sparte sagt ein Satz, welche Monate wo stehen.
+  const einzige = stand.length === 1 ? stand[0] : undefined
+  const monateMit = (art: Monatsstatus) =>
+    einzige ? einzige.monate.filter((monat) => status(monat) === art).map((monat) => monat.month) : []
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-0.5 flex items-baseline gap-1">
-        <span className="text-xl font-bold text-slate-900 dark:text-slate-100">{wert}</span>
-        <span className="text-xs text-slate-400 dark:text-slate-500">{einheit}</span>
-      </p>
-      {trend.ratio !== null && vergleichsjahr !== null ? (
-        <p className="mt-1 text-xs">
-          <TrendZeichen trend={trend} />
-          <span className="text-slate-400 dark:text-slate-500"> vs. {vergleichsjahr}</span>
+    <Abschnitt
+      titel={`Stand ${jahr}`}
+      hinweis="Je Monat: abgerechnet, mit Akonto erst vorausbezahlt – oder noch offen."
+    >
+      <div className="space-y-1.5">
+        {stand.map(({ division, monate: monatsStand }) => (
+          <div key={division} className="flex items-center gap-2">
+            {stand.length > 1 ? (
+              <span className="w-[4.5rem] shrink-0 truncate text-xs text-slate-600 dark:text-slate-300">
+                {DIVISION_LABELS[division]}
+              </span>
+            ) : null}
+            <div className="grid flex-1 grid-cols-12 gap-0.5">
+              {monatsStand.map((monat) => (
+                <MonatsFeld key={monat.month} monat={monat} farbe={DIVISION_COLORS[division]} jahr={jahr} sparte={division} />
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex gap-2" aria-hidden="true">
+          {stand.length > 1 ? <span className="w-[4.5rem] shrink-0" /> : null}
+          <div className="grid flex-1 grid-cols-12 gap-0.5 text-center text-[10px] text-slate-400 dark:text-slate-500">
+            {monate.map((monat) => (
+              <span key={monat.month}>{kurzerMonat(monat.month).charAt(0)}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {einzige ? (
+        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          {[
+            monateMit('abgerechnet').length > 0 ? `Abgerechnet ${monthListLabel(monateMit('abgerechnet'))}` : null,
+            monateMit('akonto').length > 0 ? `Akonto ${monthListLabel(monateMit('akonto'))}` : null,
+            monateMit('offen').length > 0 ? `offen ${monthListLabel(monateMit('offen'))}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
-      ) : hinweis ? (
-        <p className="mt-1 text-[11px] leading-tight text-slate-400 dark:text-slate-500">{hinweis}</p>
+      ) : null}
+
+      <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-sm dark:border-slate-800">
+        <Zeile label="Abgerechnet" value={`CHF ${formatAmount(abgerechnet)}`} />
+        {akonto > 0 ? (
+          <Zeile
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                Akonto <Abzeichen ton="hinweis">provisorisch</Abzeichen>
+              </span>
+            }
+            value={`CHF ${formatAmount(akonto)}`}
+          />
+        ) : null}
+        {akonto > 0 ? (
+          <div className="border-t border-slate-100 pt-1.5 dark:border-slate-800">
+            <Zeile label={`Bisher ${jahr}`} value={`CHF ${formatAmount(abgerechnet + akonto)}`} stark />
+          </div>
+        ) : null}
+      </dl>
+    </Abschnitt>
+  )
+}
+
+/**
+ * Ein Monat im Abrechnungsstand: gefüllt, so weit er abgerechnet ist,
+ * schraffiert, so weit ihn nur ein Akonto deckt. Die Anteile folgen den Tagen –
+ * eine Abrechnung bis zum 20. füllt zwei Drittel.
+ */
+function MonatsFeld({
+  monat,
+  farbe,
+  jahr,
+  sparte,
+}: {
+  monat: { month: number; tage: number; abgerechnet: number; akonto: number }
+  farbe: string
+  jahr: number
+  sparte: Division
+}) {
+  const abgerechnet = (monat.abgerechnet / monat.tage) * 100
+  const akonto = (monat.akonto / monat.tage) * 100
+  const beschreibung = `${DIVISION_LABELS[sparte]}, ${monthName(monat.month)} ${jahr}: ${
+    abgerechnet >= 50 ? 'abgerechnet' : akonto >= 50 ? 'Akonto, provisorisch' : 'offen'
+  }`
+
+  return (
+    <div
+      role="img"
+      aria-label={beschreibung}
+      title={beschreibung}
+      className="flex h-6 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800"
+    >
+      {abgerechnet > 0 ? <div style={{ width: `${abgerechnet}%`, backgroundColor: farbe }} /> : null}
+      {akonto > 0 ? (
+        <div
+          style={{
+            width: `${akonto}%`,
+            background: `repeating-linear-gradient(45deg, ${farbe} 0 2px, transparent 2px 5px)`,
+          }}
+        />
       ) : null}
     </div>
   )
 }
 
-/**
- * Richtung und Ausmass einer Veränderung.
- *
- * Der Pfeil steht neben der Zahl und nicht statt ihr: Farbe allein sagt einem
- * farbfehlsichtigen Auge nichts. Weniger ist hier immer das Bessere – bei
- * Verbrauch wie bei Kosten.
- */
-function TrendZeichen({ trend, hell }: { trend: Trend; hell?: boolean }) {
-  if (trend.ratio === null) return null
-
-  const pfeil = trend.direction === 'steigend' ? '▲' : trend.direction === 'sinkend' ? '▼' : '▬'
-  const farbe = hell
-    ? 'text-white'
-    : trend.direction === 'gleich'
-      ? 'text-slate-500 dark:text-slate-400'
-      : trend.direction === 'sinkend'
-        ? 'text-emerald-700 dark:text-emerald-400'
-        : 'text-amber-700 dark:text-amber-400'
-
-  return (
-    <span className={`font-semibold tabular-nums ${farbe}`}>
-      <span aria-hidden="true">{pfeil} </span>
-      {formatPercentChange(trend.ratio)}
-    </span>
-  )
-}
-
 // ---------------------------------------------------------------- Aufteilung
 
-function Aufteilung({ summe, sparte }: { summe: PeriodSummary; sparte: SparteWahl }) {
+function Aufteilung({ summe, sparte }: { summe: PeriodSummary; sparte: NebenkostenWahl }) {
   if (summe.totalCostCents <= 0) return null
 
   // Über alle Sparten hinweg nach Sparte, beim Strom allein nach seinen
@@ -850,7 +1222,7 @@ function Zahlungen({
 }: {
   abrechnungen: DivisionEntry[]
   akonto: DivisionEntry[]
-  sparte: SparteWahl
+  sparte: NebenkostenWahl
 }) {
   const schlussRechnungen = rechnungenIn(abrechnungen)
   const akontoRechnungen = rechnungenIn(akonto)
@@ -907,28 +1279,16 @@ function Zahlungen({
   )
 }
 
-function Zeile({ label, value, stark }: { label: string; value: string; stark?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className={`text-slate-600 dark:text-slate-300 ${stark ? 'font-semibold' : ''}`}>{label}</dt>
-      <dd
-        className={`tabular-nums text-slate-900 dark:text-slate-100 ${
-          stark ? 'font-bold' : 'font-semibold'
-        }`}
-      >
-        {value}
-      </dd>
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------- Rechnungen
 
 function Rechnungsliste({
   bills,
+  provisorisch,
   onOpen,
 }: {
   bills: UtilityBill[]
+  /** Die Akontorechnungen, für die noch keine Abrechnung vorliegt. */
+  provisorisch: Set<string>
   onOpen: (bill: UtilityBill) => void
 }) {
   if (bills.length === 0) return null
@@ -943,8 +1303,17 @@ function Rechnungsliste({
               className="flex w-full items-center justify-between gap-3 py-3 text-left"
             >
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-slate-100">
                   {formatPeriod(bill.periodStart, bill.periodEnd)}
+                  {/* Ein Akonto ist eine Vorauszahlung: provisorisch, bis die
+                      Abrechnung kommt, danach in ihr verrechnet. */}
+                  {bill.kind === 'akonto' ? (
+                    provisorisch.has(bill.id) ? (
+                      <Abzeichen ton="hinweis">provisorisch</Abzeichen>
+                    ) : (
+                      <Abzeichen>verrechnet</Abzeichen>
+                    )
+                  ) : null}
                 </span>
                 <span className="block text-xs text-slate-500 dark:text-slate-400">
                   {BILL_KIND_LABELS[bill.kind]} Nr. {bill.invoiceNumber} · {billSubject(bill)}
@@ -1019,33 +1388,6 @@ function DetailDialog({
         </p>
       ) : null}
     </Modal>
-  )
-}
-
-/**
- * Löschen trägt die Warnfarbe in der Schrift und nicht als Fläche – so hält es
- * die App überall, wo etwas verschwindet. Ein roter Block neben dem blauen
- * Knopf sähe aus wie die zweite Hauptsache.
- */
-function LoeschKnopf({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="min-h-12 rounded-xl px-5 text-base font-semibold text-red-600 transition
-        disabled:opacity-60 active:bg-red-50 dark:text-red-400 dark:active:bg-red-950/40"
-    >
-      {children}
-    </button>
   )
 }
 
@@ -1281,36 +1623,6 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
 }
 
 // ------------------------------------------------------------------ Bausteine
-
-function Abschnitt({
-  titel,
-  hinweis,
-  children,
-}: {
-  titel: string
-  hinweis?: string
-  children: ReactNode
-}) {
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{titel}</h2>
-      {hinweis ? (
-        <p className="mb-3 mt-0.5 text-xs text-slate-500 dark:text-slate-400">{hinweis}</p>
-      ) : (
-        <div className="mb-3" />
-      )}
-      {children}
-    </section>
-  )
-}
-
-function Fehlerbalken({ text }: { text: string }) {
-  return (
-    <p className="mb-3 rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200">
-      {text}
-    </p>
-  )
-}
 
 function Leerzustand({ onImport, onManuell }: { onImport: () => void; onManuell: () => void }) {
   return (

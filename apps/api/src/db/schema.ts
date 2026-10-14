@@ -605,3 +605,112 @@ export const utilityBills = sqliteTable(
 
 export type UtilityBillRow = typeof utilityBills.$inferSelect
 export type NewUtilityBillRow = typeof utilityBills.$inferInsert
+
+/**
+ * Was für die ganze Hypothek gilt: Liegenschaftswert, Ausgangslage der
+ * Amortisation, Übertrag aus der eigenen Tabelle und der Referenzzins der
+ * SARON-Hypotheken. Genau eine Zeile – `id` ist immer 'haus'.
+ *
+ * Eine eigene Tabelle statt Spalten an den Hypotheken: Der SARON gilt für alle
+ * SARON-Hypotheken zugleich, und der Betrag, von dem aus amortisiert wird,
+ * bleibt stehen, auch wenn einzelne Hypotheken auslaufen und ersetzt werden.
+ */
+export const mortgageSettings = sqliteTable('mortgage_settings', {
+  id: text('id').primaryKey(),
+  propertyValueCents: integer('property_value_cents').notNull().default(0),
+  mortgageTotalCents: integer('mortgage_total_cents').notNull().default(0),
+  firstMortgageCents: integer('first_mortgage_cents').notNull().default(0),
+  amortizationPerYearCents: integer('amortization_per_year_cents').notNull().default(0),
+  /** Bereits amortisiert, bevor hier erfasst wurde. */
+  carriedOverCents: integer('carried_over_cents').notNull().default(0),
+  /** Stichtag des Übertrags – ab dem Tag danach zählen die einzelnen Tranchen. */
+  carriedOverDate: text('carried_over_date'),
+  /** In Tausendstelprozent: 0.125 % → 125. */
+  referenceRateMillipercent: integer('reference_rate_millipercent').notNull().default(0),
+  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: text('updated_at').notNull().default(now),
+})
+
+export type MortgageSettingsRow = typeof mortgageSettings.$inferSelect
+
+/**
+ * Die einzelnen Hypotheken – je Vertrag eine Zeile, Festhypothek oder
+ * SARON-Hypothek.
+ *
+ * Abgelaufene bleiben stehen: An ihnen hängen die bezahlten Zinsen der
+ * Quartale, in denen sie liefen.
+ */
+export const mortgageLoans = sqliteTable(
+  'mortgage_loans',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /** 'fest' oder 'saron'. */
+    kind: text('kind').notNull().default('fest'),
+    amountCents: integer('amount_cents').notNull(),
+    /** Fester Zinssatz bzw. Marge der SARON-Hypothek, in Tausendstelprozent. */
+    rateMillipercent: integer('rate_millipercent').notNull().default(0),
+    startDate: text('start_date').notNull(),
+    /** „Laufzeit bis" – null bei einer SARON-Hypothek ohne festes Ende. */
+    endDate: text('end_date'),
+    note: text('note').notNull().default(''),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: text('created_at').notNull().default(now),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (table) => [index('mortgage_loans_start_idx').on(table.startDate)],
+)
+
+export type MortgageLoanRow = typeof mortgageLoans.$inferSelect
+
+/**
+ * Die bezahlten Zinsen – eine Zeile je Hypothek und Quartal.
+ *
+ * `cascade`: Wer eine Hypothek löscht, weil sie falsch erfasst war, will nicht
+ * Zinsen behalten, die zu keinem Vertrag mehr gehören. Das Fenster sagt vorher,
+ * wie viele Quartale mitgehen.
+ */
+export const mortgageInterest = sqliteTable(
+  'mortgage_interest',
+  {
+    loanId: text('loan_id')
+      .notNull()
+      .references(() => mortgageLoans.id, { onDelete: 'cascade' }),
+    year: integer('year').notNull(),
+    quarter: integer('quarter').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: text('updated_at').notNull().default(now),
+  },
+  (table) => [
+    primaryKey({ columns: [table.loanId, table.year, table.quarter] }),
+    // Gespeichert wird je Quartal: alles dieses Quartals weg, das Neue hinein.
+    index('mortgage_interest_quarter_idx').on(table.year, table.quarter),
+  ],
+)
+
+export type MortgageInterestRow = typeof mortgageInterest.$inferSelect
+
+/**
+ * Die Amortisation, eine Zeile je Tranche. `year` ist das Jahr, für das sie
+ * zählt – nicht zwingend das des Zahltags.
+ */
+export const mortgageAmortizations = sqliteTable(
+  'mortgage_amortizations',
+  {
+    id: text('id').primaryKey(),
+    year: integer('year').notNull(),
+    paidOn: text('paid_on').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    note: text('note').notNull().default(''),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [index('mortgage_amortizations_year_idx').on(table.year, table.paidOn)],
+)
+
+export type MortgageAmortizationRow = typeof mortgageAmortizations.$inferSelect

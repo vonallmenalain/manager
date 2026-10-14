@@ -1,7 +1,8 @@
 # Manager
 
 Haushalts-Administration als PWA – Dokumente, Pendenzen, Einkaufsliste, Notizen,
-Finanzen (Zehnten / Fastopfer) und die Nebenkosten des Hauses für zwei Personen.
+Finanzen (Zehnten / Fastopfer), die Nebenkosten und die Hypothek des Hauses für zwei
+Personen.
 
 **Stand: Etappe 6 abgeschlossen** – alle geplanten Bereiche sind gebaut.
 Dokumente lassen sich teilen, aufnehmen, verwalten und **über ihren Inhalt
@@ -25,7 +26,12 @@ bei der Zahlung hakt man an, welches Steuerjahr sie verrechnet. Der
 Bereich **Haus** liest die Rechnungen der Energie- und Wasserversorgung direkt
 aus dem PDF – Strom, Wasser, Abwasser und Kehricht, mit Verbrauch, Ø Preis je
 Einheit und dem Vergleich mit dem Vorjahr, alles zusammen oder je Sparte
-einzeln. Das PDF wandert dabei zugleich in die Dokumente.
+einzeln. Das PDF wandert dabei zugleich in die Dokumente. Für ein einzelnes Jahr
+verteilt es die Kosten auf die Monate, zeigt, was schon abgerechnet ist, und führt
+Akontorechnungen als provisorisch daneben. Die Sparte **Hypothek** daneben kennt
+Festhypotheken und SARON samt Laufzeit, die bezahlten Zinsen je Quartal mit Prognose und
+die Amortisation der 2. Hypothek in Tranchen – übernommen auf Wunsch aus der eigenen
+Excel-Tabelle.
 Offen ist nur noch der Feinschliff, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz
