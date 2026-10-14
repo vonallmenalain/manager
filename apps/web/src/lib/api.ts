@@ -1,4 +1,5 @@
 import type {
+  AmortizationInput,
   Bereich,
   BillInput,
   Category,
@@ -11,15 +12,21 @@ import type {
   DocumentStatus,
   Donation,
   Health,
+  HypothekDaten,
+  HypothekImportInput,
+  HypothekImportResult,
   ImportResult,
   IncomeEntry,
+  LoanInput,
   LoginInput,
   ManagedDocument,
+  MortgageSettings,
   Note,
   PreviewInfo,
   PublicUser,
   RichFile,
   SaveMonthInput,
+  SaveQuarterInput,
   SaveTaxesInput,
   SetupInput,
   ShoppingItem,
@@ -466,6 +473,63 @@ export const api = {
 
   deleteHausBill: (id: string) =>
     request<HausBills>(`/api/haus/rechnungen/${id}`, { method: 'DELETE' }),
+
+  getHypothek: () => request<HypothekDaten>('/api/haus/hypothek'),
+
+  saveHypothekGrunddaten: (settings: MortgageSettings) =>
+    request<HypothekDaten>('/api/haus/hypothek/grunddaten', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
+  addHypothekVertrag: (loan: LoanInput) =>
+    request<HypothekDaten>('/api/haus/hypothek/vertraege', {
+      method: 'POST',
+      body: JSON.stringify(loan),
+    }),
+
+  updateHypothekVertrag: (id: string, loan: LoanInput) =>
+    request<HypothekDaten>(`/api/haus/hypothek/vertraege/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(loan),
+    }),
+
+  deleteHypothekVertrag: (id: string) =>
+    request<HypothekDaten>(`/api/haus/hypothek/vertraege/${id}`, { method: 'DELETE' }),
+
+  saveHypothekQuartal: (year: number, quarter: number, input: SaveQuarterInput) =>
+    request<HypothekDaten>(`/api/haus/hypothek/zinsen/${year}/${quarter}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  addAmortisation: (input: AmortizationInput) =>
+    request<HypothekDaten>('/api/haus/hypothek/amortisation', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  updateAmortisation: (id: string, input: AmortizationInput) =>
+    request<HypothekDaten>(`/api/haus/hypothek/amortisation/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  deleteAmortisation: (id: string) =>
+    request<HypothekDaten>(`/api/haus/hypothek/amortisation/${id}`, { method: 'DELETE' }),
+
+  /** Liest eine Excel-Tabelle aus, ohne etwas zu speichern – wie beim Rechnungsimport. */
+  importHypothekExcel: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<HypothekImportResult>('/api/haus/hypothek/import', { method: 'POST', body })
+  },
+
+  uebernehmeHypothek: (daten: HypothekImportInput) =>
+    request<HypothekDaten>('/api/haus/hypothek/uebernehmen', {
+      method: 'POST',
+      body: JSON.stringify(daten),
+    }),
 }
 
 export interface HausBills {

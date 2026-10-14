@@ -30,6 +30,7 @@ import { intakeDocument } from '../lib/document-intake.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
 import { extractPdfLines, PdfTextError } from '../lib/pdf-text.js'
 import { parseUtilityInvoice } from '../lib/haus-parser.js'
+import { readUpload } from '../lib/read-upload.js'
 import { discardUpload, storeTemporarily } from '../lib/storage.js'
 
 /**
@@ -110,23 +111,6 @@ async function loadBills(): Promise<UtilityBill[]> {
     .from(utilityBills)
     .orderBy(asc(utilityBills.periodStart), asc(utilityBills.invoiceNumber))
   return rows.map(toBill)
-}
-
-/** Liest den Datenstrom einer hochgeladenen Datei in den Speicher. */
-async function readUpload(
-  stream: AsyncIterable<Buffer>,
-  limit: number,
-): Promise<Buffer | 'zu-gross'> {
-  const parts: Buffer[] = []
-  let size = 0
-
-  for await (const chunk of stream) {
-    size += chunk.length
-    if (size > limit) return 'zu-gross'
-    parts.push(chunk)
-  }
-
-  return Buffer.concat(parts)
 }
 
 /** „Abrechnung Strom Nr. 231125" – wie die Rechnung in der Ablage heisst. */

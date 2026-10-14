@@ -14,6 +14,7 @@ import categoryRoutes from './routes/categories.js'
 import documentRoutes from './routes/documents.js'
 import financeRoutes from './routes/finance.js'
 import hausRoutes from './routes/haus.js'
+import hypothekRoutes from './routes/hypothek.js'
 import healthRoutes from './routes/health.js'
 import noteRoutes from './routes/notes.js'
 import noteFileRoutes from './routes/note-files.js'
@@ -79,6 +80,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(texterkennungRoutes)
   await app.register(financeRoutes)
   await app.register(hausRoutes)
+  await app.register(hypothekRoutes)
 
   app.setNotFoundHandler(async (_request, reply) => {
     return reply.status(404).send(apiError(API_ERROR_CODES.notFound, 'Endpunkt nicht gefunden.'))

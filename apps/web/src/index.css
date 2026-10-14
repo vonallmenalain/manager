@@ -55,6 +55,26 @@
 
   --haus-preis: #1e3a5f;
   --haus-gitter: #e2e8f0;
+  /* Das Vorjahr ist Massstab, nicht Aussage – deshalb grau. */
+  --haus-vorjahr: #64748b;
+
+  /*
+   * Die einzelnen Hypotheken. Die Reihenfolge ist die der geprüften Palette
+   * (blau, orange, aqua, gelb, magenta, violett): benachbart im Stapel
+   * besteht jedes Paar die Prüfung auf Farbfehlsichtigkeit. Vergeben werden die
+   * Plätze nach Laufzeit (siehe `hypothekFarben`): Wer gleichzeitig läuft,
+   * bekommt verschiedene Plätze, und eine Anschlusshypothek erbt den Platz
+   * der ausgelaufenen. So stehen nie mehr als vier Farben in einem Stapel.
+   */
+  --hypothek-1: #2a78d6;
+  --hypothek-2: #eb6834;
+  --hypothek-3: #1baf7a;
+  --hypothek-4: #eda100;
+  --hypothek-5: #e87ba4;
+  --hypothek-6: #6250d6;
+  --hypothek-marke: #1e3a5f;
+  --hypothek-fortschritt: #2a598b;
+  --hypothek-spur: #dae7f3;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -75,6 +95,17 @@
 
     --haus-preis: #8ab0d6;
     --haus-gitter: #1e293b;
+    --haus-vorjahr: #94a3b8;
+
+    --hypothek-1: #3987e5;
+    --hypothek-2: #d95926;
+    --hypothek-3: #199e70;
+    --hypothek-4: #c98500;
+    --hypothek-5: #d55181;
+    --hypothek-6: #9085e9;
+    --hypothek-marke: #8ab0d6;
+    --hypothek-fortschritt: #8ab0d6;
+    --hypothek-spur: #1e293b;
   }
 }
 
