@@ -927,6 +927,10 @@ eine Randnotiz, kein Formular. Das Fenster ist so hoch wie sein Inhalt und wäch
 bis kurz vor den Bildschirmrand – auch das Textfeld wächst beim Tippen mit, statt in sich
 selbst zu scrollen, während das Fenster darüber noch Platz hätte. Man soll nicht durch ein
 Guckloch schreiben. Der schmale Rand bleibt: Er zeigt, dass darunter die Seite liegt.
+Ein Klick darauf schliesst das Fenster – aber nur, wenn er dort auch beginnt. Wer im
+Fenster Text markiert und die Maus erst ausserhalb loslässt, behält Fenster und
+Markierung; der Browser meldete diesen Griff sonst als Klick auf den Rand
+(`useHintergrundKlick`).
 
 **Das Fenster bleibt im Bildschirm.** Ein geteilter Verweis ist oft eine Adresse mit
 hundert Parametern und ohne ein einziges Leerzeichen. Ohne Gegenmittel bestimmte genau

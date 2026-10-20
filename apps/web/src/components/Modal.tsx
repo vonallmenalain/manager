@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-import { useFullScreenOverlay } from '../lib/overlay'
+import { useFullScreenOverlay, useHintergrundKlick } from '../lib/overlay'
 
 /**
  * Ein Fenster über dem Bildschirm, kein eigener Bildschirm.
@@ -40,6 +40,9 @@ export function Modal({
   children: ReactNode
 }) {
   useFullScreenOverlay()
+  // Nur ein Klick, der auf dem Hintergrund beginnt, schliesst – wer Text
+  // markiert und ausserhalb loslässt, behält Fenster und Markierung.
+  const hintergrund = useHintergrundKlick(onClose)
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -50,7 +53,10 @@ export function Modal({
   }, [onClose])
 
   return createPortal(
-    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/50 p-3" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 grid place-items-center bg-slate-900/50 p-3"
+      {...hintergrund}
+    >
       <div
         // Der Klick im Fenster darf nicht bis zum Hintergrund durchfallen,
         // sonst schlösse jeder Griff nach einem Feld das Fenster.

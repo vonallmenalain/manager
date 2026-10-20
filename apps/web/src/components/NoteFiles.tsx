@@ -25,7 +25,7 @@ import {
   fileMeta,
   isImage,
 } from '../lib/noteFileStyles'
-import { useFullScreenOverlay } from '../lib/overlay'
+import { useFullScreenOverlay, useHintergrundKlick } from '../lib/overlay'
 
 /**
  * Dateien in Notizen – wie sie im gelesenen Text stehen, wie sie sich öffnen
@@ -160,6 +160,8 @@ function Overlay({
   className?: string
 }) {
   useFullScreenOverlay()
+  // Wie beim Notizfenster: Markieren und ausserhalb loslassen schliesst nicht.
+  const hintergrund = useHintergrundKlick(onClose)
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -174,7 +176,7 @@ function Overlay({
   return createPortal(
     <div
       className={`fixed inset-0 z-50 grid justify-items-center bg-slate-900/60 p-3 ${className}`}
-      onClick={onClose}
+      {...hintergrund}
     >
       <div
         role="dialog"
