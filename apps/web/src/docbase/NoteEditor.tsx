@@ -1,7 +1,14 @@
-import { richValueOf, type Note, type NoteColor, type RichValue } from '@manager/shared'
+import {
+  richValueOf,
+  type Note,
+  type NoteColor,
+  type NoteKind,
+  type RichValue,
+} from '@manager/shared'
 import { useRef, useState } from 'react'
 
 import { CategorySelect } from '../components/CategoryPicker'
+import { alsNotiz, Checklist, eintraegeAus, type Eintrag } from '../components/Checklist'
 import { Modal, ModalCloseButton } from '../components/Modal'
 import {
   BREITEN,
@@ -9,39 +16,75 @@ import {
   COLOR_STYLES,
   ColorPicker,
   DateiKnopf,
+  gleicherInhalt,
   NoteText,
   NoteTitle,
+  VerlaufKnoepfe,
   WidthPicker,
   type Breite,
   type NoteTextHandle,
+  type NotizInhalt,
 } from '../components/NoteParts'
+import type { Aenderung } from '../components/RichTextField'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useCategories } from '../lib/documents'
 import { useLocalSetting } from '../lib/einstellungen'
 import { useDeleteNote, useSaveNote } from '../lib/household'
+import { useVerlauf, useVerlaufTasten } from '../lib/verlauf'
 
 /**
  * Eine Notiz der Sammlung.
  *
- * Bis auf drei Dinge dieselbe Notiz wie im Haushalt – Autospeichern, Farbe,
- * Anheften, Verweise, die sich antippen lassen:
+ * Bis auf zwei Dinge dieselbe Notiz wie im Haushalt – Autospeichern, Farbe,
+ * Anheften, Verweise, die sich antippen lassen, Text oder Checkliste,
+ * Rückgängig:
  *
  *  - Sie hat eine Kategorie. Das ist der eigentliche Grund, warum es sie hier
  *    gibt: Was man sich zu einer Studie notiert, gehört in dieselbe Schublade
  *    wie die Studie – und taucht dann unter demselben Häkchen wieder auf.
- *  - Sie ist immer Fliesstext. Eine Sammlung wird nachgeschlagen, nicht
- *    abgearbeitet; eine Liste zum Abhaken beantwortet hier keine Frage.
  *  - Sie ist immer für alle da. Wer die Sammlung öffnen darf, sieht alles
  *    darin; einen Schalter „nur für mich" gibt es deshalb nicht.
+ *
+ * Eine Checkliste gibt es hier erst seit Kurzem: Auch in einer Sammlung steht
+ * manches, das sich abhaken lässt – die Fragen an die Ärztin, die Tasche fürs
+ * Spital.
  */
-export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () => void }) {
+export function NoteEditor({
+  note,
+  newKind = 'text',
+  onClose,
+  onGeloescht,
+}: {
+  note: Note | null
+  /** Was eine neue Notiz wird – die Art bleibt danach, was sie ist. */
+  newKind?: NoteKind
+  onClose: () => void
+  /** Nach dem Löschen – die Sammlung bietet dann „Rückgängig" an. */
+  onGeloescht?: (note: { id: string; title: string }) => void
+}) {
   const save = useSaveNote()
   const remove = useDeleteNote()
   const categories = useCategories('docbase')
 
-  const [title, setTitle] = useState(note?.title ?? '')
-  // Text samt Formatierung daneben – siehe `richtext` im geteilten Paket.
-  const [text, setText] = useState<RichValue>(() => richValueOf(note?.body, note?.bodyRich))
+  const kind = note?.kind ?? newKind
+  // Titel, Text und Einträge mit ihrem Verlauf – wie im Haushalt.
+  const verlauf = useVerlauf<NotizInhalt>(
+    () => ({
+      title: note?.title ?? '',
+      text: kind === 'liste' ? richValueOf('', null) : richValueOf(note?.body, note?.bodyRich),
+      items: kind === 'liste' ? eintraegeAus(note?.body ?? '', note?.bodyRich) : [],
+    }),
+    gleicherInhalt,
+  )
+  useVerlaufTasten(verlauf.undo, verlauf.redo)
+  const { title, text, items } = verlauf.value
+  const setTitle = (value: string) => verlauf.set((alt) => ({ ...alt, title: value }), 'titel')
+  const setText = (value: RichValue, art?: Aenderung) =>
+    verlauf.set((alt) => ({ ...alt, text: value }), art === 'tippen' ? 'text' : undefined)
+  const setItems = (update: (items: Eintrag[]) => Eintrag[], gruppe?: string) =>
+    verlauf.set((alt) => ({ ...alt, items: update(alt.items) }), gruppe)
+  const liste = kind === 'liste' ? alsNotiz(items) : null
+
   const [categoryId, setCategoryId] = useState(note?.categoryId ?? '')
   /** Sobald eine neue Notiz einmal gespeichert ist, lässt sie sich löschen. */
   const [savedId, setSavedId] = useState(note?.id)
@@ -59,9 +102,9 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
   const autosave = useAutosave(
     {
       title,
-      body: text.text,
-      bodyRich: text.rich,
-      kind: 'text' as const,
+      body: liste ? liste.body : text.text,
+      bodyRich: liste ? liste.bodyRich : text.rich,
+      kind,
       bereich: 'docbase' as const,
       categoryId: categoryId || null,
       pinned,
@@ -107,24 +150,37 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
           </div>
         </>
       }
-      // Links die Büroklammer, rechts das Löschen – wie im Haushalt.
+      // Links die Büroklammer, rechts Rückgängig und Löschen – wie im Haushalt.
       footer={
-        <div className="flex items-center">
-          <DateiKnopf onClick={() => texte.current?.dateiEinfuegen()} />
-          {savedId ? (
-            <button
-              onClick={() => {
-                if (!window.confirm('Notiz löschen?')) return
-                // Verhindert, dass das Speichern beim Schliessen die eben
-                // gelöschte Notiz wieder anlegt.
-                autosave.stop()
-                remove.mutate(savedId, { onSuccess: onClose })
-              }}
-              className="ml-auto min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 dark:text-red-400"
-            >
-              Löschen
-            </button>
-          ) : null}
+        <div className="flex items-center gap-1">
+          {kind !== 'liste' ? <DateiKnopf onClick={() => texte.current?.dateiEinfuegen()} /> : null}
+          <div className="ml-auto flex items-center gap-1">
+            <VerlaufKnoepfe
+              canUndo={verlauf.canUndo}
+              canRedo={verlauf.canRedo}
+              onUndo={verlauf.undo}
+              onRedo={verlauf.redo}
+            />
+            {savedId ? (
+              <button
+                onClick={() => {
+                  // Ohne Rückfrage – danach steht „Rückgängig" bereit. Das
+                  // Speichern beim Schliessen darf die Notiz nicht wieder anlegen.
+                  autosave.stop()
+                  remove.mutate(savedId, {
+                    onSuccess: () => {
+                      onClose()
+                      onGeloescht?.({ id: savedId, title })
+                    },
+                  })
+                }}
+                disabled={remove.isPending}
+                className="min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 disabled:opacity-50 dark:text-red-400"
+              >
+                Löschen
+              </button>
+            ) : null}
+          </div>
         </div>
       }
     >
@@ -147,14 +203,18 @@ export function NoteEditor({ note, onClose }: { note: Note | null; onClose: () =
           />
         </div>
 
-        <NoteText
-          ref={texte}
-          value={text}
-          onChange={setText}
-          startInEditing={!note || text.text === ''}
-          akzent="teal"
-          bereich="docbase"
-        />
+        {kind === 'liste' ? (
+          <Checklist items={items} onChange={setItems} akzent="teal" />
+        ) : (
+          <NoteText
+            ref={texte}
+            value={text}
+            onChange={setText}
+            startInEditing={!note || text.text === ''}
+            akzent="teal"
+            bereich="docbase"
+          />
+        )}
       </>
     </Modal>
   )

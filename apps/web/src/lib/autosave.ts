@@ -23,10 +23,11 @@ export interface Autosave {
  *  - Läuft schon ein Speichern, wird nicht parallel ein zweites gestartet,
  *    sondern gleich danach nachgezogen. Sonst könnte der ältere Stand als
  *    letzter ankommen – oder beim ersten Mal ein zweiter Datensatz entstehen.
- *  - Gespeichert wird nur, was vom Stand beim Öffnen abweicht. Ohne diese
- *    Bremse schriebe schon das Öffnen jeden Datensatz unverändert zurück –
- *    und das Bearbeitungsdatum wäre eine Angabe darüber, was man angeschaut
- *    hat, nicht darüber, was man geändert hat.
+ *  - Gespeichert wird nur, was vom zuletzt gespeicherten Stand abweicht –
+ *    anfangs also vom Stand beim Öffnen. Ohne diese Bremse schriebe schon das
+ *    Öffnen jeden Datensatz unverändert zurück – und das Bearbeitungsdatum
+ *    wäre eine Angabe darüber, was man angeschaut hat, nicht darüber, was man
+ *    geändert hat.
  */
 export function useAutosave<T>(
   value: T,
@@ -49,44 +50,51 @@ export function useAutosave<T>(
   const savableRef = useRef(options.savable)
   savableRef.current = options.savable
 
-  const dirty = useRef(false)
+  // Der Vergleich läuft über den Inhalt, nicht über die Identität: Ein Objekt
+  // ist bei jedem Rendern ein neues, der Text darin aber meist derselbe.
+  const signature = JSON.stringify(value)
+  /**
+   * Was der Server zuletzt bekommen hat – beim Öffnen der Stand von dort.
+   *
+   * Verglichen wird damit und nicht mit dem Stand beim Öffnen: Wer etwas
+   * ändert, es speichern lässt und dann mit „Rückgängig" zurücknimmt, steht
+   * wieder beim Stand von früher – der Server aber nicht. Auch das muss also
+   * gespeichert werden. Wer dagegen vor dem Speichern zurücknimmt, hat nichts
+   * geändert und soll auch nichts speichern – sonst stünde an der Notiz ein
+   * Bearbeitungsdatum für etwas, das gar nicht geschehen ist.
+   */
+  const gespeichert = useRef(signature)
+
   const running = useRef(false)
   const stopped = useRef(false)
   const [state, setState] = useState<SaveState>('ruht')
 
   const run = useCallback(async () => {
-    if (stopped.current || !dirty.current || running.current) return
-    if (savableRef.current && !savableRef.current(latest.current)) return
+    if (stopped.current || running.current) return
+    const stand = latest.current
+    const zeichen = JSON.stringify(stand)
+    if (zeichen === gespeichert.current) return
+    if (savableRef.current && !savableRef.current(stand)) return
 
     running.current = true
-    dirty.current = false
     setState('speichert')
 
     try {
-      await saveRef.current(latest.current)
+      await saveRef.current(stand)
+      gespeichert.current = zeichen
       setState('gespeichert')
     } catch {
-      dirty.current = true
       setState('fehler')
     } finally {
       running.current = false
-      if (dirty.current) void run()
+      // Was während des Speicherns dazukam – oder nicht ankam –, gleich
+      // nachziehen.
+      if (JSON.stringify(latest.current) !== gespeichert.current) void run()
     }
   }, [])
 
-  // Der Vergleich läuft über den Inhalt, nicht über die Identität: Ein Objekt
-  // ist bei jedem Rendern ein neues, der Text darin aber meist derselbe.
-  const signature = JSON.stringify(value)
-  const geoeffnet = useRef(signature)
-
   useEffect(() => {
-    // Verglichen wird gegen den Stand beim Öffnen, nicht gegen „schon einmal
-    // hier gewesen": Wer eine Änderung wieder rückgängig macht, hat nichts
-    // geändert und soll auch nichts speichern – sonst stünde an der Notiz ein
-    // Bearbeitungsdatum für etwas, das gar nicht geschehen ist.
-    if (signature === geoeffnet.current) return
-
-    dirty.current = true
+    if (signature === gespeichert.current) return
     const timer = setTimeout(() => void run(), delayMs)
     return () => clearTimeout(timer)
   }, [signature, delayMs, run])
@@ -99,7 +107,6 @@ export function useAutosave<T>(
     flush: () => void run(),
     stop: () => {
       stopped.current = true
-      dirty.current = false
     },
   }
 }

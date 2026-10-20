@@ -13,15 +13,22 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NewCategoryDialog } from '../../components/CategoryPicker'
 import { DocumentTile } from '../../components/DocumentTile'
 import { DocumentIcon } from '../../components/icons'
+import { RueckgaengigHinweis, useRueckgaengig } from '../../components/Rueckgaengig'
 import { SearchSnippet } from '../../components/SearchSnippet'
 import { UploadControls } from '../../components/UploadControls'
 import { useLocalJson, useLocalSetting } from '../../lib/einstellungen'
 import { useCategories, useDocuments, withoutFilters } from '../../lib/documents'
-import { useNotes } from '../../lib/household'
+import { useNotes, useReorderNotes, useRestoreNote } from '../../lib/household'
+import { verschoben } from '../../lib/notizReihenfolge'
 import { useEscape, useOpenPanel } from '../../lib/overlay'
-import { mische, type Eintrag } from '../../lib/sammlung'
+import {
+  mische,
+  SAMMLUNG_REIHENFOLGEN,
+  type Eintrag,
+  type SammlungReihenfolge,
+} from '../../lib/sammlung'
 import { NoteEditor } from '../NoteEditor'
-import { NoteRow, NoteTile } from '../NoteTile'
+import { NoteRow, NoteTile, type Verschieben } from '../NoteTile'
 
 /**
  * Wie die Sammlung angezeigt wird.
@@ -70,8 +77,20 @@ export function Library() {
   )
   const [ansicht, setAnsicht] = useLocalSetting<Ansicht>('docbase.ansicht', ANSICHTEN, 'liste')
   const [spalten, setSpalten] = useLocalSetting<Spalten>('docbase.spalten', SPALTEN, '2')
-  /** 'neu' heisst: Das Fenster geht auf, die Notiz gibt es noch nicht. */
-  const [notiz, setNotiz] = useState<Note | 'neu' | null>(null)
+  // Nach Datum ist der Standard: Die eigene Reihenfolge stellt die Notizen
+  // geschlossen über die Dokumente, und das soll niemand ungefragt sehen.
+  const [reihenfolge, setReihenfolge] = useLocalSetting<SammlungReihenfolge>(
+    'docbase.reihenfolge',
+    SAMMLUNG_REIHENFOLGEN,
+    'datum',
+  )
+  /** Die Pfeile zum Verschieben stehen an den Notizen, bis „Fertig". */
+  const [anordnen, setAnordnen] = useState(false)
+  /** 'neu' und 'neu-liste' heissen: Das Fenster geht auf, die Notiz gibt es noch nicht. */
+  const [notiz, setNotiz] = useState<Note | 'neu' | 'neu-liste' | null>(null)
+  const reorder = useReorderNotes()
+  const restore = useRestoreNote()
+  const rueckgaengig = useRueckgaengig()
 
   // Vom Teilen kommt man mit der eben gefüllten Notiz im Gepäck: Sie geht
   // gleich auf. Mitgegeben statt in der Liste gesucht, weil ein gesetzter
@@ -128,7 +147,21 @@ export function Library() {
     return categoryId ? categoryLabel(alleKategorien, categoryId) : undefined
   }
 
-  const eintraege = mische(documents, notes)
+  const eintraege = mische(documents, notes, reihenfolge)
+
+  // Verschoben wird unter den Notizen, die gerade zu sehen sind – bei einem
+  // Filter nur ein Teil. Der Server lässt die übrigen stehen (`placeInOrder`).
+  const sichtbareNotizen = eintraege.flatMap((eintrag) =>
+    eintrag.art === 'notiz' ? [eintrag.note] : [],
+  )
+  const verschieben = (id: string): Verschieben => {
+    const index = sichtbareNotizen.findIndex((note) => note.id === id)
+    const schieben = (richtung: -1 | 1) => {
+      const ids = verschoben(sichtbareNotizen, id, richtung)
+      return ids ? () => reorder.mutate({ bereich: 'docbase', ids }) : undefined
+    }
+    return index === -1 ? {} : { nachVorne: schieben(-1), nachHinten: schieben(1) }
+  }
 
   return (
     <div className="space-y-4">
@@ -149,16 +182,40 @@ export function Library() {
             gewaehlt={kategorien}
             onChange={setKategorien}
           />
-          <ViewMenu
-            ansicht={ansicht}
-            onAnsichtChange={setAnsicht}
-            spalten={spalten}
-            onSpaltenChange={setSpalten}
-          />
+          {anordnen ? (
+            <button
+              onClick={() => setAnordnen(false)}
+              className="min-h-10 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white"
+            >
+              Fertig
+            </button>
+          ) : (
+            <ViewMenu
+              ansicht={ansicht}
+              onAnsichtChange={setAnsicht}
+              spalten={spalten}
+              onSpaltenChange={setSpalten}
+              reihenfolge={reihenfolge}
+              onReihenfolgeChange={setReihenfolge}
+              onAnordnen={() => {
+                // Verschoben wird in der eigenen Reihenfolge – nach Datum
+                // hielte keine Notiz ihren Platz.
+                setReihenfolge('eigene')
+                setAnordnen(true)
+              }}
+            />
+          )}
         </div>
       </div>
 
       <SearchField value={search} onChange={setSearch} />
+
+      {anordnen ? (
+        <p className="rounded-xl bg-teal-50 px-3 py-2 text-sm text-teal-800 dark:bg-teal-950 dark:text-teal-200">
+          Die Notizen mit den Pfeilen verschieben. Angeheftete bleiben oben, die Dokumente folgen
+          darunter nach Datum.
+        </p>
+      ) : null}
 
       {laedt ? (
         <ListSkeleton />
@@ -190,6 +247,7 @@ export function Library() {
           spalten={spalten}
           kategorieName={kategorieName}
           onNotiz={setNotiz}
+          verschieben={anordnen ? verschieben : undefined}
         />
       )}
 
@@ -197,16 +255,36 @@ export function Library() {
           Stelle, an der dort die Kamera steht: Was man in eine Sammlung legt,
           ist entweder ein Blatt Papier oder ein eigener Gedanke dazu. Ein Foto
           ist hier beides nicht. Angaben gibt es nur eine, die Kategorie. */}
-      <UploadControls
-        bereich="docbase"
-        felder={['kategorie']}
-        akzent="bg-teal-700"
-        onNotiz={() => setNotiz('neu')}
-      />
+      {anordnen ? null : (
+        <UploadControls
+          bereich="docbase"
+          felder={['kategorie']}
+          akzent="bg-teal-700"
+          onNotiz={() => setNotiz('neu')}
+          onCheckliste={() => setNotiz('neu-liste')}
+        />
+      )}
 
       {notiz ? (
-        <NoteEditor note={notiz === 'neu' ? null : notiz} onClose={() => setNotiz(null)} />
+        <NoteEditor
+          note={typeof notiz === 'string' ? null : notiz}
+          newKind={notiz === 'neu-liste' ? 'liste' : 'text'}
+          onClose={() => setNotiz(null)}
+          onGeloescht={(geloescht) =>
+            rueckgaengig.anbieten(`Gelöscht: ${geloescht.title || 'Notiz ohne Titel'}`, () =>
+              restore.mutate(geloescht.id),
+            )
+          }
+        />
       ) : null}
+
+      {/* Ganz unten: Die DocBase hat keine Navigationsleiste, und der runde
+          Knopf steht ein Stück darüber. */}
+      <RueckgaengigHinweis
+        angebot={rueckgaengig.angebot}
+        onSchliessen={rueckgaengig.schliessen}
+        style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+      />
     </div>
   )
 }
@@ -357,11 +435,17 @@ function ViewMenu({
   onAnsichtChange,
   spalten,
   onSpaltenChange,
+  reihenfolge,
+  onReihenfolgeChange,
+  onAnordnen,
 }: {
   ansicht: Ansicht
   onAnsichtChange: (value: Ansicht) => void
   spalten: Spalten
   onSpaltenChange: (value: Spalten) => void
+  reihenfolge: SammlungReihenfolge
+  onReihenfolgeChange: (value: SammlungReihenfolge) => void
+  onAnordnen: () => void
 }) {
   const [open, setOpen] = useState(false)
   useEscape(open, useCallback(() => setOpen(false), []))
@@ -424,6 +508,40 @@ function ViewMenu({
               </div>
             </div>
           ) : null}
+
+          <fieldset className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+            <legend className="sr-only">Reihenfolge</legend>
+            <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+              Reihenfolge
+            </p>
+            <Radio
+              name="docbase-reihenfolge"
+              checked={reihenfolge === 'datum'}
+              onChange={() => onReihenfolgeChange('datum')}
+            >
+              Nach Datum
+            </Radio>
+            <Radio
+              name="docbase-reihenfolge"
+              checked={reihenfolge === 'eigene'}
+              onChange={() => onReihenfolgeChange('eigene')}
+            >
+              Eigene Reihenfolge
+            </Radio>
+            <p className="pl-7 text-xs text-slate-500 dark:text-slate-400">
+              Notizen oben, wie angeordnet – Dokumente darunter nach Datum.
+            </p>
+            <button
+              onClick={() => {
+                setOpen(false)
+                onAnordnen()
+              }}
+              className="mt-1 flex min-h-10 w-full items-center gap-2 text-sm font-medium text-teal-700 dark:text-teal-300"
+            >
+              <span aria-hidden="true">⇅</span>
+              Notizen anordnen …
+            </button>
+          </fieldset>
         </Panel>
       ) : null}
     </div>
@@ -559,12 +677,15 @@ function Sammlung({
   spalten,
   kategorieName,
   onNotiz,
+  verschieben,
 }: {
   eintraege: Eintrag[]
   ansicht: Ansicht
   spalten: Spalten
   kategorieName: (categoryId: string | null) => string | undefined
   onNotiz: (note: Note) => void
+  /** Beim Anordnen: die Pfeile je Notiz. */
+  verschieben?: (id: string) => Verschieben
 }) {
   if (ansicht === 'kacheln') {
     return (
@@ -576,6 +697,7 @@ function Sammlung({
               note={eintrag.note}
               categoryName={kategorieName(eintrag.note.categoryId)}
               onOpen={() => onNotiz(eintrag.note)}
+              verschieben={verschieben?.(eintrag.id)}
             />
           ) : (
             <DocumentTile
@@ -598,6 +720,7 @@ function Sammlung({
             note={eintrag.note}
             categoryName={kategorieName(eintrag.note.categoryId)}
             onOpen={() => onNotiz(eintrag.note)}
+            verschieben={verschieben?.(eintrag.id)}
           />
         ) : (
           <Row

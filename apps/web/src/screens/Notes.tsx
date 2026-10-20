@@ -1,11 +1,7 @@
 import {
   NOTE_KIND_LABELS,
   NOTE_KINDS,
-  parseChecklist,
   richValueOf,
-  serializeChecklist,
-  sortChecklist,
-  type ChecklistItem,
   type Note,
   type NoteColor,
   type NoteKind,
@@ -14,6 +10,13 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
+import {
+  alsNotiz,
+  Checklist,
+  ChecklistPreview,
+  eintraegeAus,
+  type Eintrag,
+} from '../components/Checklist'
 import { Modal, ModalCloseButton } from '../components/Modal'
 import {
   BREITEN,
@@ -22,18 +25,41 @@ import {
   ColorPicker,
   DateiKnopf,
   formatEdited,
-  LinkedText,
+  gleicherInhalt,
   NoteText,
   NoteTitle,
+  VerlaufKnoepfe,
+  VerschiebeKnoepfe,
   WidthPicker,
   type Breite,
   type NoteTextHandle,
+  type NotizInhalt,
 } from '../components/NoteParts'
 import { RichText } from '../components/RichText'
+import type { Aenderung } from '../components/RichTextField'
+import {
+  RueckgaengigHinweis,
+  UEBER_DER_NAVIGATION,
+  useRueckgaengig,
+} from '../components/Rueckgaengig'
 import { saveStateLabel, useAutosave } from '../lib/autosave'
 import { useLocalSetting } from '../lib/einstellungen'
-import { useDeleteNote, useNotes, useSaveNote } from '../lib/household'
+import {
+  useDeleteNote,
+  useNotes,
+  useReorderNotes,
+  useRestoreNote,
+  useSaveNote,
+} from '../lib/household'
+import {
+  NOTIZ_REIHENFOLGEN,
+  NOTIZ_REIHENFOLGE_LABELS,
+  sortiereNotizen,
+  verschoben,
+  type NotizReihenfolge,
+} from '../lib/notizReihenfolge'
 import { useEscape } from '../lib/overlay'
+import { useVerlauf, useVerlaufTasten } from '../lib/verlauf'
 
 const ANSICHTEN = ['liste', 'kacheln'] as const
 type Ansicht = (typeof ANSICHTEN)[number]
@@ -107,9 +133,26 @@ export function Notes() {
     GROESSEN,
     'komprimiert',
   )
+  // Die eigene Reihenfolge ist der Standard: Solange niemand verschoben hat,
+  // sieht sie aus wie „zuletzt bearbeitet" (siehe `compareNotesInOwnOrder`).
+  const [reihenfolge, setReihenfolge] = useLocalSetting<NotizReihenfolge>(
+    'notizen.reihenfolge',
+    NOTIZ_REIHENFOLGEN,
+    'eigene',
+  )
+  /** Die Pfeile zum Verschieben stehen an den Notizen, bis „Fertig". */
+  const [anordnen, setAnordnen] = useState(false)
   const query = useNotes({ q: search })
+  const reorder = useReorderNotes()
+  const restore = useRestoreNote()
+  const rueckgaengig = useRueckgaengig()
 
-  const notes = query.data?.notes ?? []
+  const notes = sortiereNotizen(query.data?.notes ?? [], reihenfolge)
+
+  const verschieben = (id: string, richtung: -1 | 1) => {
+    const ids = verschoben(notes, id, richtung)
+    if (ids) reorder.mutate({ bereich: 'manager', ids })
+  }
 
   // Vom Startbildschirm kommt man mit `?notiz=<id>` direkt in eine angeheftete
   // Notiz. Der Wunsch wird danach aus der Adresse genommen – sonst öffnete
@@ -138,13 +181,37 @@ export function Notes() {
         <h1 className="text-2xl font-bold">Notizen</h1>
         {/* Wo bisher die Anzahl stand: Die kann man abzählen, die Anzeige
             nicht erraten. */}
-        <AnsichtsMenu
-          ansicht={ansicht}
-          onAnsicht={setAnsicht}
-          groesse={groesse}
-          onGroesse={setGroesse}
-        />
+        {anordnen ? (
+          <button
+            onClick={() => setAnordnen(false)}
+            className="min-h-10 rounded-xl bg-brand-800 px-4 text-sm font-semibold text-white"
+          >
+            Fertig
+          </button>
+        ) : (
+          <AnsichtsMenu
+            ansicht={ansicht}
+            onAnsicht={setAnsicht}
+            groesse={groesse}
+            onGroesse={setGroesse}
+            reihenfolge={reihenfolge}
+            onReihenfolge={setReihenfolge}
+            onAnordnen={() => {
+              // Verschoben wird immer in der eigenen Reihenfolge – in „zuletzt
+              // bearbeitet" hielte keine Notiz ihren Platz.
+              setReihenfolge('eigene')
+              setAnordnen(true)
+            }}
+          />
+        )}
       </div>
+
+      {anordnen ? (
+        <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-800 dark:bg-brand-950 dark:text-brand-200">
+          Mit den Pfeilen verschieben. Angeheftete bleiben oben. Die Reihenfolge gilt auf jedem
+          Gerät.
+        </p>
+      ) : null}
 
       <input
         type="search"
@@ -175,20 +242,34 @@ export function Notes() {
               : 'space-y-2'
           }
         >
-          {notes.map((note) => (
+          {notes.map((note, index) => (
             <li key={note.id}>
               <NoteCard
                 note={note}
                 ansicht={ansicht}
                 groesse={groesse}
                 onOpen={() => setEditing(note)}
+                verschieben={
+                  anordnen
+                    ? {
+                        nachVorne:
+                          notes[index - 1]?.pinned === note.pinned
+                            ? () => verschieben(note.id, -1)
+                            : undefined,
+                        nachHinten:
+                          notes[index + 1]?.pinned === note.pinned
+                            ? () => verschieben(note.id, 1)
+                            : undefined,
+                      }
+                    : undefined
+                }
               />
             </li>
           ))}
         </ul>
       )}
 
-      {menuOpen ? (
+      {menuOpen && !anordnen ? (
         <>
           <button
             className="fixed inset-0 z-20 bg-slate-900/20"
@@ -212,29 +293,48 @@ export function Notes() {
         </>
       ) : null}
 
-      <button
-        onClick={() => setMenuOpen((open) => !open)}
-        className="fixed bottom-20 right-4 z-30 grid size-14 place-items-center rounded-full bg-brand-800 text-white shadow-lg transition active:scale-95"
-        aria-label="Notiz anlegen"
-        aria-expanded={menuOpen}
-      >
-        <svg
-          className={`size-7 transition-transform ${menuOpen ? 'rotate-45' : ''}`}
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
+      {anordnen ? null : (
+        <button
+          onClick={() => setMenuOpen((open) => !open)}
+          className="fixed bottom-20 right-4 z-30 grid size-14 place-items-center rounded-full bg-brand-800 text-white shadow-lg transition active:scale-95"
+          aria-label="Notiz anlegen"
+          aria-expanded={menuOpen}
         >
-          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </button>
+          <svg
+            className={`size-7 transition-transform ${menuOpen ? 'rotate-45' : ''}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 5v14M5 12h14"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
 
       {editing ? (
         <NoteEditor
           note={typeof editing === 'string' ? null : editing}
           newKind={typeof editing === 'string' ? editing : 'text'}
           onClose={() => setEditing(null)}
+          onGeloescht={(geloescht) =>
+            rueckgaengig.anbieten(`Gelöscht: ${geloescht.title || 'Notiz ohne Titel'}`, () =>
+              restore.mutate(geloescht.id),
+            )
+          }
         />
       ) : null}
+
+      {/* Rechts frei für den runden Knopf, der an derselben Höhe steht. */}
+      <RueckgaengigHinweis
+        angebot={rueckgaengig.angebot}
+        onSchliessen={rueckgaengig.schliessen}
+        style={{ ...UEBER_DER_NAVIGATION, paddingRight: '5rem' }}
+      />
     </div>
   )
 }
@@ -252,11 +352,17 @@ function AnsichtsMenu({
   onAnsicht,
   groesse,
   onGroesse,
+  reihenfolge,
+  onReihenfolge,
+  onAnordnen,
 }: {
   ansicht: Ansicht
   onAnsicht: (value: Ansicht) => void
   groesse: Groesse
   onGroesse: (value: Groesse) => void
+  reihenfolge: NotizReihenfolge
+  onReihenfolge: (value: NotizReihenfolge) => void
+  onAnordnen: () => void
 }) {
   const [open, setOpen] = useState(false)
   useEscape(open, useCallback(() => setOpen(false), []))
@@ -301,6 +407,25 @@ function AnsichtsMenu({
               value={groesse}
               onChange={onGroesse}
             />
+            <Wahl
+              titel="Reihenfolge"
+              options={NOTIZ_REIHENFOLGEN}
+              labels={NOTIZ_REIHENFOLGE_LABELS}
+              value={reihenfolge}
+              onChange={onReihenfolge}
+            />
+            <button
+              onClick={() => {
+                setOpen(false)
+                onAnordnen()
+              }}
+              className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-medium text-brand-700 transition active:bg-black/5 dark:text-brand-300 dark:active:bg-white/10"
+            >
+              <span className="w-4 shrink-0" aria-hidden="true">
+                ⇅
+              </span>
+              Reihenfolge ändern …
+            </button>
           </div>
         </>
       ) : null}
@@ -355,28 +480,33 @@ function NoteCard({
   ansicht,
   groesse,
   onOpen,
+  verschieben,
 }: {
   note: Note
   ansicht: Ansicht
   groesse: Groesse
   onOpen: () => void
+  /** Beim Anordnen: die Pfeile statt der Fläche zum Öffnen. */
+  verschieben?: { nachVorne?: () => void; nachHinten?: () => void }
 }) {
   const regel = GROESSE_REGELN[groesse]
 
-  return (
+  const karte = (
     // Die Fläche zum Öffnen liegt als Knopf unter dem Inhalt: So bleibt die
     // ganze Kachel ein Griff, und ein Verweis im Text behält trotzdem sein
     // eigenes Ziel. Ein <a> in einem <button> wäre nicht erlaubt.
     <div
       className={`relative flex w-full flex-col overflow-hidden rounded-2xl border p-3 text-left transition active:scale-[0.99] ${
         COLOR_STYLES[note.color]
-      } ${regel.hoehe[ansicht]}`}
+      } ${regel.hoehe[ansicht]} ${verschieben && ansicht === 'liste' ? 'pr-28' : ''}`}
     >
-      <button
-        onClick={onOpen}
-        aria-label={`Notiz ${note.title || 'ohne Titel'} öffnen`}
-        className="absolute inset-0"
-      />
+      {verschieben ? null : (
+        <button
+          onClick={onOpen}
+          aria-label={`Notiz ${note.title || 'ohne Titel'} öffnen`}
+          className="absolute inset-0"
+        />
+      )}
 
       {/* Der Inhalt lässt Griffe zum Knopf durch – nur Verweise fangen sie ab. */}
       <span className="pointer-events-none relative flex w-full items-start gap-2">
@@ -399,7 +529,7 @@ function NoteCard({
       </span>
 
       {note.kind === 'liste' ? (
-        <ChecklistPreview body={note.body} max={regel.eintraege} />
+        <ChecklistPreview body={note.body} bodyRich={note.bodyRich} max={regel.eintraege} />
       ) : note.body ? (
         // Die Vorschau zeigt die Formatierung mit: Was jemand rot oder als
         // Aufzählung geschrieben hat, soll man auch in der Übersicht erkennen.
@@ -409,35 +539,33 @@ function NoteCard({
           <RichText text={note.body} rich={note.bodyRich} dateien="kompakt" />
         </div>
       ) : null}
+
+      {verschieben && ansicht === 'liste' ? (
+        <VerschiebeKnoepfe
+          titel={note.title || 'Ohne Titel'}
+          nachVorne={verschieben.nachVorne}
+          nachHinten={verschieben.nachHinten}
+          className="absolute right-2 top-1/2 -translate-y-1/2"
+        />
+      ) : null}
     </div>
   )
-}
 
-/** Die ersten Einträge einer Checkliste, wie sie in der Übersicht erscheinen. */
-function ChecklistPreview({ body, max }: { body: string; max: number }) {
-  // Auch hier Erledigtes nach unten – für Notizen, die noch aus der Zeit
-  // davor stammen und seither nicht angefasst wurden.
-  const items = sortChecklist(parseChecklist(body))
-  if (items.length === 0) return null
-
-  const offen = items.filter((item) => !item.done).length
-
-  return (
-    <span className="pointer-events-none relative mt-1 block text-sm text-slate-600 dark:text-slate-300">
-      {items.slice(0, max).map((item, index) => (
-        <span
-          key={index}
-          className={`block truncate ${item.done ? 'text-slate-400 line-through dark:text-slate-500' : ''}`}
-        >
-          {item.done ? '☑' : '☐'} <LinkedText text={item.text} />
-        </span>
-      ))}
-      {items.length > max ? (
-        <span className="block text-xs text-slate-400 dark:text-slate-500">
-          … {items.length - max} weitere · {offen} offen
-        </span>
-      ) : null}
-    </span>
+  // In Kacheln stehen die Pfeile unter der Notiz: Eine Kachel ist schmal
+  // und oft niedrig – darüber gelegt verdeckten sie, was darin steht.
+  return verschieben && ansicht === 'kacheln' ? (
+    <>
+      {karte}
+      <VerschiebeKnoepfe
+        titel={note.title || 'Ohne Titel'}
+        waagrecht
+        nachVorne={verschieben.nachVorne}
+        nachHinten={verschieben.nachHinten}
+        className="relative mt-1 justify-center"
+      />
+    </>
+  ) : (
+    karte
   )
 }
 
@@ -455,30 +583,37 @@ function NoteEditor({
   note,
   newKind,
   onClose,
+  onGeloescht,
 }: {
   note: Note | null
   newKind: NoteKind
   onClose: () => void
+  /** Nach dem Löschen – die Übersicht bietet dann „Rückgängig" an. */
+  onGeloescht: (note: { id: string; title: string }) => void
 }) {
   const save = useSaveNote()
   const remove = useDeleteNote()
 
   // Die Art wird beim Anlegen gewählt und bleibt dann, was sie ist.
   const kind = note?.kind ?? newKind
-  const [title, setTitle] = useState(note?.title ?? '')
-  // Text samt Formatierung daneben – siehe `richtext` im geteilten Paket.
-  const [text, setText] = useState<RichValue>(() =>
-    (note?.kind ?? newKind) === 'liste'
-      ? richValueOf('', null)
-      : richValueOf(note?.body, note?.bodyRich),
+  // Titel, Text und Einträge mit ihrem Verlauf – siehe `useVerlauf`. Der Text
+  // trägt seine Formatierung daneben (siehe `richtext` im geteilten Paket).
+  const verlauf = useVerlauf<NotizInhalt>(
+    () => ({
+      title: note?.title ?? '',
+      text: kind === 'liste' ? richValueOf('', null) : richValueOf(note?.body, note?.bodyRich),
+      items: kind === 'liste' ? eintraegeAus(note?.body ?? '', note?.bodyRich) : [],
+    }),
+    gleicherInhalt,
   )
-  const [items, setItems] = useState<ChecklistItem[]>(() => {
-    if ((note?.kind ?? newKind) !== 'liste') return []
-    const vorhanden = sortChecklist(parseChecklist(note?.body ?? ''))
-    // Eine frische Liste beginnt mit einer leeren Zeile – sonst müsste man
-    // erst „Eintrag hinzufügen" treffen, bevor man tippen kann.
-    return vorhanden.length > 0 ? vorhanden : [{ text: '', done: false }]
-  })
+  useVerlaufTasten(verlauf.undo, verlauf.redo)
+  const { title, text, items } = verlauf.value
+  const setTitle = (value: string) => verlauf.set((alt) => ({ ...alt, title: value }), 'titel')
+  const setText = (value: RichValue, art?: Aenderung) =>
+    verlauf.set((alt) => ({ ...alt, text: value }), art === 'tippen' ? 'text' : undefined)
+  const setItems = (update: (items: Eintrag[]) => Eintrag[], gruppe?: string) =>
+    verlauf.set((alt) => ({ ...alt, items: update(alt.items) }), gruppe)
+
   /** Sobald eine neue Notiz einmal gespeichert ist, lässt sie sich löschen. */
   const [savedId, setSavedId] = useState(note?.id)
   const [pinned, setPinned] = useState(note?.pinned ?? false)
@@ -488,9 +623,11 @@ function NoteEditor({
   // Monitor breit und am Handy schmal gelesen werden.
   const [breite, setBreite] = useLocalSetting<Breite>('notizen.breite', BREITEN, 'standard')
 
-  const body = kind === 'liste' ? serializeChecklist(items) : text.text
-  // Eine Checkliste kennt keine Formatierung – ihre Zeilen sind Einträge.
-  const bodyRich = kind === 'liste' ? null : text.rich
+  // Eine Checkliste formatiert ihre Einträge, nicht ihre Zeilen samt
+  // Kästchen – siehe `checklistToNote`.
+  const liste = kind === 'liste' ? alsNotiz(items) : null
+  const body = liste ? liste.body : text.text
+  const bodyRich = liste ? liste.bodyRich : text.rich
   const leer = title.trim() === '' && body.trim() === ''
 
   // Ab dem ersten Speichern wird dieselbe Notiz weitergeschrieben, statt eine
@@ -563,31 +700,41 @@ function NoteEditor({
           </div>
         </>
       }
-      // Im Fuss: links die Büroklammer, rechts das Löschen. Eine Checkliste
-      // kennt keine Dateien – ihre Zeilen sind Einträge –, und eine neue ohne
-      // Notiz zum Löschen braucht gar keinen Fuss: Er nähme dem Text nur Höhe.
+      // Im Fuss: links die Büroklammer, rechts Rückgängig und Löschen. Eine
+      // Checkliste kennt keine Dateien – ihre Zeilen sind Einträge.
       footer={
-        kind !== 'liste' || savedId ? (
-          <div className="flex items-center">
-            {kind !== 'liste' ? (
-              <DateiKnopf onClick={() => texte.current?.dateiEinfuegen()} />
-            ) : null}
+        <div className="flex items-center gap-1">
+          {kind !== 'liste' ? <DateiKnopf onClick={() => texte.current?.dateiEinfuegen()} /> : null}
+          <div className="ml-auto flex items-center gap-1">
+            <VerlaufKnoepfe
+              canUndo={verlauf.canUndo}
+              canRedo={verlauf.canRedo}
+              onUndo={verlauf.undo}
+              onRedo={verlauf.redo}
+            />
             {savedId ? (
               <button
                 onClick={() => {
-                  if (!window.confirm('Notiz löschen?')) return
-                  // Verhindert, dass das Speichern beim Schliessen die eben
-                  // gelöschte Notiz wieder anlegt.
+                  // Ohne Rückfrage: Die Übersicht bietet danach „Rückgängig"
+                  // an, und der Server hält die Notiz noch 30 Tage bereit.
+                  // Das Speichern beim Schliessen darf sie nicht wieder
+                  // anlegen.
                   autosave.stop()
-                  remove.mutate(savedId, { onSuccess: onClose })
+                  remove.mutate(savedId, {
+                    onSuccess: () => {
+                      onClose()
+                      onGeloescht({ id: savedId, title })
+                    },
+                  })
                 }}
-                className="ml-auto min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 dark:text-red-400"
+                disabled={remove.isPending}
+                className="min-h-11 rounded-xl px-3 text-sm font-medium text-red-600 disabled:opacity-50 dark:text-red-400"
               >
                 Löschen
               </button>
             ) : null}
           </div>
-        ) : undefined
+        </div>
       }
     >
       <>
@@ -607,106 +754,5 @@ function NoteEditor({
         )}
       </>
     </Modal>
-  )
-}
-
-/**
- * Die Einträge einer Checkliste.
- *
- * Unten steht immer eine leere Zeile: Wer tippt, legt damit den nächsten
- * Eintrag an, ohne vorher auf „Hinzufügen" zu zielen. Enter springt weiter,
- * Rücktaste in einer leeren Zeile räumt sie wieder weg.
- */
-function Checklist({
-  items,
-  onChange,
-}: {
-  items: ChecklistItem[]
-  onChange: (items: ChecklistItem[]) => void
-}) {
-  const inputs = useRef<Array<HTMLInputElement | null>>([])
-
-  function update(index: number, changes: Partial<ChecklistItem>) {
-    const next = items.map((item, position) => (position === index ? { ...item, ...changes } : item))
-    // Beim Abhaken rutscht der Eintrag ans Ende: Oben steht, was noch zu tun
-    // ist. Beim Tippen bleibt die Reihenfolge, wie sie ist – sonst spränge
-    // die Zeile unter dem Finger weg.
-    onChange(changes.done === undefined ? next : sortChecklist(next))
-  }
-
-  function insertAfter(index: number) {
-    const next = [...items]
-    next.splice(index + 1, 0, { text: '', done: false })
-    onChange(next)
-    // Nach dem Zeichnen in die neue Zeile springen.
-    setTimeout(() => inputs.current[index + 1]?.focus(), 0)
-  }
-
-  function removeAt(index: number) {
-    onChange(items.filter((_, position) => position !== index))
-    setTimeout(() => inputs.current[Math.max(0, index - 1)]?.focus(), 0)
-  }
-
-  return (
-    <ul className="mt-3 space-y-1">
-      {items.map((item, index) => (
-        <li key={index} className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={item.done}
-            onChange={(event) => update(index, { done: event.target.checked })}
-            aria-label={`${item.text || 'Eintrag'} erledigt`}
-            className="size-5 shrink-0 accent-brand-700"
-          />
-          <input
-            ref={(element) => {
-              inputs.current[index] = element
-            }}
-            value={item.text}
-            onChange={(event) => update(index, { text: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                insertAfter(index)
-              }
-              if (event.key === 'Backspace' && item.text === '' && items.length > 1) {
-                event.preventDefault()
-                removeAt(index)
-              }
-            }}
-            aria-label={`Eintrag ${index + 1}`}
-            className={`min-h-9 w-full bg-transparent text-base outline-none ${
-              item.done ? 'text-slate-400 line-through dark:text-slate-500' : ''
-            }`}
-          />
-          <button
-            onClick={() => removeAt(index)}
-            aria-label={`Eintrag ${index + 1} entfernen`}
-            className="grid size-9 shrink-0 place-items-center rounded-lg text-slate-400 transition active:bg-black/5 dark:active:bg-white/10"
-          >
-            <svg className="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M6 6l12 12M18 6L6 18"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </li>
-      ))}
-
-      <li>
-        <button
-          onClick={() => insertAfter(items.length - 1)}
-          className="flex min-h-11 items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400"
-        >
-          <span className="grid size-5 place-items-center rounded border border-current text-xs">
-            +
-          </span>
-          Eintrag hinzufügen
-        </button>
-      </li>
-    </ul>
   )
 }

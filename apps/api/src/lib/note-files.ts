@@ -1,5 +1,5 @@
 import { fileIdsOf, parseRichJson, type Bereich } from '@manager/shared'
-import { and, eq, inArray, isNull, lt, or } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -77,6 +77,33 @@ export async function linkNoteFiles(
 /** Die Dateien einer Notiz – vor dem Löschen der Notiz gebraucht. */
 export async function filesOfNote(noteId: string): Promise<NoteFileRow[]> {
   return db.select().from(noteFiles).where(eq(noteFiles.noteId, noteId))
+}
+
+/**
+ * Löscht Notizen endgültig, die länger als die Frist gelöscht sind – samt
+ * ihren Dateien.
+ *
+ * Bis dahin hat „Rückgängig" sie zurückholen können; danach wäre eine Notiz,
+ * die niemand mehr sieht, nur noch Platz auf dem NAS.
+ */
+export async function purgeDeletedNotes(
+  olderThanMs: number,
+  log?: FastifyBaseLogger,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString()
+  const rows = await db
+    .select({ id: notes.id })
+    .from(notes)
+    .where(and(isNotNull(notes.deletedAt), lt(notes.deletedAt, cutoff)))
+
+  for (const row of rows) {
+    // Vor dem Löschen einsammeln: Danach steht bei ihnen keine Notiz mehr.
+    const dateien = await filesOfNote(row.id)
+    await db.delete(notes).where(eq(notes.id, row.id))
+    // Was dabei hängen bleibt, holt das Aufräumen der freien Dateien nach.
+    await deleteNoteFiles(dateien, log)
+  }
+  return rows.length
 }
 
 /**

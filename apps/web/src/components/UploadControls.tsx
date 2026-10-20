@@ -78,6 +78,7 @@ export function UploadControls({
   felder = ALLE_TRAY_FELDER,
   akzent = 'bg-brand-800',
   onNotiz,
+  onCheckliste,
 }: {
   /** In welche Sammlung das Hochgeladene gehört. */
   bereich?: Bereich
@@ -98,6 +99,8 @@ export function UploadControls({
    * Foto, so wie im Haushalt.
    */
   onNotiz?: () => void
+  /** Daneben eine Checkliste – auch in einer Sammlung steht manches zum Abhaken. */
+  onCheckliste?: () => void
 } = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const upload = useUploadDocument()
@@ -487,17 +490,28 @@ export function UploadControls({
               </MenuAction>
             ) : (
               <MenuAction label="Foto aufnehmen" onClick={openPhotoCamera}>
-                <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-                </svg>
+                <FotoIcon />
               </MenuAction>
             )}
+            {onCheckliste ? (
+              <MenuAction
+                label="Checkliste erstellen"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onCheckliste()
+                }}
+              >
+                <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M4 6.5 5.5 8 8 5M4 12.5 5.5 14 8 11M4 18.5 5.5 20 8 17M11 6.5h9M11 12.5h9M11 18.5h9"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </MenuAction>
+            ) : null}
             <MenuAction label="Datei wählen" onClick={() => fileRef.current?.click()}>
               <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
@@ -560,5 +574,20 @@ function MenuAction({
       {children}
       {label}
     </button>
+  )
+}
+
+/** Die Kamera – „Foto aufnehmen". */
+function FotoIcon() {
+  return (
+    <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
   )
 }

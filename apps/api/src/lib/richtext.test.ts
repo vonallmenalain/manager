@@ -8,6 +8,9 @@ import {
   blocksFromText,
   cleanFileName,
   changeIndent,
+  checklistDocFor,
+  checklistFromNote,
+  checklistToNote,
   clearMarks,
   docFromPlain,
   docOfValue,
@@ -21,6 +24,7 @@ import {
   isPlainDoc,
   listStateAt,
   marksAt,
+  normalizeChecklistRich,
   normalizeDoc,
   normalizeRich,
   parseRichJson,
@@ -29,8 +33,10 @@ import {
   replaceRange,
   richDocFor,
   serializeDoc,
+  singleLineBlock,
   toggleList,
   toRichValue,
+  trimBlock,
   upsertNoteSchema,
   withWritingLines,
   wordRangeAt,
@@ -251,9 +257,15 @@ describe('Formatierung beim Speichern einer Notiz', () => {
     assert.equal(upsertNoteSchema.parse({ body: 'Milch!', bodyRich: fett }).bodyRich, null)
   })
 
-  it('gibt einer Checkliste keine Formatierung', () => {
-    const notiz = upsertNoteSchema.parse({ body: 'Milch', bodyRich: fett, kind: 'liste' })
-    assert.equal(notiz.bodyRich, null)
+  it('formatiert bei einer Checkliste die Einträge, nicht die Kästchen', () => {
+    // Je Eintrag ein Absatz mit demselben Wortlaut – ohne „[ ]" davor.
+    const liste = upsertNoteSchema.parse({ body: '[ ] Milch', bodyRich: fett, kind: 'liste' })
+    assert.equal(liste.bodyRich, fett)
+
+    // Passt der Wortlaut nicht – etwa weil eine ältere App den Eintrag
+    // umbenannt hat –, steht die Liste unformatiert da.
+    const geaendert = upsertNoteSchema.parse({ body: '[ ] Brot', bodyRich: fett, kind: 'liste' })
+    assert.equal(geaendert.bodyRich, null)
   })
 
   it('unterscheidet ein fehlendes Feld von einem leeren', () => {
@@ -410,5 +422,69 @@ describe('Dateien im Text', () => {
     const ohnePdf = removeFile(value, pdf.id)
     assert.equal(plainTextOf(ohnePdf.doc), '\n📎 Tafel.jpg\n\nEnde')
     assert.equal(ohnePdf.caret, 3)
+  })
+})
+
+describe('Formatierte Checklisten', () => {
+  const fettesBrot = serializeDoc(
+    doc({ blocks: [{ runs: [{ t: 'Milch' }] }, { runs: [{ t: 'Brot', b: true }] }] }),
+  )
+
+  it('liest jeden Eintrag mit seiner Formatierung', () => {
+    const eintraege = checklistFromNote('[ ] Milch\n[x] Brot', fettesBrot)
+    assert.deepEqual(
+      eintraege.map((eintrag) => ({ done: eintrag.done, text: eintrag.value.text })),
+      [
+        { done: false, text: 'Milch' },
+        { done: true, text: 'Brot' },
+      ],
+    )
+    assert.equal(eintraege[0]?.value.rich, null)
+    assert.deepEqual(runsOf(docOfValue(eintraege[1]!.value), 0), [{ t: 'Brot', b: true }])
+  })
+
+  it('fällt auf reinen Text zurück, wenn das Formatfeld nicht passt', () => {
+    assert.equal(checklistDocFor('[ ] Milch', fettesBrot), null)
+    assert.equal(checklistDocFor('[ ] Milch\n[x] Butter', fettesBrot), null)
+    assert.deepEqual(
+      checklistFromNote('[ ] Milch', fettesBrot).map((eintrag) => eintrag.value),
+      [{ text: 'Milch', rich: null }],
+    )
+  })
+
+  it('schreibt Einträge zurück, getrimmt in Text und Formatierung', () => {
+    // Am Rand getippte Leerzeichen fallen im Text weg – in der Formatierung
+    // müssen sie es auch, sonst passten beide nicht mehr zueinander.
+    const fett = toRichValue(doc({ blocks: [{ runs: [{ t: ' Brot ', b: true }] }] }))
+    const { body, bodyRich } = checklistToNote([
+      { done: false, value: { text: 'Milch', rich: null } },
+      { done: false, value: { text: '   ', rich: null } },
+      { done: true, value: fett },
+    ])
+    assert.equal(body, '[ ] Milch\n[x] Brot')
+    assert.equal(bodyRich, fettesBrot)
+    assert.equal(normalizeChecklistRich(body, bodyRich), fettesBrot)
+  })
+
+  it('legt eine unformatierte Liste ohne Formatfeld ab', () => {
+    const { body, bodyRich } = checklistToNote([
+      { done: false, value: { text: 'Milch', rich: null } },
+    ])
+    assert.equal(body, '[ ] Milch')
+    assert.equal(bodyRich, null)
+  })
+
+  it('macht aus mehreren Zeilen eines Eintrags eine', () => {
+    const zweiZeilen = toRichValue(
+      doc({ blocks: [{ runs: [{ t: 'Milch', i: true }] }, { list: 1, runs: [{ t: 'Brot' }] }] }),
+    )
+    const { body } = checklistToNote([{ done: false, value: zweiZeilen }])
+    assert.equal(body, '[ ] Milch Brot')
+  })
+
+  it('trimmt über Läufe hinweg', () => {
+    const block = trimBlock({ runs: [{ t: '  ' }, { t: ' Milch', b: true }, { t: 'x ' }] })
+    assert.deepEqual(block.runs, [{ t: 'Milch', b: true }, { t: 'x' }])
+    assert.deepEqual(singleLineBlock(docFromPlain('a\n\nb')).runs, [{ t: 'a b' }])
   })
 })

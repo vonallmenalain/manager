@@ -24,6 +24,8 @@ import type {
   Note,
   PreviewInfo,
   PublicUser,
+  ReorderNotesInput,
+  RestoreShoppingItemsInput,
   RichFile,
   SaveMonthInput,
   SaveQuarterInput,
@@ -328,6 +330,12 @@ export const api = {
   clearDoneShoppingItems: () =>
     request<{ removed: number }>('/api/shopping/erledigte-loeschen', { method: 'POST' }),
 
+  restoreShoppingItems: (input: RestoreShoppingItemsInput) =>
+    request<{ items: ShoppingItem[] }>('/api/shopping/wiederherstellen', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   listShoppingSections: () =>
     request<{ sections: ShoppingSection[] }>('/api/shopping/sections'),
 
@@ -365,6 +373,12 @@ export const api = {
     request<{ note: Note }>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(note) }),
 
   deleteNote: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
+
+  restoreNote: (id: string) =>
+    request<{ note: Note }>(`/api/notes/${id}/wiederherstellen`, { method: 'POST' }),
+
+  reorderNotes: (input: ReorderNotesInput) =>
+    request<void>('/api/notes/reihenfolge', { method: 'PUT', body: JSON.stringify(input) }),
 
   /**
    * Eine Datei für eine Notiz – Bild oder PDF. Zurück kommt, was im Text der

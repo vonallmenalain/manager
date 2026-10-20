@@ -6,12 +6,13 @@ import { deleteExpiredSessions } from './auth/session.js'
 import { closeDb, runMigrations } from './db/index.js'
 import { backfillSearchText, seedCategories } from './db/seed.js'
 import { env } from './env.js'
-import { removeOrphanedNoteFiles } from './lib/note-files.js'
+import { purgeDeletedNotes, removeOrphanedNoteFiles } from './lib/note-files.js'
 import { cleanStaleTemporaryFiles } from './lib/storage.js'
 import { startOcrWorker, stopOcrWorker } from './ocr/index.js'
 import { APP_VERSION } from './version.js'
 
 const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
 
 async function main(): Promise<void> {
   // Beide Volumes anlegen, bevor irgendetwas anderes läuft: Ein fehlender
@@ -46,9 +47,20 @@ async function main(): Promise<void> {
       })
       .catch((error: unknown) => app.log.error({ err: error }, 'Aufräumen der Upload-Reste fehlgeschlagen'))
 
+    // Gelöschte Notizen nach 30 Tagen endgültig – bis dahin liessen sie sich
+    // zurückholen. Vor den freien Dateien, damit deren Aufräumen gleich
+    // mitnimmt, was dabei hängen blieb.
+    void purgeDeletedNotes(30 * DAY_MS, app.log)
+      .then((count) => {
+        if (count > 0) app.log.info({ count }, 'Gelöschte Notizen endgültig entfernt')
+      })
+      .catch((error: unknown) =>
+        app.log.error({ err: error }, 'Aufräumen gelöschter Notizen fehlgeschlagen'),
+      )
+
     // Dateien, die nie in einer gespeicherten Notiz ankamen, oder deren
     // Notiz gelöscht ist – nach einem Tag Frist.
-    void removeOrphanedNoteFiles(24 * HOUR_MS, app.log)
+    void removeOrphanedNoteFiles(DAY_MS, app.log)
       .then((count) => {
         if (count > 0) app.log.info({ count }, 'Verwaiste Notiz-Dateien entfernt')
       })

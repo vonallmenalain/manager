@@ -230,6 +230,7 @@ erDiagram
   Eintrag und Gedächtnis zeigen mit `section_id` darauf: Eine umbenannte Abteilung
   bleibt dieselbe, samt allem, was darin liegt
 * `notes` – Notizen mit Art (Text oder Checkliste), Sichtbarkeit (`shared`), Farbe,
+  Platz in der eigenen Reihenfolge (`sort_order`), Löschzeitpunkt (`deleted_at`),
   Anheftung und eigener Suchspalte. Die Sichtbarkeit ist nur im Haushalt eine Wahl: In
   der DocBase steht `shared` immer auf `true` – die Sammlung gehört allen, die sie öffnen
   dürfen (siehe 6.1a)
@@ -640,18 +641,20 @@ man gerade schaut. Die Vorschaubilder holt der Server als eigenes, kleines JPEG
 nur die, die tatsächlich in die Nähe des Bildschirms geraten. Ohne beides lüde eine
 Sammlung mit fünfzig Einträgen fünfzig grosse Bilder, von denen man vier sieht.
 
-**Hinzufügen: scannen, Datei wählen, Notiz erstellen.** Wo im Haushalt „Foto aufnehmen"
-steht, steht hier die Notiz. Der Grund ist derselbe wie beim fehlenden Statusfeld: Was in
+**Hinzufügen: scannen, Datei wählen, Notiz oder Checkliste erstellen.** Wo im Haushalt
+„Foto aufnehmen" steht, steht hier die Notiz. Der Grund ist derselbe wie beim fehlenden Statusfeld: Was in
 eine Fachsammlung kommt, ist entweder ein Blatt Papier – dafür gibt es den Scanner – oder
 ein eigener Gedanke dazu. Ein Schnappschuss ist keins von beidem; die Kinderzeichnung und
 das Zeugnis an der Wand, für die es den Kameraweg gibt, gehören in den Haushalt.
 
 **Die Notiz der Sammlung** ist dieselbe wie im Manager – Autospeichern, Farbe, Anheften,
-Formatierung, anklickbare Verweise –, mit drei Unterschieden. Sie hat **eine Kategorie**, und das ist
-der eigentliche Punkt: Was man sich zu einer Studie notiert, gehört in dieselbe Schublade
-wie die Studie und taucht unter demselben Häkchen wieder auf. Und sie ist immer
-Fliesstext: Eine Liste zum Abhaken beantwortet in einer Sammlung, die man nachschlägt,
-keine Frage.
+Formatierung, anklickbare Verweise, Text oder Checkliste, Rückgängig –, mit zwei
+Unterschieden. Sie hat **eine Kategorie**, und das ist der eigentliche Punkt: Was man sich
+zu einer Studie notiert, gehört in dieselbe Schublade wie die Studie und taucht unter
+demselben Häkchen wieder auf. Anfangs war sie immer Fliesstext – eine Sammlung schlägt man
+nach, statt sie abzuarbeiten. Auch dort steht aber manches zum Abhaken, die Fragen an die
+Ärztin oder die Tasche fürs Spital; deshalb gibt es die Checkliste jetzt auch hier, mit
+allem, was sie im Haushalt kann (siehe 6.3).
 
 **Und sie ist immer für alle da.** Den Schalter „nur für mich / geteilt" gibt es hier
 nicht: Die Sammlung ist eine gemeinsame, und eine Notiz, die neben der Studie liegt und
@@ -679,6 +682,14 @@ wie als Zeile, mit derselben Suche und demselben Kategorienfilter darüber. Zwei
 hiessen, an zwei Orten zu suchen und die Antwort auf „was habe ich zu diesem Thema?" erst
 im Kopf zusammenzusetzen. Sortiert wird nach dem Datum – beim Dokument das Datum darauf,
 bei der Notiz der Tag der letzten Änderung –, angeheftete Notizen stehen zuoberst.
+
+Wer die Notizen lieber selbst ordnet, stellt unter „Ansicht" die **eigene Reihenfolge**
+ein: Dann stehen die Notizen geschlossen oben – angeheftete zuerst –, so wie man sie
+hingeschoben hat, und die Dokumente folgen darunter nach Datum. Zwischen Dokumenten nach
+Datum hätte ein selbst gewählter Platz keinen Halt. „Notizen anordnen …" im selben Menü
+schaltet sie ein und setzt Pfeile an jede Notiz; verschoben wird wie im Haushalt (6.3),
+auch bei gesetztem Filter – dann nur unter den sichtbaren Notizen, die übrigen bleiben
+stehen. Die Einstellung hängt am Gerät, die Reihenfolge selbst steht auf dem Server.
 Erkennbar bleibt eine Notiz an ihrer Farbe und ihrem Zeichen; geöffnet wird sie als
 Fenster über der Sammlung, wie im Manager, und nicht als eigene Seite.
 
@@ -775,6 +786,14 @@ Jede Änderung erscheint sofort in der Liste und wird erst danach zum Server ges
 Empfang fühlt sich eine halbe Sekunde Verzögerung an, als hätte die App den Tipp
 verschluckt. Änderungen der anderen Person kommen alle 20 Sekunden nach.
 
+**Rückgängig mit einem Tipp.** Nach dem Abhaken, Wieder-öffnen, Löschen und Aufräumen
+steht einige Sekunden lang ein Hinweis über dem Eingabefeld – „Abgehakt: Milch ·
+Rückgängig". Im Gehen tippt man leicht den falschen Eintrag an, und eine Rückfrage vor
+jedem Haken hielte bei den neunundneunzig auf, die richtig waren. Gelöschte und
+weggeräumte Einträge kommen dabei zurück, wie sie waren: mit ihrem Platz in der
+Abteilung und ihrem Haken (`POST /api/shopping/wiederherstellen`). Es gilt immer der
+letzte Griff; solange der Finger auf dem Hinweis liegt, bleibt er stehen.
+
 ### 6.3 Notizen
 
 Kurze Notizen mit Titel und Inhalt, in zwei Arten: **Fliesstext** oder **Checkliste** mit
@@ -789,6 +808,64 @@ kein zweites Notion.
 tun", und die steht dann oben statt zwischen Durchgestrichenem. Sortiert wird der
 gespeicherte Inhalt selbst, nicht nur die Anzeige – so sieht die Liste auf jedem Gerät
 gleich aus und die Vorschau in der Übersicht zeigt dieselben offenen Punkte.
+
+**Einträge verschieben.** Links an jedem Eintrag sitzt ein Griff (sechs Punkte):
+festhalten und ziehen. Nur der Griff fängt den Finger, überall sonst blättert die Liste
+wie gewohnt – deshalb ein Griff und nicht die ganze Zeile. Am Rand des Fensters rollt die
+Liste beim Ziehen mit. Offenes bleibt bei Offenem, Erledigtes bei Erledigtem: Beim nächsten
+Abhaken rutschte es sonst ohnehin zurück. Mit der Tastatur verschieben die Pfeiltasten auf
+dem Griff.
+
+**Schreiben wie in einem Editor.** Enter beginnt den nächsten Eintrag – mitten im Text
+geteilt –, Rücktaste am Anfang führt einen Eintrag mit dem darüber zusammen, die Pfeile
+hoch und runter springen am Rand in den Eintrag daneben. Mehrere Zeilen einfügen ergibt
+mehrere Einträge; früher klebten sie in einem einzigen Eintrag aneinander.
+
+**Einträge formatieren.** Jeder Eintrag lässt sich fett, kursiv, unterstrichen, farbig,
+hinterlegt und in einer anderen Grösse schreiben – mit demselben Knopf und demselben Menü
+wie der Fliesstext. Der Knopf steht neben dem Eintrag, in dem geschrieben wird. Ohne
+Auswahl wirkt ein Griff hier auf **den ganzen Eintrag**, nicht nur auf ein Wort: Auf einer
+Liste will man „Brot" rot, nicht einen Teil davon, und eine ganze Zeile mit dem Finger zu
+markieren, wäre eine Geduldsprobe. Mit einer Auswahl wirkt er auf die Auswahl. Aufzählung,
+Einzug und Dateien gibt es in einem Eintrag nicht.
+
+**Die eigene Reihenfolge der Notizen.** Unter „Ansicht" steht neben Darstellung und Grösse
+die Reihenfolge: **Eigene Reihenfolge** (Standard) oder **Zuletzt bearbeitet** (wie
+früher). „Reihenfolge ändern …" setzt an jede Notiz zwei Pfeile – hoch und runter in der
+Liste, nach vorne und hinten in den Kacheln –, oben steht „Fertig". Pfeile statt Ziehen
+aus demselben Grund wie bei den Abteilungen: Eine Notiz ist eine grosse Fläche, und eine
+Ziehgeste darauf kollidierte mit dem Blättern. Angeheftete bleiben oben und werden unter
+sich geordnet. Eine neue Notiz kommt zuoberst; bearbeiten verschiebt nichts mehr. Notizen,
+die noch nie jemand verschoben hat, stehen alle auf demselben Platz und ordnen sich
+darunter nach dem letzten Bearbeiten – beim Einführen sah die Liste deshalb genauso aus
+wie vorher. Die Reihenfolge steht auf dem Server (`sort_order`) und gilt auf jedem Gerät
+und für beide; welche der beiden Sortierungen ein Gerät zeigt, ist dagegen eine
+Einstellung der Ansicht. Verschoben wird über `PUT /api/notes/reihenfolge` mit der neuen
+Folge der sichtbaren Notizen – bei einer Suche nur ein Teil, und die übrigen behalten
+ihren Platz. Der Startbildschirm zeigt die angehefteten Notizen in derselben Reihenfolge.
+
+**Rückgängig und Wiederholen.** Im Fuss jedes Notizfensters stehen zwei Pfeile, dazu
+`Ctrl+Z`, `Ctrl+Shift+Z` und `Ctrl+Y`. Zurückgenommen wird alles, was im Fenster
+geschrieben wurde: Text und Titel, Formatierung, eingefügte Dateien, Abhaken, Verschieben,
+gelöschte Einträge. Getipptes wird zu Schritten gebündelt – sonst nähme jedes Rückgängig
+nur einen Buchstaben zurück –, ein Schritt endet nach einer kurzen Pause oder ein paar
+Sekunden Tippen. Ein Handgriff wie eine Farbe oder ein Zug am Griff ist immer ein Schritt
+für sich. Der Cursor steht danach am Ende dessen, was sich geändert hat. Den Verlauf des
+Browsers gibt es dafür nicht: Er kennt nur das Feld, in dem der Cursor steht, und
+verliert nach jedem eigenen Handgriff (das Feld wird dabei neu aufgebaut) den Faden. Farbe,
+Anheften und Teilen gehören nicht in den Verlauf; die nimmt man mit demselben Knopf
+zurück. Wird eine Änderung zurückgenommen, nachdem sie schon gespeichert war, speichert
+das Fenster den alten Stand wieder – verglichen wird mit dem, was der Server zuletzt
+bekommen hat, nicht mit dem Stand beim Öffnen.
+
+**Löschen ohne Rückfrage – mit Rückgängig.** „Löschen" schliesst das Fenster sofort, und
+in der Übersicht steht einige Sekunden lang „Gelöscht: … · Rückgängig". Die Rückfrage
+vorher hielt bei jedem Löschen auf und schützte trotzdem nicht: Wer sie zu oft gesehen
+hat, bestätigt sie ungelesen. Der Server löscht dabei zunächst nur zum Schein
+(`deleted_at`): Die Notiz verschwindet aus jeder Liste und lässt sich nicht mehr ändern,
+bleibt aber samt ihren Dateien liegen. `POST /api/notes/:id/wiederherstellen` holt sie
+zurück, an ihren alten Platz. Nach 30 Tagen räumt das stündliche Aufräumen sie endgültig
+weg – dieselbe Frist wie beim Papierkorb der Dokumente.
 
 **Nur für mich oder geteilt.** Im Haushalt gehört jede Notiz zunächst dem, der sie
 anlegt, und wird über einen Schalter im Fenster bewusst freigegeben – in der DocBase
@@ -841,9 +918,9 @@ Inhalt, damit die ganze Kachel ein Griff bleibt und ein Verweis trotzdem sein ei
 behält – ein `<a>` in einem `<button>` wäre nicht erlaubt.
 
 Rechts oben in jeder Notiz steht, **wann zuletzt geschrieben wurde**, mit Datum und
-Uhrzeit. Damit die Angabe stimmt, speichert das Autospeichern nur, was vom Stand beim
-Öffnen abweicht: Wer eine Notiz nur anschaut – oder eine Änderung wieder zurücknimmt –,
-hat nichts geändert, und es soll auch nichts dastehen.
+Uhrzeit. Damit die Angabe stimmt, speichert das Autospeichern nur, was vom zuletzt
+gespeicherten Stand abweicht: Wer eine Notiz nur anschaut – oder eine Änderung vor dem
+Speichern wieder zurücknimmt –, hat nichts geändert, und es soll auch nichts dastehen.
 
 Eine Notiz öffnet als **Fenster über der Liste**, nicht als eigener Bildschirm: Sie ist
 eine Randnotiz, kein Formular. Das Fenster ist so hoch wie sein Inhalt und wächst mit ihm
@@ -890,7 +967,9 @@ dem gespeicherten Text entsprechen, sonst gilt der Text allein. Der Server prüf
 Annehmen, die App noch einmal beim Anzeigen. Eine App, die das Feld noch nicht kennt,
 schickt es gar nicht mit – dann bleibt die Formatierung stehen, solange sie noch zum Text
 passt (etwa beim blossen Anheften), und fällt weg, sobald der Text ein anderer ist.
-Checklisten bleiben unformatiert: Ihre Zeilen sind Einträge, keine Absätze. Übernommen ist
+Bei einer Checkliste steht im Formatfeld je Eintrag ein Absatz, ohne die Kästchen – die
+gehören dem Text in `body`; gilt nur, solange Absatz für Absatz derselbe Wortlaut dasteht
+wie in den Einträgen. Übernommen ist
 das Ganze aus der BSS-App (`lib/richtext`, `lib/richdom`), ohne deren Erwähnungen und
 Zuordnungen an Personen.
 
@@ -927,7 +1006,8 @@ dahinter nicht zur eigenen, und eine Datei aus der Ablage des Haushalts wird nic
 Beilage einer DocBase-Notiz. Gelöst wird dabei nichts: Wer eine Datei aus dem Text nimmt, lässt sie bei der
 Notiz liegen, bis diese gelöscht wird. So kostet auch ein Speichern aus einer älteren
 App, die das Formatfeld nicht kennt, keine Datei. Mit der Notiz verschwinden ihre
-Dateien; was nie in einer gespeicherten Notiz ankam, räumt der Server nach einem Tag weg.
+Dateien – endgültig erst, wenn die gelöschte Notiz nach 30 Tagen weggeräumt wird; was nie
+in einer gespeicherten Notiz ankam, räumt der Server nach einem Tag weg.
 
 Gespeichert wird **von selbst** – kurz nach dem letzten Tastendruck und noch einmal beim
 Schliessen. Einen Speichern-Knopf gibt es nicht; er war die einzige Möglichkeit,
@@ -1758,7 +1838,7 @@ eine funktionierende App auf dem Handy.
 | **1** ✅ | **Dokumente** | Upload, Liste, Detail, Kategorien, Status, Zuweisung, Metadatensuche, Aktivitätsverlauf | Erste echte Dokumente sind abgelegt und auffindbar |
 | **2** ✅ | **Mobil** | PWA-Installation, Share Target (Android), Dokumentenmodus mit Randerkennung, mehrseitige Scans, Offline-Hülle | Der 10-Sekunden-Weg vom Mail zum abgelegten Dokument |
 | **3** ✅ | **OCR** | Worker, Textebene + Tesseract, Volltextsuche, Textausschnitte | Suche findet Inhalte, nicht nur Titel |
-| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben, Formatierung und Suche | Die App wird täglich benutzt, nicht nur bei Post |
+| **4** ✅ | **Alltag** | Einkaufsliste nach Ladenabteilungen (lernt aus Korrekturen), Notizen und Checklisten mit Autospeichern, privat oder geteilt, Anheften, Farben, Formatierung und Suche, eigene Reihenfolge, Rückgängig im Fenster und nach dem Löschen oder Abhaken | Die App wird täglich benutzt, nicht nur bei Post |
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** ✅ | **Haus** | PDF-Import der Rechnungen für Strom, Wasser, Abwasser und Kehricht, Verbrauch und Ø Preis je Sparte, Perioden- und Vorjahresvergleich, Diagramme, Ablage des Belegs in den Dokumenten, CSV-Export | Die Nebenkosten des Hauses stehen nicht mehr in einer Tabelle auf dem Desktop |
 | **6a** ✅ | **Hypothek** | Festhypotheken und SARON mit Laufzeit, Zinsen je Quartal mit Prognose nach 30/360, Ø Zinssatz aus den bezahlten Zinsen, Amortisation der 2. Hypothek in Tranchen, Übernahme aus der eigenen Excel-Tabelle, CSV-Export – dazu bei den Nebenkosten der Jahresverlauf je Monat mit Akonto als provisorisch | Auch die Hypothek steht nicht mehr in einer Tabelle auf dem Desktop |
@@ -1797,6 +1877,10 @@ nichts davon hält den täglichen Gebrauch auf.
 | Diagramme | **Mehrere Felder mit gemeinsamer Zeitachse, nie zwei Achsen** | kWh, m³, Franken und Preise je Einheit auf einer Skala erfinden einen Zusammenhang, den die Zahlen nicht hergeben |
 | Sichtbarkeit in der DocBase | **Kein Schalter – jede Notiz gehört allen** | Die Sammlung ist eine gemeinsame; eine Notiz neben einer Studie, die der andere nicht sieht, beantwortet niemandes Frage |
 | Formatierte Notizen | **Formatierung neben dem Text (`body_rich`), feste Palette und Stufen** | `body` bleibt lesbarer Text für Suche, Vorschau und ältere Apps; wie in der BSS-App nur die Grundlagen – Fett, Kursiv, Unterstrichen, Grösse, Farbe, Aufzählung |
+| Rückgängig | **Eigener Verlauf je Notizfenster, Hinweis „Rückgängig" statt Rückfrage beim Löschen** | Der Verlauf des Browsers kennt nur ein Feld und verliert nach jedem eigenen Handgriff den Faden; eine Rückfrage vor jedem Löschen bestätigt man irgendwann ungelesen |
+| Gelöschte Notizen | **Zum Schein gelöscht (`deleted_at`), nach 30 Tagen endgültig** | Nur so kommt eine Notiz samt ihren Bildern zurück; neu angelegt verlöre sie Dateien und Platz |
+| Reihenfolge der Notizen | **Eine Zahl je Notiz (`sort_order`), geschickt wird die ganze sichtbare Folge** | Wie bei den Abteilungen: zwei schnelle Griffe nacheinander gehen nicht vom selben alten Stand aus; bei einem Filter bleiben die übrigen Notizen stehen |
+| Checklisten verschieben | **Griff zum Ziehen statt Pfeile** | Ein Eintrag ist eine schmale Zeile, die man oft verschiebt; der Griff fängt nur dort den Finger, wo gezogen werden soll, und lässt das Blättern frei |
 | Dateien in Notizen | **Eigene Tabelle `note_files`, im Text nur die Kennung** | Eine Beilage braucht weder Kategorie noch Status und soll nicht zwischen der Post stehen; `body` trägt „📎 Name" für Suche und ältere Apps |
 | Datei oder Text | **Beim Einfügen wählen: ganze Datei oder erkannter Text** | Ein Foto einer Wandtafel will man sehen, eine abfotografierte Seite weiterbearbeiten – beides ist dieselbe Handbewegung |
 | Teilen je App | **Eigenes Teilen-Ziel, eigene Auswahl, eigener Zwischenspeicher** | Was an die DocBase geteilt wird, landet nie im Haushalt; die beiden Apps räumen sich nichts gegenseitig weg |

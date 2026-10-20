@@ -14,10 +14,13 @@ und rechnet den Schatten heraus; **mehrere Seiten** sammeln sich zu einem
 einzigen PDF, statt einzeln in der Ablage zu landen. Die
 **Einkaufsliste** sortiert nach Ladenabteilungen – selbst angelegt und in die
 Reihenfolge des eigenen Rundgangs gebracht – und merkt sich Korrekturen
-dauerhaft, **Notizen** gibt es als Text oder Checkliste – privat oder geteilt,
-mit Autospeichern, Anheften, Farben und Suche; Text lässt sich wie in der BSS-App
-formatieren (Fett, Kursiv, Grösse, Farbe, Aufzählung), und Bilder und PDFs stehen
-auf Wunsch direkt im Text, ganz zum Antippen oder als erkannter Text –, und die
+dauerhaft und nimmt ein versehentliches Abhaken mit einem Tipp zurück, **Notizen**
+gibt es als Text oder Checkliste – privat oder geteilt, mit Autospeichern, Anheften,
+Farben, Suche und einer eigenen Reihenfolge; Text und Einträge einer Checkliste lassen
+sich wie in der BSS-App formatieren (Fett, Kursiv, Grösse, Farbe, Aufzählung), Einträge
+am Griff verschieben, jede Änderung im Fenster rückgängig machen, eine gelöschte Notiz
+zurückholen, und Bilder und PDFs stehen auf Wunsch direkt im Text, ganz zum Antippen
+oder als erkannter Text –, und die
 **Finanzen** rechnen
 Zehnten und Fastopfer ab – man hakt die offenen Monate ab, der Rest rechnet
 sich daraus, samt verrechenbarem Zehntel der Steuern und CSV-Export. Die Steuern
@@ -67,8 +70,8 @@ Worker und lassen sich deshalb einzeln auf den Startbildschirm legen. Vom
 Manager führt bewusst kein Weg in die DocBase.
 
 In die Sammlung der DocBase kommt man auf drei Wegen: **Dokument scannen**,
-**Datei wählen** und **Notiz erstellen**. Die Notiz ist dieselbe wie im Manager,
-nur mit einer **Kategorie** – sie steht als Kachel zwischen den Dokumenten und
+**Datei wählen** und **Notiz** oder **Checkliste erstellen**. Die Notiz ist dieselbe
+wie im Manager, nur mit einer **Kategorie** – sie steht als Kachel zwischen den Dokumenten und
 folgt demselben Filter wie sie. Ein „nur für mich" gibt es in der Sammlung
 nicht: Wer sie öffnen darf, sieht alles darin.
 

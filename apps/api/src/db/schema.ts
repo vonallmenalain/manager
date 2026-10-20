@@ -354,6 +354,21 @@ export const notes = sqliteTable(
      */
     shared: integer('shared', { mode: 'boolean' }).notNull().default(false),
     color: text('color').notNull().default('default'),
+    /**
+     * Der Platz in der eigenen Reihenfolge – kleiner heisst weiter oben.
+     *
+     * Bestehende Notizen stehen alle auf 0 und ordnen sich dann wie bisher nach
+     * dem letzten Bearbeiten; erst wer verschiebt, gibt ihnen eigene Plätze.
+     * Eine neue Notiz kommt vor alle anderen.
+     */
+    sortOrder: integer('sort_order').notNull().default(0),
+    /**
+     * Gelöscht – aber noch zurückzuholen. „Rückgängig" nach dem Löschen holt
+     * die Notiz samt ihren Dateien zurück; nach 30 Tagen räumt der Server sie
+     * endgültig weg (siehe index.ts). Dieselbe Frist wie beim Papierkorb der
+     * Dokumente.
+     */
+    deletedAt: text('deleted_at'),
 
     /** Titel und Text vereinheitlicht – dieselbe Suchlogik wie bei Dokumenten. */
     searchText: text('search_text').notNull().default(''),
@@ -373,6 +388,8 @@ export const notes = sqliteTable(
     index('notes_category_idx').on(table.categoryId),
     // Jede Abfrage filtert danach, wem die Notiz gehört und ob sie geteilt ist.
     index('notes_visibility_idx').on(table.createdBy, table.shared),
+    // Das Aufräumen fragt nach „gelöscht und älter als 30 Tage".
+    index('notes_deleted_at_idx').on(table.deletedAt),
   ],
 )
 

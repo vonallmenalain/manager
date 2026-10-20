@@ -9,6 +9,7 @@ import { type FormEvent, useState } from 'react'
 import { Button } from '../components/Button'
 import { Field } from '../components/Field'
 import { Modal, ModalCloseButton } from '../components/Modal'
+import { RueckgaengigHinweis, useRueckgaengig } from '../components/Rueckgaengig'
 import { ApiRequestError } from '../lib/api'
 import { erledigtAm, nachAbteilung } from '../lib/einkauf'
 import {
@@ -19,6 +20,7 @@ import {
   useDeleteShoppingSection,
   useRenameShoppingSection,
   useReorderShoppingSections,
+  useRestoreShoppingItems,
   useShoppingList,
   useShoppingSections,
   useUpdateShoppingItem,
@@ -30,6 +32,8 @@ export function Shopping() {
   const sections = useShoppingSections()
   const users = useHouseholdUsers()
   const clearDone = useClearDoneShoppingItems()
+  const restoreItems = useRestoreShoppingItems()
+  const rueckgaengig = useRueckgaengig()
   const [abteilungen, setAbteilungen] = useState(false)
 
   const items = list.data?.items ?? []
@@ -76,6 +80,7 @@ export function Shopping() {
                     item={item}
                     sections={alleAbteilungen}
                     users={users.data?.users ?? []}
+                    onRueckgaengig={rueckgaengig.anbieten}
                   />
                 ))}
               </ul>
@@ -89,7 +94,16 @@ export function Shopping() {
                   Erledigt ({done.length})
                 </h2>
                 <button
-                  onClick={() => clearDone.mutate(undefined)}
+                  onClick={() => {
+                    const weg = done
+                    clearDone.mutate(undefined)
+                    rueckgaengig.anbieten(
+                      weg.length === 1
+                        ? `Weggeräumt: ${weg[0]?.text ?? ''}`
+                        : `Weggeräumt: ${weg.length} Erledigte`,
+                      () => restoreItems.mutate(weg),
+                    )
+                  }}
                   className="text-sm font-medium text-slate-500 dark:text-slate-400"
                 >
                   Aufräumen
@@ -102,6 +116,7 @@ export function Shopping() {
                     item={item}
                     sections={alleAbteilungen}
                     users={users.data?.users ?? []}
+                    onRueckgaengig={rueckgaengig.anbieten}
                   />
                 ))}
               </ul>
@@ -112,6 +127,13 @@ export function Shopping() {
 
       <AddField />
 
+      {/* Über dem Eingabefeld, das selbst über der Navigation steht. */}
+      <RueckgaengigHinweis
+        angebot={rueckgaengig.angebot}
+        onSchliessen={rueckgaengig.schliessen}
+        style={{ bottom: 'calc(8.5rem + env(safe-area-inset-bottom, 0px))' }}
+      />
+
       {abteilungen ? (
         <SectionSheet sections={alleAbteilungen} onClose={() => setAbteilungen(false)} />
       ) : null}
@@ -119,18 +141,36 @@ export function Shopping() {
   )
 }
 
+/**
+ * Ein Eintrag der Liste. Abhaken und Löschen bieten danach „Rückgängig" an –
+ * im Laden tippt man im Gehen, und ein Haken am falschen Eintrag ist schnell
+ * gesetzt.
+ */
 function Row({
   item,
   sections,
   users,
+  onRueckgaengig,
 }: {
   item: ShoppingItem
   sections: readonly ShoppingSection[]
   users: { id: string; name: string }[]
+  onRueckgaengig: (text: string, rueckgaengig: () => void) => void
 }) {
   const update = useUpdateShoppingItem()
   const remove = useDeleteShoppingItem()
+  const restore = useRestoreShoppingItems()
   const [editing, setEditing] = useState(false)
+
+  function abhaken() {
+    const done = !item.done
+    update.mutate({ id: item.id, changes: { done } })
+    // Das Wort zuerst: Wird ein langer Eintrag abgeschnitten, dann sein Name
+    // und nicht das, was mit ihm geschah.
+    onRueckgaengig(done ? `Abgehakt: ${item.text}` : `Wieder offen: ${item.text}`, () =>
+      update.mutate({ id: item.id, changes: { done: !done } }),
+    )
+  }
 
   const doneByName = item.doneBy ? users.find((u) => u.id === item.doneBy)?.name : null
   const zeitpunkt = item.done && item.doneAt ? erledigtAm(item.doneAt) : ''
@@ -139,10 +179,7 @@ function Row({
     <li className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
       {/* Die ganze Zeile ist die Trefferfläche – im Laden trifft man kein
           kleines Kästchen. */}
-      <button
-        onClick={() => update.mutate({ id: item.id, changes: { done: !item.done } })}
-        className="flex min-h-12 flex-1 items-center gap-3 text-left"
-      >
+      <button onClick={abhaken} className="flex min-h-12 flex-1 items-center gap-3 text-left">
         <span
           className={`grid size-6 shrink-0 place-items-center rounded-full border-2 transition ${
             item.done
@@ -185,6 +222,7 @@ function Row({
           onDelete={() => {
             remove.mutate(item.id)
             setEditing(false)
+            onRueckgaengig(`Gelöscht: ${item.text}`, () => restore.mutate([item]))
           }}
           onClose={() => setEditing(false)}
         />

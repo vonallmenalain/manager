@@ -169,6 +169,13 @@
       "when": 1791960799206,
       "tag": "0023_hypothek",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792499170741,
+      "tag": "0024_notiz_reihenfolge_und_rueckgaengig",
+      "breakpoints": true
     }
   ]
 }

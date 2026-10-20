@@ -1,4 +1,4 @@
-import type { ManagedDocument, Note } from '@manager/shared'
+import { compareNotesInOwnOrder, type ManagedDocument, type Note } from '@manager/shared'
 
 /**
  * Ein Eintrag der Sammlung – ein Dokument oder eine Notiz.
@@ -12,12 +12,23 @@ export type Eintrag =
   | { art: 'notiz'; id: string; tag: string; zeit: string; note: Note }
 
 /**
+ * Wie die Sammlung geordnet ist: alles nach Datum – oder die Notizen zuerst,
+ * in ihrer eigenen Reihenfolge, und darunter die Dokumente nach Datum.
+ */
+export const SAMMLUNG_REIHENFOLGEN = ['datum', 'eigene'] as const
+export type SammlungReihenfolge = (typeof SAMMLUNG_REIHENFOLGEN)[number]
+
+/**
  * Dokumente und Notizen in eine Reihenfolge bringen.
  *
  * Angeheftete Notizen stehen zuoberst – dafür heftet man sie an. Alles andere
  * ordnet sich nach dem Datum: beim Dokument das Datum darauf, bei der Notiz
  * der Tag, an dem zuletzt daran geschrieben wurde. Das ist bei beiden die
  * Angabe, nach der man in einer Sammlung sucht.
+ *
+ * In der eigenen Reihenfolge stehen die Notizen stattdessen geschlossen oben,
+ * so wie man sie hingeschoben hat – zwischen Dokumenten nach Datum hätte ein
+ * selbst gewählter Platz keinen Halt.
  *
  * Steht hier und nicht im Bildschirm daneben, weil es die einzige Stelle ist,
  * an der die beiden Listen zu einer werden – und die einzige, die sich ohne
@@ -26,6 +37,7 @@ export type Eintrag =
 export function mische(
   documents: readonly ManagedDocument[],
   notes: readonly Note[],
+  reihenfolge: SammlungReihenfolge = 'datum',
 ): Eintrag[] {
   const angeheftet: Eintrag[] = []
   const rest: Eintrag[] = []
@@ -56,6 +68,20 @@ export function mische(
   // deshalb derselbe wie der zeitliche, ohne ein einziges Date-Objekt.
   const neuesteZuerst = (a: Eintrag, b: Eintrag) =>
     b.tag.localeCompare(a.tag) || b.zeit.localeCompare(a.zeit)
+
+  if (reihenfolge === 'eigene') {
+    const notizen = [...notes].sort(compareNotesInOwnOrder).map(
+      (note): Eintrag => ({
+        art: 'notiz',
+        id: note.id,
+        tag: note.updatedAt.slice(0, 10),
+        zeit: note.updatedAt,
+        note,
+      }),
+    )
+    const dokumente = rest.filter((eintrag) => eintrag.art === 'dokument').sort(neuesteZuerst)
+    return [...notizen, ...dokumente]
+  }
 
   return [...angeheftet.sort(neuesteZuerst), ...rest.sort(neuesteZuerst)]
 }
