@@ -22,8 +22,10 @@ export function App() {
 
   if (isLoading) return <SplashScreen />
   // Vor der Anmeldung prüfen: Ohne Backend ist jede Eingabe zwecklos, und
-  // die Anmeldemaske würde den Fehler dem Passwort zuschieben.
-  if (connectionError) return <BackendUnreachable onRetry={retry} />
+  // die Anmeldemaske würde den Fehler dem Passwort zuschieben. Steht dagegen
+  // der Stand vom letzten Mal bereit, arbeitet die App damit weiter – ohne
+  // Netz startet sie so, statt auf den Server zu warten.
+  if (connectionError && !user) return <BackendUnreachable onRetry={retry} />
   if (!user) return needsSetup ? <Setup /> : <Login />
 
   return (

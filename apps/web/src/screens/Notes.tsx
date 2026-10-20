@@ -29,6 +29,7 @@ import {
   NoteText,
   NoteTitle,
   VerlaufKnoepfe,
+  useSpeicherstand,
   VerschiebeKnoepfe,
   WidthPicker,
   type Breite,
@@ -42,7 +43,7 @@ import {
   UEBER_DER_NAVIGATION,
   useRueckgaengig,
 } from '../components/Rueckgaengig'
-import { saveStateLabel, useAutosave } from '../lib/autosave'
+import { useAutosave } from '../lib/autosave'
 import { useLocalSetting } from '../lib/einstellungen'
 import {
   useDeleteNote,
@@ -660,6 +661,10 @@ function NoteEditor({
     // angelegt und eine geleerte behält ihren letzten Stand.
     { savable: (entwurf) => entwurf.title.trim() !== '' || entwurf.body.trim() !== '' },
   )
+  const speicherstand = useSpeicherstand(
+    autosave.state,
+    leer ? 'Titel oder Text ausfüllen' : undefined,
+  )
 
   return (
     <Modal
@@ -670,7 +675,7 @@ function NoteEditor({
       header={
         <>
           <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400">
-            {saveStateLabel(autosave.state, leer ? 'Titel oder Text ausfüllen' : undefined)}
+            {speicherstand}
           </span>
           <div className="flex items-center gap-1">
             {/* Beschriftet statt nur ein Symbol: Wem eine Notiz gehört und wer

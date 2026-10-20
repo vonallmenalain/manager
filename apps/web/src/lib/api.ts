@@ -3,6 +3,7 @@ import type {
   Bereich,
   BillInput,
   Category,
+  ClearDoneShoppingInput,
   CreateCategoryInput,
   CreatePaymentInput,
   CreateShoppingItemInput,
@@ -46,6 +47,7 @@ import type {
 } from '@manager/shared'
 
 import { meldungUnlesbar, unlesbareDatei } from './einlesen'
+import { istWegFehler, meldeVerbindung } from './offline/verbindung'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -115,7 +117,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         ...init.headers,
       },
     })
-  } catch {
+  } catch (error) {
+    // Selbst abgebrochen – das sagt nichts über die Verbindung.
+    if (init.signal?.aborted) throw error
     // Bricht ein Hochladen ohne Antwort ab, kann auch die Datei schuld sein:
     // Chrome auf Android kommt an manche Dateien aus Google Drive nicht heran
     // und bricht die Anfrage dann ab wie bei fehlender Verbindung (siehe
@@ -124,6 +128,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (unlesbar) {
       throw new ApiRequestError(0, 'file_unreadable', meldungUnlesbar(unlesbar.name))
     }
+    meldeVerbindung(false)
     throw new ApiRequestError(
       0,
       'network_error',
@@ -131,10 +136,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     )
   }
 
+  // Eine Antwort, die nicht vom Server stammt, sondern vom Weg dorthin – der
+  // Cloudflare-Tunnel ohne Gegenstelle etwa. Für die App ist das dasselbe
+  // wie keine Verbindung (siehe `offline/verbindung.ts`).
+  meldeVerbindung(!istWegFehler(response.status))
+
   if (response.status === 204) return undefined as T
 
   const text = await response.text()
-  const payload: unknown = text ? JSON.parse(text) : null
+  // Eine Fehlerseite aus HTML ist kein Grund für einen Absturz beim Lesen;
+  // dann gilt eben die allgemeine Meldung.
+  let payload: unknown = null
+  try {
+    payload = text ? JSON.parse(text) : null
+  } catch {
+    if (response.ok) {
+      throw new ApiRequestError(response.status, 'invalid_response', 'Unerwartete Antwort.')
+    }
+  }
 
   if (!response.ok) {
     const error =
@@ -327,8 +346,11 @@ export const api = {
   deleteShoppingItem: (id: string) =>
     request<void>(`/api/shopping/${id}`, { method: 'DELETE' }),
 
-  clearDoneShoppingItems: () =>
-    request<{ removed: number }>('/api/shopping/erledigte-loeschen', { method: 'POST' }),
+  clearDoneShoppingItems: (input: ClearDoneShoppingInput = {}) =>
+    request<{ removed: number }>('/api/shopping/erledigte-loeschen', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   restoreShoppingItems: (input: RestoreShoppingItemsInput) =>
     request<{ items: ShoppingItem[] }>('/api/shopping/wiederherstellen', {

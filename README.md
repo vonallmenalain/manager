@@ -35,6 +35,10 @@ Akontorechnungen als provisorisch daneben. Die Sparte **Hypothek** daneben kennt
 Festhypotheken und SARON samt Laufzeit, die bezahlten Zinsen je Quartal mit Prognose und
 die Amortisation der 2. Hypothek in Tranchen – übernommen auf Wunsch aus der eigenen
 Excel-Tabelle.
+**Ohne Verbindung** startet die App mit dem letzten Stand: Einkaufsliste und Notizen
+lassen sich weiter bearbeiten – die Änderungen warten auf dem Gerät und gehen zum Server,
+sobald er wieder antwortet –, alles andere zeigt, was zuletzt geladen war, samt der schon
+angesehenen Bilder.
 Offen ist nur noch der Feinschliff, siehe [Roadmap](docs/KONZEPT.md#12-roadmap).
 
 ## Idee in einem Satz

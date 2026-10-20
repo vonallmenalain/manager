@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import {
   API_ERROR_CODES,
   catchAllSection,
+  clearDoneShoppingSchema,
   createShoppingItemSchema,
   createShoppingSectionSchema,
   guessSection,
@@ -17,7 +18,7 @@ import {
   type ShoppingItem,
   type ShoppingSection,
 } from '@manager/shared'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -283,19 +284,32 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (gewuenscht) await remember(normalized, gewuenscht)
 
+    const id = parsed.data.id ?? randomUUID()
     const inserted = await db
       .insert(shoppingItems)
       .values({
-        id: randomUUID(),
+        id,
         text: parsed.data.text,
         normalizedText: normalized,
         sectionId,
         createdBy: user.id,
       })
+      // Dieselbe Kennung zum zweiten Mal: Die Warteschlange des Geräts hat
+      // wiederholt, weil die erste Antwort verloren ging. Der Eintrag steht
+      // schon da – doppelt soll er nicht auf die Liste.
+      .onConflictDoNothing()
       .returning()
 
     const row = inserted[0]
-    if (!row) throw new Error('Eintrag konnte nicht gespeichert werden')
+    if (!row) {
+      const vorhanden = await db
+        .select()
+        .from(shoppingItems)
+        .where(eq(shoppingItems.id, id))
+        .limit(1)
+      if (!vorhanden[0]) throw new Error('Eintrag konnte nicht gespeichert werden')
+      return reply.send({ item: toApi(vorhanden[0], sections) })
+    }
     return reply.status(201).send({ item: toApi(row, sections) })
   })
 
@@ -445,10 +459,21 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
    * Räumt die erledigten Einträge weg – der übliche Abschluss eines Einkaufs.
    * Das Gelernte bleibt erhalten, weil es in einer eigenen Tabelle steht.
    */
-  fastify.post('/api/shopping/erledigte-loeschen', async (_request, reply) => {
+  fastify.post('/api/shopping/erledigte-loeschen', async (request, reply) => {
+    // Ohne Angabe alles Erledigte, sonst nur die genannten – siehe
+    // `clearDoneShoppingSchema`. Eine ältere App schickt gar nichts mit.
+    const parsed = clearDoneShoppingSchema.safeParse(request.body ?? {})
+    if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
+    const { ids } = parsed.data
+    if (ids && ids.length === 0) return reply.send({ removed: 0 })
+
     const deleted = await db
       .delete(shoppingItems)
-      .where(eq(shoppingItems.done, true))
+      .where(
+        ids
+          ? and(eq(shoppingItems.done, true), inArray(shoppingItems.id, ids))
+          : eq(shoppingItems.done, true),
+      )
       .returning({ id: shoppingItems.id })
 
     return reply.send({ removed: deleted.length })
