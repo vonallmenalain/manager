@@ -1,27 +1,55 @@
 import {
-  compareNotesInOwnOrder,
-  NOTE_SORT_STEP,
-  placeInOrder,
+  catchAllSection,
+  guessSection,
+  sameSectionName,
   type Bereich,
   type CreateShoppingItemInput,
   type Note,
+  type PublicUser,
   type ReorderNotesInput,
   type ShoppingItem,
   type ShoppingSection,
   type UpdateShoppingItemInput,
   type UpsertNoteInput,
 } from '@manager/shared'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 import { api } from './api'
+import {
+  einkaufMit,
+  notizenMit,
+  notizNach,
+  type Auftrag,
+  type AuftragsInhalt,
+  type NotizFilter,
+} from './offline/auftraege'
+import { einreihen, offeneAuftraege } from './offline/warteschlange'
 
 const SHOPPING_KEY = ['shopping'] as const
 const SECTIONS_KEY = ['shopping-sections'] as const
 
+/**
+ * Änderungen an Einkaufsliste und Notizen laufen über die Warteschlange
+ * (`offline/warteschlange.ts`): Sie stehen sofort auf dem Bildschirm und
+ * gehen zum Server, sobald er erreichbar ist – gleich oder nach dem Funkloch.
+ *
+ * Damit eine Liste vom Server die wartenden Änderungen nicht überschreibt,
+ * kommen sie auf jede frisch geholte Liste noch einmal obendrauf
+ * (`einkaufMit`, `notizenMit`).
+ */
+
+/** Wer gerade angemeldet ist – für „von Annina" an einem Haken, der noch wartet. */
+function ich(queryClient: QueryClient): string {
+  return queryClient.getQueryData<PublicUser | null>(['session'])?.id ?? ''
+}
+
 export function useShoppingList() {
   return useQuery({
     queryKey: SHOPPING_KEY,
-    queryFn: api.listShopping,
+    queryFn: async () => {
+      const { items } = await api.listShopping()
+      return { items: einkaufMit(items, offeneAuftraege()) }
+    },
     // Die Liste ist zu zweit in Bewegung: Wer im Laden steht, soll sehen,
     // wenn zuhause noch etwas dazukommt.
     refetchInterval: 20_000,
@@ -29,84 +57,86 @@ export function useShoppingList() {
 }
 
 /**
- * Setzt die Änderung sofort in der Liste um und macht sie bei einem Fehler
- * wieder rückgängig.
+ * Eine Änderung der Einkaufsliste: einreihen und sofort zeigen.
  *
  * Im Laden zählt das mehr als anderswo: Man tippt im Gehen, oft mit einem
  * Balken Empfang. Eine halbe Sekunde Verzögerung pro Häkchen fühlt sich an,
- * als hätte die App den Tipp verschluckt – und man tippt nochmals.
+ * als hätte die App den Tipp verschluckt – und man tippt nochmals. Ohne
+ * Empfang bleibt der Haken trotzdem stehen und geht später zum Server.
+ *
+ * `networkMode: 'always'`: Ohne Verbindung hielte React Query die Änderung
+ * sonst selbst an, statt sie einzureihen.
  */
-function useOptimisticShopping<TVariables>(
-  mutationFn: (variables: TVariables) => Promise<unknown>,
-  apply: (items: ShoppingItem[], variables: TVariables) => ShoppingItem[],
+function useEinkaufAuftrag<TVariables>(
+  auftragAus: (variables: TVariables, queryClient: QueryClient) => AuftragsInhalt | null,
 ) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn,
-    onMutate: async (variables: TVariables) => {
+    networkMode: 'always',
+    mutationFn: async (variables: TVariables) => {
+      const inhalt = auftragAus(variables, queryClient)
+      if (!inhalt) return null
       await queryClient.cancelQueries({ queryKey: SHOPPING_KEY })
-      const previous = queryClient.getQueryData<{ items: ShoppingItem[] }>(SHOPPING_KEY)
-
-      if (previous) {
-        queryClient.setQueryData(SHOPPING_KEY, { items: apply(previous.items, variables) })
+      const auftrag = einreihen(inhalt)
+      const bisher = queryClient.getQueryData<{ items: ShoppingItem[] }>(SHOPPING_KEY)
+      if (bisher) {
+        queryClient.setQueryData(SHOPPING_KEY, { items: einkaufMit(bisher.items, [auftrag]) })
       }
-      return { previous }
-    },
-    onError: (_error, _variables, context) => {
-      // Zurück auf den Stand vor dem Tippen – sonst zeigt die Liste etwas an,
-      // das der Server nie erfahren hat.
-      if (context?.previous) queryClient.setQueryData(SHOPPING_KEY, context.previous)
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: SHOPPING_KEY })
+      return auftrag
     },
   })
 }
 
+/**
+ * Die Abteilung, in die ein neuer Eintrag vermutlich kommt – bis der Server
+ * mit dem Gedächtnis der Liste entscheidet. Dieselbe Stichwortliste wie dort.
+ */
+function vermuteteAbteilung(queryClient: QueryClient, text: string): string | undefined {
+  const sections = queryClient.getQueryData<{ sections: ShoppingSection[] }>(SECTIONS_KEY)?.sections
+  if (!sections) return undefined
+  const name = guessSection(text)
+  return (
+    sections.find((section) => sameSectionName(section.name, name)) ?? catchAllSection(sections)
+  )?.id
+}
+
 export function useAddShoppingItem() {
-  return useOptimisticShopping(
-    (input: CreateShoppingItemInput) => api.addShoppingItem(input),
-    (items, input) => [
-      ...items,
-      {
-        // Vorläufiger Eintrag, bis der Server antwortet. Welche Abteilung es
-        // wird, weiss nur er – er kennt das Gedächtnis der Liste. Bis dahin
-        // steht der Eintrag ohne Abteilung, und die Liste zeigt ihn zuunterst.
-        id: `vorlaeufig-${Date.now()}`,
-        text: input.text,
-        sectionId: input.sectionId ?? '',
-        done: false,
-        createdBy: '',
-        doneBy: null,
-        createdAt: new Date().toISOString(),
-        doneAt: null,
-      },
-    ],
-  )
+  return useEinkaufAuftrag((input: CreateShoppingItemInput, queryClient) => ({
+    art: 'einkauf.neu',
+    id: crypto.randomUUID(),
+    text: input.text,
+    abteilung: input.sectionId ?? vermuteteAbteilung(queryClient, input.text),
+    von: ich(queryClient),
+  }))
 }
 
 export function useUpdateShoppingItem() {
-  return useOptimisticShopping(
-    ({ id, changes }: { id: string; changes: UpdateShoppingItemInput }) =>
-      api.updateShoppingItem(id, changes),
-    (items, { id, changes }) =>
-      items.map((item) => (item.id === id ? { ...item, ...changes } : item)),
+  return useEinkaufAuftrag(
+    ({ id, changes }: { id: string; changes: UpdateShoppingItemInput }, queryClient) => ({
+      art: 'einkauf.aendern',
+      id,
+      changes,
+      von: ich(queryClient),
+    }),
   )
 }
 
 export function useDeleteShoppingItem() {
-  return useOptimisticShopping(
-    (id: string) => api.deleteShoppingItem(id),
-    (items, id) => items.filter((item) => item.id !== id),
-  )
+  return useEinkaufAuftrag((id: string) => ({ art: 'einkauf.loeschen', id }))
 }
 
+/**
+ * „Aufräumen" – mit den Kennungen dessen, was hier erledigt dasteht. Was die
+ * andere Person inzwischen abgehakt hat, bleibt stehen, auch wenn der Auftrag
+ * erst nach dem Funkloch ankommt (siehe `clearDoneShoppingSchema`).
+ */
 export function useClearDoneShoppingItems() {
-  return useOptimisticShopping(
-    () => api.clearDoneShoppingItems(),
-    (items) => items.filter((item) => !item.done),
-  )
+  return useEinkaufAuftrag((_: undefined, queryClient) => {
+    const items = queryClient.getQueryData<{ items: ShoppingItem[] }>(SHOPPING_KEY)?.items ?? []
+    const ids = items.filter((item) => item.done).map((item) => item.id)
+    return ids.length > 0 ? { art: 'einkauf.aufraeumen', ids } : null
+  })
 }
 
 /**
@@ -114,25 +144,7 @@ export function useClearDoneShoppingItems() {
  * Liste schon kennt, kommt nicht doppelt.
  */
 export function useRestoreShoppingItems() {
-  return useOptimisticShopping(
-    (restore: ShoppingItem[]) =>
-      api.restoreShoppingItems({
-        items: restore.map((item) => ({
-          id: item.id,
-          text: item.text,
-          sectionId: item.sectionId,
-          done: item.done,
-          createdBy: item.createdBy,
-          doneBy: item.doneBy,
-          createdAt: item.createdAt,
-          doneAt: item.doneAt,
-        })),
-      }),
-    (items, restore) => {
-      const bekannt = new Set(items.map((item) => item.id))
-      return [...items, ...restore.filter((item) => !bekannt.has(item.id))]
-    },
-  )
+  return useEinkaufAuftrag((items: ShoppingItem[]) => ({ art: 'einkauf.zurueck', items }))
 }
 
 /**
@@ -227,11 +239,7 @@ const NOTES_KEY = 'notes'
  * Kategorie, weil ihre Notizen zwischen den Dokumenten stehen und demselben
  * Filter folgen müssen wie sie.
  */
-export interface NoteFilters {
-  bereich?: Bereich
-  q?: string
-  categoryId?: string[]
-}
+export type NoteFilters = NotizFilter
 
 function noteQueryString(filters: NoteFilters): string {
   const params = new URLSearchParams()
@@ -251,19 +259,70 @@ function noteQueryString(filters: NoteFilters): string {
 export function useNotes(filters: NoteFilters, enabled = true) {
   return useQuery({
     queryKey: [NOTES_KEY, filters],
-    queryFn: () => api.listNotes(noteQueryString(filters)),
+    queryFn: async () => {
+      const { notes } = await api.listNotes(noteQueryString(filters))
+      return { notes: notizenMit(notes, offeneAuftraege(), filters) }
+    },
     enabled,
     placeholderData: (previous) => previous,
   })
 }
 
+/** Alle Notizlisten im Zwischenspeicher, samt ihren Filtern. */
+function notizlisten(queryClient: QueryClient) {
+  return queryClient.getQueriesData<{ notes: Note[] }>({ queryKey: [NOTES_KEY] })
+}
+
+/** Einen eben eingereihten Auftrag in jeder Notizliste zeigen. */
+function notizenZeigen(queryClient: QueryClient, auftrag: Auftrag): void {
+  for (const [key, data] of notizlisten(queryClient)) {
+    if (!data) continue
+    const filters = (key[1] ?? {}) as NoteFilters
+    queryClient.setQueryData(key, { ...data, notes: notizenMit(data.notes, [auftrag], filters) })
+  }
+}
+
+/** Die Notiz, wie sie gerade in irgendeiner Liste steht – für das, was zurückkommt. */
+function notizImZwischenspeicher(queryClient: QueryClient, id: string): Note | undefined {
+  for (const [, data] of notizlisten(queryClient)) {
+    const treffer = data?.notes.find((note) => note.id === id)
+    if (treffer) return treffer
+  }
+  return undefined
+}
+
+/**
+ * Was zuletzt gelöscht wurde – damit „Rückgängig" die Notiz sofort wieder
+ * zeigen kann, auch wenn der Server noch gar nichts davon weiss.
+ */
+const zuletztGeloescht = new Map<string, Note>()
+
+/**
+ * Eine Notiz speichern. Eine neue bekommt ihre Kennung hier auf dem Gerät –
+ * das Fenster schreibt danach unter derselben Kennung weiter, ob der Server
+ * die Notiz schon kennt oder nicht.
+ *
+ * Zurück kommt die Notiz, wie sie jetzt dasteht – sofort, auch ohne
+ * Verbindung. Gespeichert ist sie damit auf dem Gerät; zum Server geht sie
+ * mit der Warteschlange.
+ */
 export function useSaveNote() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, note }: { id?: string; note: UpsertNoteInput }) =>
-      id ? api.updateNote(id, note) : api.createNote(note),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
+    networkMode: 'always',
+    mutationFn: async ({ id, note }: { id?: string; note: UpsertNoteInput }) => {
+      await queryClient.cancelQueries({ queryKey: [NOTES_KEY] })
+      const bisher = id ? notizImZwischenspeicher(queryClient, id) : undefined
+      const auftrag = einreihen({
+        art: 'notiz.speichern',
+        id: id ?? crypto.randomUUID(),
+        neu: !id,
+        note: { ...note, id: undefined },
+        von: ich(queryClient),
+      })
+      notizenZeigen(queryClient, auftrag)
+      if (auftrag.art !== 'notiz.speichern') throw new Error('Unerwarteter Auftrag')
+      return { note: notizNach(auftrag, bisher) }
     },
   })
 }
@@ -271,9 +330,12 @@ export function useSaveNote() {
 export function useDeleteNote() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.deleteNote(id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
+    networkMode: 'always',
+    mutationFn: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: [NOTES_KEY] })
+      const bisher = notizImZwischenspeicher(queryClient, id)
+      if (bisher) zuletztGeloescht.set(id, bisher)
+      notizenZeigen(queryClient, einreihen({ art: 'notiz.loeschen', id }))
     },
   })
 }
@@ -282,9 +344,12 @@ export function useDeleteNote() {
 export function useRestoreNote() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.restoreNote(id),
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
+    networkMode: 'always',
+    mutationFn: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: [NOTES_KEY] })
+      const notiz = zuletztGeloescht.get(id)
+      zuletztGeloescht.delete(id)
+      notizenZeigen(queryClient, einreihen({ art: 'notiz.zurueck', id, notiz }))
     },
   })
 }
@@ -297,45 +362,50 @@ export function useRestoreNote() {
  */
 export function useReorderNotes() {
   const queryClient = useQueryClient()
-  const istBereich = (key: readonly unknown[], bereich: Bereich) => {
-    const filters = key[1] as NoteFilters | undefined
-    return key[0] === NOTES_KEY && (filters?.bereich ?? 'manager') === bereich
-  }
-
   return useMutation({
-    mutationFn: (input: ReorderNotesInput) => api.reorderNotes(input),
-    onMutate: async (input: ReorderNotesInput) => {
-      const predicate = (query: { queryKey: readonly unknown[] }) =>
-        istBereich(query.queryKey, input.bereich)
-      await queryClient.cancelQueries({ predicate })
-      const previous = queryClient.getQueriesData<{ notes: Note[] }>({ predicate })
-
-      for (const [key, data] of previous) {
-        if (!data) continue
-        const bisher = [...data.notes].sort(compareNotesInOwnOrder)
-        const platz = new Map(
-          placeInOrder(
-            bisher.map((note) => note.id),
-            input.ids,
-          ).map((id, index) => [id, (index + 1) * NOTE_SORT_STEP]),
-        )
-        queryClient.setQueryData(key, {
-          ...data,
-          notes: data.notes.map((note) => ({
-            ...note,
-            sortOrder: platz.get(note.id) ?? note.sortOrder,
-          })),
-        })
-      }
-      return { previous }
-    },
-    onError: (_error, _input, context) => {
-      for (const [key, data] of context?.previous ?? []) queryClient.setQueryData(key, data)
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
+    networkMode: 'always',
+    mutationFn: async (input: ReorderNotesInput) => {
+      await queryClient.cancelQueries({ queryKey: [NOTES_KEY] })
+      notizenZeigen(
+        queryClient,
+        einreihen({ art: 'notiz.reihenfolge', bereich: input.bereich, ids: input.ids }),
+      )
     },
   })
 }
 
-export type { Note, ShoppingItem, ShoppingSection }
+/**
+ * Die wartenden Änderungen auf den aufbewahrten Stand legen – beim Start.
+ *
+ * Der Stand vom Gerät kann ein paar Augenblicke älter sein als die
+ * Warteschlange: Wer offline etwas abhakt und die App gleich danach
+ * schliesst, hat den Auftrag schon gesichert, die Liste vielleicht noch
+ * nicht. Ohne Verbindung holt niemand eine neue – also hier.
+ *
+ * Der Zeitpunkt der Daten bleibt dabei, wie er war: Sonst gälten sie als
+ * frisch, und mit Verbindung würde eine halbe Minute lang nicht nachgefragt.
+ */
+export function wartendeAnwenden(queryClient: QueryClient): void {
+  const auftraege = offeneAuftraege()
+  if (auftraege.length === 0) return
+  const einkauf = queryClient.getQueryState<{ items: ShoppingItem[] }>(SHOPPING_KEY)
+  if (einkauf?.data) {
+    queryClient.setQueryData(
+      SHOPPING_KEY,
+      { items: einkaufMit(einkauf.data.items, auftraege) },
+      { updatedAt: einkauf.dataUpdatedAt },
+    )
+  }
+  for (const query of queryClient.getQueryCache().findAll({ queryKey: [NOTES_KEY] })) {
+    const data = query.state.data as { notes: Note[] } | undefined
+    if (!data) continue
+    const filters = (query.queryKey[1] ?? {}) as NoteFilters
+    queryClient.setQueryData(
+      query.queryKey,
+      { ...data, notes: notizenMit(data.notes, auftraege, filters) },
+      { updatedAt: query.state.dataUpdatedAt },
+    )
+  }
+}
+
+export type { Bereich, Note, ShoppingItem, ShoppingSection }

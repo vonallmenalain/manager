@@ -265,7 +265,19 @@ export const shoppingItemSchema = z.object({
 
 export type ShoppingItem = z.infer<typeof shoppingItemSchema>
 
+/**
+ * Eine Kennung, die das Gerät selbst vergibt.
+ *
+ * Wer ohne Verbindung etwas anlegt, braucht sofort eine Kennung – für den
+ * nächsten Haken, das Umbenennen, das Löschen, lange bevor der Server davon
+ * weiss. Und wird die Anfrage später wiederholt, weil die erste Antwort im
+ * Funkloch verloren ging, legt dieselbe Kennung nichts doppelt an. Fehlt sie
+ * (eine ältere App), vergibt der Server eine.
+ */
+export const clientIdSchema = z.string().uuid()
+
 export const createShoppingItemSchema = z.object({
+  id: clientIdSchema.optional(),
   text: z.string().trim().min(1, 'Bitte etwas eingeben').max(120, 'Zu lang'),
   sectionId: z.string().optional(),
 })
@@ -279,6 +291,20 @@ export const updateShoppingItemSchema = z.object({
 })
 
 export type UpdateShoppingItemInput = z.infer<typeof updateShoppingItemSchema>
+
+/**
+ * „Aufräumen" – auf Wunsch nur bestimmte Einträge.
+ *
+ * Kommt der Griff aus einer Warteschlange, die eine Weile ohne Verbindung
+ * war, hat die andere Person in der Zwischenzeit vielleicht weiter abgehakt.
+ * Weggeräumt wird dann nur, was hier erledigt dastand, als aufgeräumt wurde –
+ * nicht das, was sie eben in den Wagen gelegt hat.
+ */
+export const clearDoneShoppingSchema = z.object({
+  ids: z.array(z.string().max(60)).max(2000).optional(),
+})
+
+export type ClearDoneShoppingInput = z.infer<typeof clearDoneShoppingSchema>
 
 /**
  * Gelöschte Einträge zurückholen – „Rückgängig" nach dem Löschen oder
@@ -675,6 +701,8 @@ export interface TexterkennungAuftrag {
 
 export const upsertNoteSchema = z
   .object({
+    /** Nur beim Anlegen: die Kennung, die das Gerät vergeben hat (`clientIdSchema`). */
+    id: clientIdSchema.optional(),
     title: z.string().trim().max(NOTE_TITLE_MAX).default(''),
     body: z.string().max(NOTE_BODY_MAX).default(''),
     /**

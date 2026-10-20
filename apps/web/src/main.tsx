@@ -6,6 +6,8 @@ import { App } from './App'
 import './index.css'
 import { startAppUpdate } from './lib/appUpdate'
 import { wurzelWorkerAnmelden } from './lib/legacyShare'
+import { offlineStarten } from './lib/offline/start'
+import { GERAET_GC_MS } from './lib/offline/zwischenspeicher'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -15,6 +17,10 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: true,
       staleTime: 30_000,
       retry: 1,
+      // Was einmal geladen war, bleibt im Speicher – sonst fiele es nach fünf
+      // Minuten ohne Bildschirm heraus und damit auch aus dem Stand, den die
+      // App fürs Arbeiten ohne Verbindung aufbewahrt.
+      gcTime: GERAET_GC_MS,
     },
   },
 })
@@ -28,10 +34,14 @@ wurzelWorkerAnmelden()
 const container = document.getElementById('root')
 if (!container) throw new Error('Wurzelelement #root nicht gefunden')
 
-createRoot(container).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-)
+// Erst den letzten Stand vom Gerät holen, dann zeichnen: So steht ohne
+// Verbindung gleich die Einkaufsliste da und nicht „Server nicht erreichbar".
+void offlineStarten('manager', queryClient).finally(() => {
+  createRoot(container).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+})

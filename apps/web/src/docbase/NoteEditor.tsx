@@ -19,6 +19,7 @@ import {
   gleicherInhalt,
   NoteText,
   NoteTitle,
+  useSpeicherstand,
   VerlaufKnoepfe,
   WidthPicker,
   type Breite,
@@ -26,7 +27,7 @@ import {
   type NotizInhalt,
 } from '../components/NoteParts'
 import type { Aenderung } from '../components/RichTextField'
-import { saveStateLabel, useAutosave } from '../lib/autosave'
+import { useAutosave } from '../lib/autosave'
 import { useCategories } from '../lib/documents'
 import { useLocalSetting } from '../lib/einstellungen'
 import { useDeleteNote, useSaveNote } from '../lib/household'
@@ -123,6 +124,7 @@ export function NoteEditor({
     // angelegt und eine geleerte behält ihren letzten Stand.
     { savable: (entwurf) => entwurf.title.trim() !== '' || entwurf.body.trim() !== '' },
   )
+  const speicherstand = useSpeicherstand(autosave.state)
 
   return (
     <Modal
@@ -133,7 +135,7 @@ export function NoteEditor({
       header={
         <>
           <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400">
-            {saveStateLabel(autosave.state)}
+            {speicherstand}
           </span>
           <div className="flex items-center gap-1">
             <ColorPicker color={color} onChange={setColor} akzent="text-teal-700" />

@@ -7,6 +7,7 @@ import {
 import { NavigationRoute, registerRoute } from 'workbox-routing'
 
 import { SHARE_CACHE, SHARE_LANDING_PATH, SHARE_TARGET_PATH } from './lib/shareConstants'
+import { dateienZwischenspeichern } from './lib/offline/dateienImWorker'
 import { receiveShare } from './lib/shareReceiver'
 
 declare const self: ServiceWorkerGlobalScope
@@ -22,6 +23,9 @@ declare const self: ServiceWorkerGlobalScope
 
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
+
+// Bilder und Dateien, die man schon gesehen hat, auch ohne Verbindung – siehe dort.
+dateienZwischenspeichern('manager')
 
 /**
  * Jede Seitennavigation wird aus der zwischengespeicherten App-Hülle

@@ -25,8 +25,11 @@ import {
   type Einstieg,
   type RichTextFieldHandle,
 } from './RichTextField'
+import { saveStateLabel, type SaveState } from '../lib/autosave'
 import { DATEI_ACCEPT } from '../lib/dateitypen'
 import { einlesen } from '../lib/einlesen'
+import { useServerErreichbar } from '../lib/offline/verbindung'
+import { useWarteschlange } from '../lib/offline/warteschlange'
 import {
   dateienAlsBloecke,
   inNotizEinsetzen,
@@ -724,4 +727,18 @@ export function gleicherInhalt(a: NotizInhalt, b: NotizInhalt): boolean {
     a.text.rich === b.text.rich &&
     gleicheEintraege(a.items, b.items)
   )
+}
+
+/**
+ * Was oben links im Notizfenster steht: „Gespeichert" – oder, solange die
+ * Änderung nur auf dem Gerät liegt, „Auf dem Gerät gespeichert". Ohne
+ * Verbindung soll niemand glauben, die andere Person sehe es schon.
+ */
+export function useSpeicherstand(state: SaveState, hinweis?: string): string {
+  const { offen } = useWarteschlange()
+  const erreichbar = useServerErreichbar()
+  if (!hinweis && state === 'gespeichert' && offen > 0 && (!erreichbar || !navigator.onLine)) {
+    return 'Auf dem Gerät gespeichert'
+  }
+  return saveStateLabel(state, hinweis)
 }

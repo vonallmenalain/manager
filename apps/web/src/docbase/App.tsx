@@ -29,7 +29,8 @@ export function App() {
   const { user, isLoading, needsSetup, connectionError, retry } = useSession()
 
   if (isLoading) return <SplashScreen />
-  if (connectionError) return <BackendUnreachable onRetry={retry} />
+  // Nur ohne Stand vom letzten Mal: Mit ihm arbeitet die App offline weiter.
+  if (connectionError && !user) return <BackendUnreachable onRetry={retry} />
   if (!user) {
     // Ohne Konto führt der Weg über den Manager: Die Ersteinrichtung legt den
     // Haushalt an, und die DocBase hängt daran. Hier stünde sonst ein zweiter

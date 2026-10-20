@@ -13,6 +13,27 @@ import { Logo } from './Login'
 export function BackendUnreachable({ onRetry }: { onRetry: () => void }) {
   const usesLocalhost = API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1')
 
+  // Ohne Netz und ohne Stand vom letzten Mal – etwa beim allerersten Öffnen
+  // im Funkloch. Dann ist nicht der Server schuld, und die Hinweise zu
+  // Tunnel und Netlify führten in die Irre.
+  if (!navigator.onLine) {
+    return (
+      <div className="flex min-h-dvh flex-col justify-center px-6 py-12">
+        <div className="mx-auto w-full max-w-sm text-center">
+          <Logo />
+          <h1 className="mt-4 text-2xl font-bold">Keine Verbindung</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Einmal braucht die App das Internet – zum Anmelden und um den ersten Stand zu
+            holen. Danach öffnet sie sich auch ohne Verbindung, mit dem Stand vom letzten Mal.
+          </p>
+          <div className="mt-6">
+            <Button onClick={onRetry}>Nochmals versuchen</Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-dvh flex-col justify-center px-6 py-12">
       <div className="mx-auto w-full max-w-sm text-center">

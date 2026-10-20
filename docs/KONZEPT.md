@@ -82,7 +82,7 @@ Deployment passiert vollständig über `git push`.
 | Frontend | React 19 + TypeScript + Vite | Schnell, riesiges Ökosystem, gute PWA-Tooling-Lage |
 | UI | Tailwind CSS + Radix Primitives | Mobile-first ohne Design-System-Ballast, barrierefreie Basiskomponenten |
 | PWA | `vite-plugin-pwa` (Workbox) | Manifest, Service Worker, Precaching, Share Target aus einer Hand |
-| State/Sync | TanStack Query + IndexedDB (Dexie) | Server-State-Caching und Offline-Queue ohne eigenes Framework |
+| State/Sync | TanStack Query + IndexedDB (eigener kleiner Speicher) | Server-State-Caching, aufbewahrter Stand und Warteschlange für Änderungen ohne eigenes Framework – Dexie wäre für einen Schlüssel-Wert-Speicher mit zwei Einträgen Ballast |
 | Backend | Node 22 + Fastify + TypeScript | Eine Sprache über den ganzen Stack, sehr schneller Upload-Pfad (Streams) |
 | Datenbank | SQLite (better-sqlite3, WAL) + Drizzle ORM | Für zwei Nutzer ideal: eine Datei, kein Server, trivial zu sichern |
 | Volltextsuche | Vereinheitlichte Spalte `search_text` + `LIKE` | FTS5 war geplant, wurde aber nicht gebraucht: Bei zwei Personen und einigen tausend Dokumenten ist `LIKE` schnell genug, und die Vereinheitlichung (Umlaute ausgeschrieben, Akzente entfernt) löst das Problem, an dem FTS5 hier gescheitert wäre – `LIKE` in SQLite kennt nur ASCII-Gross-/Kleinschreibung, `PRÄMIE` fände `Prämie` sonst nicht |
@@ -1540,15 +1540,74 @@ leitet auf den Manager weiter. **Beide stehen im Teilen-Menü**, jede mit ihrem 
 Ziel (siehe 8.2): Wer an die DocBase teilt, landet in der DocBase und legt in der Sammlung
 oder einer ihrer Notizen ab – nie im Haushalt, und umgekehrt.
 
-**Offline:** App-Shell und zuletzt geladene Listen werden vorgehalten, ein Hinweisband
-zeigt an, dass keine Verbindung besteht – man sieht also weiterhin, was auf der
-Einkaufsliste steht und was in den Notizen. Änderungen ohne Netz sind noch nicht
-möglich: Sie erscheinen kurz und werden zurückgerollt, sobald der Server nicht antwortet.
+**Offline: Die App startet und arbeitet ohne Verbindung.** Grundsatz: Kein Netz darf
+nie heissen, dass der Manager nicht aufgeht oder die Einkaufsliste nicht zu sehen und zu
+bearbeiten ist. Dafür vier Teile (`apps/web/src/lib/offline/`):
 
-Eine echte Warteschlange (lokale Änderungen zwischenspeichern und bei Verbindung
-nachschicken) ist bewusst auf **Etappe 6** verschoben. Sie bringt Konfliktfälle mit sich
-– zwei Personen ändern dieselbe Zeile, beide offline –, die eine eigene Runde verdienen,
-statt nebenbei mitgebaut zu werden.
+* **Der letzte Stand bleibt auf dem Gerät** (`zwischenspeicher.ts`). Was die App vom
+  Server bekommt – Anmeldung, Einkaufsliste, Abteilungen, Notizen, Dokumente,
+  Kategorien, Finanzen, Haus, Hypothek –, legt sie gebündelt in IndexedDB ab und holt es
+  vor dem ersten Zeichnen zurück. Ohne Netz startet sie damit angemeldet und mit dem
+  letzten Stand, statt „Server nicht erreichbar" zu zeigen; mit Netz ist er nach einem
+  Augenblick durch den frischen ersetzt. Suchen werden nicht aufbewahrt (jeder
+  Tastendruck wäre eine eigene Liste), ein Stand älter als 30 Tage gilt nicht mehr, und
+  eine eigene Fassungsnummer verwirft ihn, wenn sich die Form der Daten ändert. Hängt der
+  Speicher des Geräts, startet die App nach anderthalb Sekunden trotzdem.
+* **Änderungen gehen durch eine Warteschlange** (`warteschlange.ts`, `auftraege.ts`).
+  Alles an Einkaufsliste und Notizen – Eintrag hinzufügen, abhaken, umbenennen, löschen,
+  aufräumen, zurückholen; Notiz schreiben, löschen, zurückholen, verschieben – wird ein
+  Auftrag: sofort auf dem Bildschirm, sofort auf dem Gerät gesichert, gesendet, sobald der
+  Server antwortet, der Reihe nach. Mit Verbindung ist das eine halbe Sekunde, ohne bleibt
+  er liegen, auch über einen Neustart. Es gibt also keinen „Offline-Modus" mit eigenen
+  Regeln, sondern einen einzigen Weg. Damit eine Antwort des Servers die wartenden
+  Änderungen nicht überschreibt, kommen sie auf jede frisch geholte Liste noch einmal
+  obendrauf – und beim Start auf den aufbewahrten Stand. Viele Fassungen derselben Notiz
+  werden zu einer zusammengefasst. Was neu entsteht, bekommt seine Kennung auf dem Gerät
+  (`clientIdSchema`): So lässt sich ein offline angelegter Eintrag gleich abhaken, und
+  eine wiederholte Anfrage, deren Antwort im Funkloch verloren ging, legt nichts doppelt
+  an. „Aufräumen" schickt die Kennungen dessen, was hier erledigt dastand – was die
+  andere Person in der Zwischenzeit abgehakt hat, bleibt stehen. Ein neuer Eintrag steht
+  offline schon in der Abteilung, die die Stichwortliste vermutet; endgültig entscheidet
+  der Server mit dem Gedächtnis der Liste.
+* **Ob der Server antwortet** (`verbindung.ts`). `navigator.onLine` sagt nur, ob das
+  Gerät irgendein Netz hat – im Funkloch mit einem Balken oder während das NAS neu startet,
+  ist es „online", und trotzdem kommt nichts an. Jede Anfrage meldet deshalb, ob sie
+  durchkam; Antworten des Weges statt des Servers (502–504, Cloudflares 52x und 530)
+  zählen als „nicht erreichbar". Solange er es nicht ist, fragt die App alle 15 Sekunden
+  nach; kommt er zurück, holen die Listen ihren Stand, und die Warteschlange schickt ab –
+  ohne dass jemand etwas tun muss.
+* **Bilder, die man schon gesehen hat** (`dateienImWorker.ts`, im Service Worker).
+  Vorschaubilder, gerasterte Seiten und Bilder in Notizen gehen mit Verbindung zum Server
+  und werden aufbewahrt; ohne kommen sie aus dem Zwischenspeicher. Zwei Fächer mit
+  Grenzen – Vorschauen (800) und Dateien selbst (80) –, was am längsten nicht angeschaut
+  wurde, fällt zuerst heraus.
+
+Das Band oben sagt, was gilt: „Keine Verbindung" oder „Server nicht erreichbar", dass
+Einkauf und Notizen weitergehen und später übertragen werden, dass alles andere den
+letzten Stand zeigt, und wie viele Änderungen noch warten. Das Notizfenster sagt „Auf dem
+Gerät gespeichert", solange eine Änderung nur hier liegt. Lehnt der Server einen Auftrag
+ab (ein Eintrag, den die andere Person inzwischen gelöscht hat, ist dabei kein Fehler,
+sondern erledigt), erscheint eine Meldung, und die Listen holen den Stand des Servers;
+ein Auftrag, der nie durchgeht, verstopft die Schlange nicht. Bei einem Fehler des
+Servers selbst (5xx) wird fünfmal nachgefasst, ohne Verbindung unbegrenzt.
+
+**Was offline nicht geht:** Dokumente ablegen und bearbeiten, Finanzen, Haus und
+Hypothek ändern, Dateien in Notizen einfügen, Abteilungen verwalten – das braucht den
+Server und meldet ohne ihn den Fehler wie bisher. Wer zum ersten Mal überhaupt ohne Netz
+öffnet, sieht „Keine Verbindung": Einmal muss die App angemeldet gewesen sein.
+
+**Gleichzeitig geändert:** Wer zuletzt überträgt, gewinnt. Schreiben beide offline an
+derselben Notiz, steht danach die Fassung dessen, der als Zweiter wieder Netz hatte. Bei
+zwei Personen und einer Einkaufsliste, auf der man abhakt statt schreibt, ist das der
+richtige Tausch gegen die Verwicklung einer Zusammenführung. Zwei offene Fenster
+derselben App auf einem Gerät, beide ohne Netz, teilen sich ihre Warteschlange nicht –
+das kommt auf dem Handy nicht vor.
+
+**Abmelden räumt das Gerät:** aufbewahrter Stand, Warteschlange und Bilder, in beiden
+Apps – was noch nicht übertragen war, geht dabei verloren. Läuft eine Sitzung ab,
+verschwindet der Stand ebenfalls vom Bildschirm und vom Gerät; die Warteschlange bleibt
+und geht nach der Anmeldung zum Server – meldet sich jemand anderes an, wird sie
+verworfen statt unter dessen Namen gesendet (`Auftrag.benutzer`).
 
 **Die App sagt Bescheid, wenn sie sich erneuern kann.** Eine installierte PWA lädt
 ihr Programm aus dem Zwischenspeicher des Service Workers. Kommt ein Deploy, merkt die
@@ -1846,7 +1905,7 @@ eine funktionierende App auf dem Handy.
 | **5** ✅ | **Finanzen** | Monatserfassung, Steuerabzug, Zehnten-Berechnung, Abrechnungsstand, Fastopfer, CSV-Export | Die Zehnten-Abrechnung ist erledigt statt geschätzt |
 | **6** ✅ | **Haus** | PDF-Import der Rechnungen für Strom, Wasser, Abwasser und Kehricht, Verbrauch und Ø Preis je Sparte, Perioden- und Vorjahresvergleich, Diagramme, Ablage des Belegs in den Dokumenten, CSV-Export | Die Nebenkosten des Hauses stehen nicht mehr in einer Tabelle auf dem Desktop |
 | **6a** ✅ | **Hypothek** | Festhypotheken und SARON mit Laufzeit, Zinsen je Quartal mit Prognose nach 30/360, Ø Zinssatz aus den bezahlten Zinsen, Amortisation der 2. Hypothek in Tranchen, Übernahme aus der eigenen Excel-Tabelle, CSV-Export – dazu bei den Nebenkosten der Jahresverlauf je Monat mit Akonto als provisorisch | Auch die Hypothek steht nicht mehr in einer Tabelle auf dem Desktop |
-| **7** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, Offline-Warteschlange für Änderungen, Backup-Automatik, Papierkorb | Die App denkt mit |
+| **7** | **Feinschliff** | Push-Erinnerungen für Fälligkeiten, Schweizer QR-Rechnung, ~~Offline-Warteschlange für Änderungen~~ (für Einkauf und Notizen gebaut, siehe 8), Backup-Automatik, Papierkorb | Die App denkt mit |
 
 Etappen 0 bis 6 sind gebaut. Was in Etappe 7 noch aussteht, steht in der Tabelle oben;
 nichts davon hält den täglichen Gebrauch auf.
@@ -1881,6 +1940,7 @@ nichts davon hält den täglichen Gebrauch auf.
 | Diagramme | **Mehrere Felder mit gemeinsamer Zeitachse, nie zwei Achsen** | kWh, m³, Franken und Preise je Einheit auf einer Skala erfinden einen Zusammenhang, den die Zahlen nicht hergeben |
 | Sichtbarkeit in der DocBase | **Kein Schalter – jede Notiz gehört allen** | Die Sammlung ist eine gemeinsame; eine Notiz neben einer Studie, die der andere nicht sieht, beantwortet niemandes Frage |
 | Formatierte Notizen | **Formatierung neben dem Text (`body_rich`), feste Palette und Stufen** | `body` bleibt lesbarer Text für Suche, Vorschau und ältere Apps; wie in der BSS-App nur die Grundlagen – Fett, Kursiv, Unterstrichen, Grösse, Farbe, Aufzählung |
+| Arbeiten ohne Verbindung | **Letzter Stand in IndexedDB, eine Warteschlange für alle Änderungen an Einkauf und Notizen, Kennungen vom Gerät** | Ein Weg statt eines eigenen Offline-Modus; wiederholte Anfragen legen nichts doppelt an; wer zuletzt überträgt, gewinnt |
 | Rückgängig | **Eigener Verlauf je Notizfenster, Hinweis „Rückgängig" statt Rückfrage beim Löschen** | Der Verlauf des Browsers kennt nur ein Feld und verliert nach jedem eigenen Handgriff den Faden; eine Rückfrage vor jedem Löschen bestätigt man irgendwann ungelesen |
 | Gelöschte Notizen | **Zum Schein gelöscht (`deleted_at`), nach 30 Tagen endgültig** | Nur so kommt eine Notiz samt ihren Bildern zurück; neu angelegt verlöre sie Dateien und Platz |
 | Reihenfolge der Notizen | **Eine Zahl je Notiz (`sort_order`), geschickt wird die ganze sichtbare Folge** | Wie bei den Abteilungen: zwei schnelle Griffe nacheinander gehen nicht vom selben alten Stand aus; bei einem Filter bleiben die übrigen Notizen stehen |

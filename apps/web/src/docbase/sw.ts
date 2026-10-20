@@ -7,6 +7,7 @@ import {
   DOCBASE_SHARE_LANDING_PATH,
   DOCBASE_SHARE_TARGET_PATH,
 } from '../lib/shareConstants'
+import { dateienZwischenspeichern } from '../lib/offline/dateienImWorker'
 import { receiveShare } from '../lib/shareReceiver'
 
 declare const self: ServiceWorkerGlobalScope
@@ -29,6 +30,9 @@ declare const self: ServiceWorkerGlobalScope
 
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
+
+// Bilder und Dateien, die man schon gesehen hat, auch ohne Verbindung – siehe dort.
+dateienZwischenspeichern('docbase')
 
 /**
  * Jede Seitennavigation innerhalb der DocBase wird aus der zwischen-

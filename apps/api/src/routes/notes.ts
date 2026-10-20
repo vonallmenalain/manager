@@ -15,6 +15,7 @@ import {
   type Note,
   type NoteColor,
   type NoteKind,
+  type UpsertNoteInput,
 } from '@manager/shared'
 import { and, desc, eq, isNotNull, isNull, like, min, or, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
@@ -151,6 +152,44 @@ async function topSortOrder(bereich: Bereich): Promise<number> {
   return kleinste === null || kleinste === undefined ? 0 : Math.min(0, kleinste - NOTE_SORT_STEP)
 }
 
+/**
+ * Eine Notiz weiterschreiben – sofern die Person sie sehen darf und sie nicht
+ * gelöscht ist. Zurück kommt die neue Zeile oder `undefined`.
+ */
+async function updateNote(
+  id: string,
+  userId: string,
+  data: UpsertNoteInput,
+): Promise<NoteRow | undefined> {
+  const { title, body, kind, bereich, categoryId, pinned, shared, color } = data
+  const bodyRich =
+    data.bodyRich !== undefined ? data.bodyRich : await keptFormatting(id, userId, kind, body)
+  const updated = await db
+    .update(notes)
+    .set({
+      title,
+      body,
+      bodyRich,
+      kind,
+      bereich,
+      categoryId: await resolveCategory(categoryId, bereich),
+      pinned,
+      shared,
+      color,
+      searchText: searchTextFor(kind, title, body),
+      updatedBy: userId,
+      updatedAt: new Date().toISOString(),
+    })
+    // Die Bedingung prüft den Stand vor der Änderung: Eine fremde private
+    // Notiz lässt sich damit nicht durch Mitschicken von shared aufbrechen.
+    .where(and(eq(notes.id, id), visibleTo(userId), notDeleted()))
+    .returning()
+
+  const row = updated[0]
+  if (row) await linkNoteFiles(row.id, userId, row.bereich as Bereich, row.bodyRich)
+  return row
+}
+
 const noteRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('onRequest', fastify.requireAuth)
 
@@ -197,11 +236,28 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
+    // Mit der Kennung des Geräts kann dieselbe Notiz zweimal ankommen: Die
+    // Warteschlange wiederholt eine Anfrage, deren Antwort im Funkloch
+    // verloren ging. Dann steht sie schon da und wird nur weitergeschrieben.
+    if (parsed.data.id) {
+      const vorhanden = await db
+        .select({ id: notes.id })
+        .from(notes)
+        .where(eq(notes.id, parsed.data.id))
+        .limit(1)
+      if (vorhanden[0]) {
+        const row = await updateNote(parsed.data.id, user.id, parsed.data)
+        // Gelöscht oder fremd und privat – für diese Person gibt es sie nicht.
+        if (!row) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
+        return reply.send({ note: toApi(row) })
+      }
+    }
+
     const { title, body, bodyRich, kind, bereich, categoryId, pinned, shared, color } = parsed.data
     const inserted = await db
       .insert(notes)
       .values({
-        id: randomUUID(),
+        id: parsed.data.id ?? randomUUID(),
         title,
         body,
         // Eine App ohne Formatierung schickt das Feld gar nicht – dann ist die
@@ -235,35 +291,8 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = upsertNoteSchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
 
-    const { title, body, kind, bereich, categoryId, pinned, shared, color } = parsed.data
-    const bodyRich =
-      parsed.data.bodyRich !== undefined
-        ? parsed.data.bodyRich
-        : await keptFormatting(id, user.id, kind, body)
-    const updated = await db
-      .update(notes)
-      .set({
-        title,
-        body,
-        bodyRich,
-        kind,
-        bereich,
-        categoryId: await resolveCategory(categoryId, bereich),
-        pinned,
-        shared,
-        color,
-        searchText: searchTextFor(kind, title, body),
-        updatedBy: user.id,
-        updatedAt: new Date().toISOString(),
-      })
-      // Die Bedingung prüft den Stand vor der Änderung: Eine fremde private
-      // Notiz lässt sich damit nicht durch Mitschicken von shared aufbrechen.
-      .where(and(eq(notes.id, id), visibleTo(user.id), notDeleted()))
-      .returning()
-
-    const row = updated[0]
+    const row = await updateNote(id, user.id, parsed.data)
     if (!row) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
-    await linkNoteFiles(row.id, user.id, row.bereich as Bereich, row.bodyRich)
     return reply.send({ note: toApi(row) })
   })
 
