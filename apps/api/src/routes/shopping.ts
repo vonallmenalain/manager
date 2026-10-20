@@ -9,6 +9,7 @@ import {
   nextSectionSortOrder,
   normalizeForSearch,
   reorderShoppingSectionsSchema,
+  restoreShoppingItemsSchema,
   sameSectionName,
   SECTION_SORT_STEP,
   updateShoppingItemSchema,
@@ -16,7 +17,7 @@ import {
   type ShoppingItem,
   type ShoppingSection,
 } from '@manager/shared'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
@@ -24,6 +25,7 @@ import {
   shoppingItems,
   shoppingMemory,
   shoppingSections,
+  users,
   type ShoppingItemRow,
 } from '../db/schema.js'
 import { apiError, notFound, unauthorized, validationError } from '../lib/errors.js'
@@ -383,6 +385,60 @@ const shoppingRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (deleted.length === 0) return reply.status(404).send(notFound('Eintrag nicht gefunden.'))
     return reply.status(204).send()
+  })
+
+  /**
+   * „Rückgängig" nach dem Löschen oder Aufräumen: Die Einträge kommen zurück,
+   * wie sie waren – mit Kennung, Platz und Haken.
+   *
+   * Was es schon gibt, bleibt unberührt: Wer zweimal tippt, bekommt den
+   * Eintrag nicht doppelt. Ist die Abteilung inzwischen gelöscht, landet er im
+   * Sammelposten, und wer nicht mehr zum Haushalt gehört, wird durch den
+   * ersetzt, der zurückholt – beides verlangt die Datenbank.
+   */
+  fastify.post('/api/shopping/wiederherstellen', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const parsed = restoreShoppingItemsSchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
+
+    const sections = await listSections()
+    const bekannteAbteilungen = new Set(sections.map((section) => section.id))
+    const sammelposten = catchAllSection(sections)?.id
+    const personen = parsed.data.items.flatMap((item) =>
+      item.doneBy ? [item.createdBy, item.doneBy] : [item.createdBy],
+    )
+    const bekanntePersonen = new Set(
+      (await db.select({ id: users.id }).from(users).where(inArray(users.id, personen))).map(
+        (row) => row.id,
+      ),
+    )
+    const person = (id: string) => (bekanntePersonen.has(id) ? id : user.id)
+
+    const zurueck: ShoppingItemRow[] = []
+    for (const item of parsed.data.items) {
+      const sectionId = bekannteAbteilungen.has(item.sectionId) ? item.sectionId : sammelposten
+      if (!sectionId) continue
+      const inserted = await db
+        .insert(shoppingItems)
+        .values({
+          id: item.id,
+          text: item.text,
+          normalizedText: normalizeForSearch(item.text),
+          sectionId,
+          done: item.done,
+          createdBy: person(item.createdBy),
+          doneBy: item.done && item.doneBy ? person(item.doneBy) : null,
+          createdAt: item.createdAt,
+          doneAt: item.done ? item.doneAt : null,
+        })
+        .onConflictDoNothing()
+        .returning()
+      if (inserted[0]) zurueck.push(inserted[0])
+    }
+
+    return reply.send({ items: zurueck.map((row) => toApi(row, sections)) })
   })
 
   /**

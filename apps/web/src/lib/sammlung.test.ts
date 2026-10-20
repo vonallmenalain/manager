@@ -28,7 +28,7 @@ function dokument(id: string, docDate: string, uploadedAt = `${docDate}T08:00:00
   }
 }
 
-function notiz(id: string, updatedAt: string, pinned = false): Note {
+function notiz(id: string, updatedAt: string, pinned = false, sortOrder = 0): Note {
   return {
     id,
     title: id,
@@ -38,6 +38,7 @@ function notiz(id: string, updatedAt: string, pinned = false): Note {
     bereich: 'docbase',
     categoryId: null,
     pinned,
+    sortOrder,
     shared: true,
     color: 'default',
     createdBy: 'u1',
@@ -92,6 +93,25 @@ describe('Dokumente und Notizen in einer Liste', () => {
     assert.deepEqual(
       eintraege.map((eintrag) => eintrag.art),
       ['dokument'],
+    )
+  })
+})
+
+describe('Die eigene Reihenfolge der Sammlung', () => {
+  it('stellt die Notizen geschlossen oben, wie sie hingeschoben wurden', () => {
+    const eintraege = mische(
+      [dokument('doc-neu', '2026-03-01'), dokument('doc-alt', '2026-01-10')],
+      [
+        notiz('notiz-b', '2026-02-14T09:00:00.000Z', false, 20),
+        notiz('notiz-a', '2026-01-01T09:00:00.000Z', false, 10),
+        notiz('notiz-pin', '2025-01-01T09:00:00.000Z', true, 30),
+      ],
+      'eigene',
+    )
+
+    assert.deepEqual(
+      eintraege.map((eintrag) => eintrag.id),
+      ['notiz-pin', 'notiz-a', 'notiz-b', 'doc-neu', 'doc-alt'],
     )
   })
 })

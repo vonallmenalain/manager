@@ -65,6 +65,29 @@ export function RichText({
   return <div className={`richtext ${className}`}>{blockNodes(doc.blocks, ctx)}</div>
 }
 
+/**
+ * Eine einzelne formatierte Zeile, mitten im Text – der Eintrag einer
+ * Checkliste in der Vorschau. Ohne eigenen Block drumherum, damit sie in einer
+ * Zeile neben dem Kästchen stehen und dort abgeschnitten werden kann.
+ */
+export function RichZeile({
+  text,
+  rich,
+  links = true,
+}: {
+  text: string
+  rich?: string | null
+  links?: boolean
+}) {
+  const runs = useMemo(() => {
+    const doc = docOfValue({ text, rich })
+    return doc.blocks.flatMap((block, index) =>
+      index === 0 ? block.runs : [{ t: ' ' }, ...block.runs],
+    )
+  }, [text, rich])
+  return <>{renderRuns(runs, 'zeile', links)}</>
+}
+
 /** Was beim Zeichnen durch alle Ebenen gereicht wird. */
 interface Zeichnen {
   links: boolean

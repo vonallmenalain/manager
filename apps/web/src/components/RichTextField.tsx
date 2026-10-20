@@ -16,6 +16,7 @@ import {
   withWritingLines,
   wordRangeAt,
   type MarkKey,
+  type RichBlock,
   type RichDoc,
   type RichFile,
   type RichMarks,
@@ -37,6 +38,7 @@ import {
 import { createPortal } from 'react-dom'
 
 import { thumbnailUrl } from '../lib/noteFiles'
+import { stelleDerAenderung } from '../lib/verlauf'
 import {
   docFromDom,
   fileElementOf,
@@ -97,10 +99,37 @@ const AKZENT: Record<Akzent, { offen: string; aktiv: string; ring: string }> = {
  */
 export type Einstieg = { x: number; y: number } | { offset: number } | 'ende'
 
-/** Was das Feld von aussen preisgibt: wo der Cursor steht. */
+/** Was das Feld von aussen preisgibt: wo der Cursor steht – und wie er hineinkommt. */
 export interface RichTextFieldHandle {
   /** Die Cursorstelle im Bearbeitungstext – `null`, wenn er nicht im Feld steht. */
   caret: () => number | null
+  /** In das Feld springen, den Cursor an die Stelle oder ans Ende. */
+  fokus: (stelle: number | 'ende') => void
+}
+
+/**
+ * Woher eine Änderung kommt: vom Tippen – oder von einem Handgriff wie einer
+ * Farbe oder einem Einfügen. Der Verlauf des Fensters bündelt das Tippen zu
+ * Schritten; ein Handgriff ist immer ein Schritt für sich.
+ */
+export type Aenderung = 'tippen' | 'handgriff'
+
+/**
+ * Ein Feld, das nur eine Zeile kennt – der Eintrag einer Checkliste.
+ *
+ * Die Eingabetaste schreibt keinen Absatz, sondern beginnt den nächsten
+ * Eintrag; eingefügter Text mit mehreren Zeilen wird zu mehreren Einträgen.
+ * Beides meldet `onZeilen`: die Zeilen, die jetzt dastehen, und wo in der
+ * letzten der Cursor steht. Das Feld selbst behält danach nur die erste – wer
+ * es hält, legt den Rest als neue Einträge an. Aufzählung, Einzug und
+ * Dateien gibt es hier nicht.
+ */
+export interface Einzeilig {
+  onZeilen: (zeilen: RichBlock[], cursorInLetzter: number) => void
+  /** Rücktaste ganz vorne – mit dem Eintrag davor zusammenführen. */
+  onAnfangLoeschen?: () => void
+  /** Pfeil hoch oder runter – zum Eintrag darüber oder darunter. */
+  onPfeil?: (richtung: -1 | 1) => void
 }
 
 /**
@@ -139,11 +168,12 @@ export function RichTextField({
   onOpenFile,
   onRemoveFile,
   onDateiEinfuegen,
+  einzeilig,
   ref,
   'aria-label': ariaLabel,
 }: {
   value: RichValue
-  onChange: (next: RichValue) => void
+  onChange: (next: RichValue, art: Aenderung) => void
   /** Läuft nach dem Verlassen des Feldes – nie beim Griff ins Menü */
   onBlur?: () => void
   einstieg?: Einstieg | null
@@ -159,6 +189,8 @@ export function RichTextField({
   onRemoveFile?: (file: RichFile) => void
   /** „Datei einfügen" im Menü – ohne Angabe steht der Eintrag nicht da. */
   onDateiEinfuegen?: () => void
+  /** Nur eine Zeile – siehe `Einzeilig`. */
+  einzeilig?: Einzeilig
   ref?: Ref<RichTextFieldHandle>
   'aria-label'?: string
 }) {
@@ -191,17 +223,28 @@ export function RichTextField({
    * Das Feld folgt dem Wert nur, wenn der Wert nicht vom Feld selbst stammt:
    * Während getippt wird, gehört das DOM dem Browser – es bei jeder eigenen
    * Meldung neu aufzubauen, risse den Cursor mitten aus dem Wort.
+   *
+   * Kommt ein fremder Wert, während geschrieben wird – ein Rückgängig –,
+   * steht der Cursor danach am Ende dessen, was sich geändert hat, statt
+   * irgendwo im neu aufgebauten Feld.
    */
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
     const sig = signature(value)
     if (emitted.current === sig) return
+    const ersterStand = emitted.current === null
     emitted.current = sig
+    const vorher = editTextOf(docRef.current)
     const doc = fieldDocOf(value)
     docRef.current = doc
     renderDocInto(root, doc, { thumbnail: thumbnailUrl })
     updateEmpty(root, doc)
+    if (!ersterStand && document.activeElement === root) {
+      const stelle = stelleDerAenderung(vorher, editTextOf(doc))
+      setSelectionOffsets(root, stelle, stelle)
+      revealCaret(root)
+    }
   })
 
   useImperativeHandle(
@@ -211,6 +254,15 @@ export function RichTextField({
         const root = rootRef.current
         const sel = root ? selectionOffsets(root) : null
         return sel ? sel.end : null
+      },
+      fokus: (stelle) => {
+        const root = rootRef.current
+        if (!root) return
+        root.focus({ preventScroll: true })
+        const ende = editTextOf(docRef.current).length
+        const ziel = stelle === 'ende' ? ende : Math.min(stelle, ende)
+        setSelectionOffsets(root, ziel, ziel)
+        revealCaret(root)
       },
     }),
     [],
@@ -245,6 +297,10 @@ export function RichTextField({
 
   useEffect(() => () => window.clearTimeout(blurTimer.current), [])
 
+  /** `einzeilig` vom letzten Zeichnen – die Handler unten laufen ausserhalb davon. */
+  const einzeiligRef = useRef(einzeilig)
+  einzeiligRef.current = einzeilig
+
   /*
    * Rücktaste und Entf an einer Datei tun nichts. Der Browser löschte sonst
    * die ganze Datei mit einem Tastendruck (siehe `fileBeside`); entfernt wird
@@ -262,17 +318,49 @@ export function RichTextField({
       if (!backward && event.inputType !== 'deleteContentForward') return
       const sel = selectionOffsets(root)
       if (!sel || sel.start !== sel.end) return
+      // Rücktaste ganz vorne in einer einzelnen Zeile: Der Eintrag geht im
+      // vorigen auf – auch hier über `beforeinput`, der Handytastatur wegen.
+      const anfangLoeschen = einzeiligRef.current?.onAnfangLoeschen
+      if (backward && sel.start === 0 && anfangLoeschen) {
+        event.preventDefault()
+        anfangLoeschen()
+        return
+      }
       if (fileBeside(docRef.current, sel.start, backward ? -1 : 1)) event.preventDefault()
     }
     root.addEventListener('beforeinput', guard)
     return () => root.removeEventListener('beforeinput', guard)
   }, [])
 
-  const emit = (doc: RichDoc) => {
+  const emit = (doc: RichDoc, art: Aenderung) => {
+    // Eine einzelne Zeile, in der jetzt mehrere stehen (die Eingabetaste,
+    // eingefügter Text): Das ist kein Text mehr für dieses Feld, sondern der
+    // Beginn neuer Einträge – siehe `Einzeilig`.
+    const zeilen = einzeiligRef.current ? doc.blocks.filter((block) => !block.file) : []
+    if (einzeiligRef.current && zeilen.length > 1) {
+      const root = rootRef.current
+      const ende = editTextOf(doc).length
+      const sel = root ? selectionOffsets(root) : null
+      const letzte = zeilen[zeilen.length - 1] as RichBlock
+      const anfangLetzte = ende - letzte.runs.reduce((sum, run) => sum + run.t.length, 0)
+      const cursor = Math.max(0, (sel?.end ?? ende) - anfangLetzte)
+      const bloecke = zeilen.map((block): RichBlock => ({ runs: block.runs }))
+      // Das Feld behält gleich selbst nur die erste Zeile – auch wenn sich an
+      // ihr nichts geändert hat und deshalb kein neuer Wert hereinkommt.
+      if (root) {
+        const erste = normalizeDoc({ blocks: bloecke.slice(0, 1) })
+        renderDocInto(root, erste, { thumbnail: thumbnailUrl })
+        docRef.current = erste
+        emitted.current = signature(toRichValue(erste))
+        updateEmpty(root, erste)
+      }
+      einzeiligRef.current.onZeilen(bloecke, cursor)
+      return
+    }
     docRef.current = doc
     const next = toRichValue(doc)
     emitted.current = signature(next)
-    onChange(next)
+    onChange(next, art)
   }
 
   /** Die Auswahl im Feld – ohne Auswahl das Feldende. */
@@ -287,8 +375,11 @@ export function RichTextField({
   const menuStateNow = (): MenuState => {
     const { start, end } = currentSelection()
     const doc = docRef.current
+    // In einer einzelnen Zeile zeigt das Menü ohne Auswahl, was für den
+    // ganzen Eintrag gilt – darauf wirkt dann auch der nächste Griff.
+    const ganz = einzeiligRef.current && start === end
     return {
-      marks: marksAt(doc, start, end),
+      marks: ganz ? marksAt(doc, 0, editTextOf(doc).length) : marksAt(doc, start, end),
       list: listStateAt(doc, start, end),
       hasSelection: start !== end,
     }
@@ -334,8 +425,10 @@ export function RichTextField({
     const normal = withWritingLines(normalizeDoc(doc))
     renderDocInto(root, normal, { thumbnail: thumbnailUrl })
     setSelectionOffsets(root, start, end)
-    emit(normal)
-    updateEmpty(root, normal)
+    emit(normal, 'handgriff')
+    // `docRef` statt `normal`: In einer einzelnen Zeile kann `emit` eben
+    // geteilt und das Feld auf die erste Zeile gekürzt haben.
+    updateEmpty(root, docRef.current)
     if (menuOpenRef.current) setMenu(menuStateNow())
   }
 
@@ -364,8 +457,9 @@ export function RichTextField({
     }
 
     // „- " am Zeilenanfang wird zur Aufzählung – die zwei Zeichen waren
-    // Befehl, nicht Text (siehe `autoListBlock`).
-    if (!composing.current) {
+    // Befehl, nicht Text (siehe `autoListBlock`). In einer einzelnen Zeile
+    // gibt es keine Aufzählung.
+    if (!composing.current && !einzeiligRef.current) {
       const sel = selectionOffsets(root)
       if (sel && sel.start === sel.end) {
         const auto = autoListBlock(doc, sel.start)
@@ -392,26 +486,49 @@ export function RichTextField({
       return
     }
 
-    emit(doc)
-    updateEmpty(root, doc)
+    emit(doc, 'tippen')
+    updateEmpty(root, docRef.current)
     if (menuOpenRef.current) setMenu(menuStateNow())
     revealCaret(root)
   }
 
   /**
-   * Eine Marke setzen oder nehmen. Ohne Auswahl wirkt sie auf das Wort unter
-   * dem Cursor – auf Weissraum bewirkt sie nichts.
+   * Worauf ein Handgriff ohne Auswahl wirkt: auf das Wort unter dem Cursor –
+   * in einer einzelnen Zeile auf die ganze Zeile. Ein Eintrag einer
+   * Checkliste wird als Ganzes fett oder rot; auf dem Handy eine ganze Zeile
+   * mit dem Finger zu markieren, wäre eine Geduldsprobe. Auf Weissraum gibt es
+   * kein Wort, dann bewirkt der Griff nichts.
    */
+  const wirkungsbereich = (): { start: number; end: number } | null => {
+    const text = editTextOf(docRef.current)
+    const { start, end } = currentSelection()
+    if (start !== end) return { start, end }
+    if (einzeiligRef.current) return text ? { start: 0, end: text.length } : null
+    return wordRangeAt(text, start)
+  }
+
+  /**
+   * Wo die Auswahl nach dem Griff steht: auf dem Wort, das eben formatiert
+   * wurde – in einer einzelnen Zeile bleibt der Cursor, wo er war, statt dass
+   * die ganze Zeile markiert dasteht.
+   */
+  const auswahlDanach = (bereich: { start: number; end: number }) => {
+    const sel = currentSelection()
+    return einzeiligRef.current && sel.start === sel.end ? sel : bereich
+  }
+
+  /** Eine Marke setzen oder nehmen – siehe `wirkungsbereich`. */
   const applyInline = (key: MarkKey, pick: (marks: RichMarks) => true | string | null) => {
     const doc = docRef.current
-    let { start, end } = currentSelection()
-    if (start === end) {
-      const word = wordRangeAt(editTextOf(doc), start)
-      if (!word) return
-      start = word.start
-      end = word.end
-    }
-    applyDoc(applyMark(doc, start, end, key, pick(marksAt(doc, start, end))), start, end)
+    const bereich = wirkungsbereich()
+    if (!bereich) return
+    const { start, end } = bereich
+    const danach = auswahlDanach(bereich)
+    applyDoc(
+      applyMark(doc, start, end, key, pick(marksAt(doc, start, end))),
+      danach.start,
+      danach.end,
+    )
   }
 
   const toggleBold = () => applyInline('b', (marks) => (marks.b ? null : true))
@@ -432,15 +549,10 @@ export function RichTextField({
   }
 
   const doClear = () => {
-    const doc = docRef.current
-    let { start, end } = currentSelection()
-    if (start === end) {
-      const word = wordRangeAt(editTextOf(doc), start)
-      if (!word) return
-      start = word.start
-      end = word.end
-    }
-    applyDoc(clearMarks(doc, start, end), start, end)
+    const bereich = wirkungsbereich()
+    if (!bereich) return
+    const danach = auswahlDanach(bereich)
+    applyDoc(clearMarks(docRef.current, bereich.start, bereich.end), danach.start, danach.end)
   }
 
   /* ---------------- Tasten ---------------- */
@@ -467,7 +579,21 @@ export function RichTextField({
       }
     }
 
-    if (event.key === 'Tab') {
+    // Pfeil hoch am Anfang, Pfeil runter am Ende: in den Eintrag daneben.
+    // Mitten im Text bleibt es beim Browser – ein langer Eintrag bricht um,
+    // und durch seine Zeilen will man sich auch bewegen können.
+    if (einzeilig?.onPfeil && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      const { start, end } = currentSelection()
+      const hoch = event.key === 'ArrowUp'
+      const rand = hoch ? 0 : editTextOf(docRef.current).length
+      if (start === end && start === rand) {
+        event.preventDefault()
+        einzeilig.onPfeil(hoch ? -1 : 1)
+        return
+      }
+    }
+
+    if (event.key === 'Tab' && !einzeilig) {
       const { start, end } = currentSelection()
       if (listStateAt(docRef.current, start, end).active) {
         event.preventDefault()
@@ -581,8 +707,30 @@ export function RichTextField({
     }
   }, [menuOpen, placeMenu])
 
+  const formatKnopf = (
+    <button
+      ref={buttonRef}
+      type="button"
+      onMouseDown={holdFocus}
+      onClick={toggleMenu}
+      aria-label="Text formatieren"
+      aria-expanded={menuOpen}
+      aria-haspopup="dialog"
+      title="Formatieren"
+      className={`pointer-events-auto grid size-8 shrink-0 place-items-center rounded-full border shadow-sm transition ${
+        einzeilig ? '' : 'mt-1'
+      } ${
+        menuOpen
+          ? farben.offen
+          : 'border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+      }`}
+    >
+      <FormatIcon />
+    </button>
+  )
+
   return (
-    <div className={`relative ${wrapperClassName}`}>
+    <div className={`relative ${einzeilig ? 'flex items-center gap-1' : ''} ${wrapperClassName}`}>
       {/*
         Der Griff zum Formatieren – klein in der oberen Ecke, solange
         geschrieben wird. Er klebt am oberen Rand des sichtbaren Bereichs
@@ -591,25 +739,9 @@ export function RichTextField({
         dann weg, wenn man ihn braucht. Die Leiste selbst ist null hoch und
         schiebt deshalb keine Zeile nach unten.
       */}
-      {focused || menuOpen ? (
+      {(focused || menuOpen) && !einzeilig ? (
         <div className="pointer-events-none sticky top-0 z-10 -mr-2 flex h-0 justify-end">
-          <button
-            ref={buttonRef}
-            type="button"
-            onMouseDown={holdFocus}
-            onClick={toggleMenu}
-            aria-label="Text formatieren"
-            aria-expanded={menuOpen}
-            aria-haspopup="dialog"
-            title="Formatieren"
-            className={`pointer-events-auto mt-1 grid size-8 place-items-center rounded-full border shadow-sm transition ${
-              menuOpen
-                ? farben.offen
-                : 'border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            <FormatIcon />
-          </button>
+          {formatKnopf}
         </div>
       ) : null}
 
@@ -622,7 +754,10 @@ export function RichTextField({
         aria-label={ariaLabel}
         data-placeholder={placeholder}
         spellCheck
-        className={`rt-editor whitespace-pre-wrap break-words outline-none ${className}`}
+        enterKeyHint={einzeilig ? 'next' : undefined}
+        className={`rt-editor whitespace-pre-wrap break-words outline-none ${
+          einzeilig ? 'min-w-0 flex-1' : ''
+        } ${className}`}
         onInput={handleInput}
         onCompositionStart={() => {
           composing.current = true
@@ -649,6 +784,10 @@ export function RichTextField({
           onBlur?.()
         }}
       />
+
+      {/* In einer einzelnen Zeile steht der Knopf neben dem Text statt über
+          ihm – er verdeckte sonst genau das Wortende, an dem man schreibt. */}
+      {(focused || menuOpen) && einzeilig ? formatKnopf : null}
 
       {menuOpen && menuPos
         ? createPortal(
@@ -687,14 +826,16 @@ export function RichTextField({
                 >
                   <span className="text-base underline underline-offset-2">U</span>
                 </Toggle>
-                <Toggle
-                  label="Aufzählung"
-                  active={menu.list.active}
-                  onClick={doToggleList}
-                  farben={farben}
-                >
-                  <ListIcon />
-                </Toggle>
+                {einzeilig ? null : (
+                  <Toggle
+                    label="Aufzählung"
+                    active={menu.list.active}
+                    onClick={doToggleList}
+                    farben={farben}
+                  >
+                    <ListIcon />
+                  </Toggle>
+                )}
               </div>
 
               <MenuLabel>Textgrösse</MenuLabel>
@@ -763,7 +904,7 @@ export function RichTextField({
 
               {/* Ein- und Ausrücken gehört zur Aufzählung – ausserhalb einer
                   Liste gibt es nichts einzurücken. */}
-              {menu.list.active ? (
+              {menu.list.active && !einzeilig ? (
                 <div className="flex gap-1 pb-1">
                   <MenuButton onClick={() => doIndent(1)}>
                     <IndentIcon />
@@ -782,7 +923,7 @@ export function RichTextField({
                 Formatierung entfernen
               </MenuButton>
 
-              {onDateiEinfuegen ? (
+              {onDateiEinfuegen && !einzeilig ? (
                 <MenuButton
                   onClick={() => {
                     closeMenu()
@@ -797,8 +938,9 @@ export function RichTextField({
 
               {!menu.hasSelection ? (
                 <p className="px-2 pt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                  Ohne Auswahl wirkt alles auf das Wort unter dem Cursor, die Aufzählung auf die
-                  ganze Zeile.
+                  {einzeilig
+                    ? 'Ohne Auswahl wirkt alles auf den ganzen Eintrag.'
+                    : 'Ohne Auswahl wirkt alles auf das Wort unter dem Cursor, die Aufzählung auf die ganze Zeile.'}
                 </p>
               ) : null}
             </div>,

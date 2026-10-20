@@ -7,8 +7,9 @@ import { PencilIcon } from '../components/icons'
 import { Modal, ModalCloseButton } from '../components/Modal'
 import { api } from '../lib/api'
 import { useDocuments } from '../lib/documents'
-import { useLocalOrder } from '../lib/einstellungen'
+import { useLocalOrder, useLocalSetting } from '../lib/einstellungen'
 import { useNotes, useShoppingList } from '../lib/household'
+import { NOTIZ_REIHENFOLGEN, sortiereNotizen, type NotizReihenfolge } from '../lib/notizReihenfolge'
 
 /**
  * Der Startbildschirm ist eine Übersicht, kein Arbeitsplatz.
@@ -277,9 +278,18 @@ function ShoppingCard() {
  */
 function NotesCard() {
   const notes = useNotes({})
+  // Dieselbe Reihenfolge wie im Bildschirm „Notizen" – sonst stünde hier
+  // zuoberst, was man dort eben nach unten geschoben hat.
+  const [reihenfolge] = useLocalSetting<NotizReihenfolge>(
+    'notizen.reihenfolge',
+    NOTIZ_REIHENFOLGEN,
+    'eigene',
+  )
   if (notes.isLoading) return <Ladeplatz />
 
-  const angeheftet = (notes.data?.notes ?? []).filter((note) => note.pinned)
+  const angeheftet = sortiereNotizen(notes.data?.notes ?? [], reihenfolge).filter(
+    (note) => note.pinned,
+  )
 
   return (
     <Kachel titel="Angeheftet" to="/notizen">

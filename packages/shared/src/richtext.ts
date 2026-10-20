@@ -822,6 +822,43 @@ export function replaceRange(
   return { doc: normalizeDoc({ blocks }), caret: from + keepBefore.length + clean.length }
 }
 
+/**
+ * Alles in einer Zeile: die Läufe aller Absätze hintereinander, getrennt durch
+ * ein Leerzeichen, ohne Listenebene und ohne Dateien.
+ *
+ * Für Felder, die nur eine Zeile kennen – den Eintrag einer Checkliste. Ein
+ * Zeilenumbruch, der dort trotzdem ankommt (eingefügter Text, ein Diktat),
+ * soll die Wörter nicht aneinanderkleben, aber auch keine zweite Zeile
+ * erzeugen, die es im gespeicherten Text gar nicht gäbe.
+ */
+export function singleLineBlock(doc: RichDoc): RichBlock {
+  const runs: RichRun[] = []
+  for (const block of doc.blocks) {
+    if (block.file || block.runs.length === 0) continue
+    if (runs.length > 0) runs.push({ t: ' ' })
+    runs.push(...block.runs)
+  }
+  return normalizeDoc({ blocks: [{ runs }] }).blocks[0] as RichBlock
+}
+
+/**
+ * Leerraum vorne und hinten weg – über die Läufe hinweg und nach derselben
+ * Regel wie `String.prototype.trim`.
+ *
+ * Wer Text getrimmt speichert und die Formatierung daneben, muss beide gleich
+ * trimmen: Sonst passte das Formatfeld um ein Leerzeichen nicht mehr zum Text,
+ * und die Formatierung fiele stillschweigend weg.
+ */
+export function trimBlock(block: RichBlock): RichBlock {
+  const text = blockText(block)
+  const from = text.length - text.trimStart().length
+  const to = text.trimEnd().length
+  if (from === 0 && to === text.length) return block
+  const runs = to > from ? runsSlice(block.runs, from, to) : []
+  return normalizeDoc({ blocks: [block.list ? { list: block.list, runs } : { runs }] })
+    .blocks[0] as RichBlock
+}
+
 /** Text als Absätze – je Zeile einer, ohne Marken. */
 export function blocksFromText(text: string): RichBlock[] {
   return text

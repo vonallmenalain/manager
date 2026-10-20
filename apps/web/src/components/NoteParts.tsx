@@ -14,11 +14,13 @@ import {
 } from '@manager/shared'
 import { useImperativeHandle, useRef, useState, type Ref } from 'react'
 
+import { gleicheEintraege, type Eintrag } from './Checklist'
 import { EinfuegenDialog, FortschrittAnzeige, NoteFileViewer } from './NoteFiles'
 import { RichText } from './RichText'
 import {
   PaperclipIcon,
   RichTextField,
+  type Aenderung,
   type Akzent,
   type Einstieg,
   type RichTextFieldHandle,
@@ -39,9 +41,9 @@ import {
  * dort Notizen gab. Seit auch die DocBase welche ablegt, würde jede Zeile
  * davon zweimal existieren – und zwei Fassungen desselben Textfelds sind zwei
  * Gelegenheiten, dass sich das Schreiben in der einen App anders anfühlt als
- * in der anderen. Was hier steht, gilt deshalb für beide; was nur eine App
- * betrifft (Checklisten im Haushalt, die Kategorie in der DocBase), bleibt
- * dort, wo es hingehört.
+ * in der anderen. Was hier steht, gilt deshalb für beide – wie die Checkliste
+ * nebenan (`Checklist.tsx`); was nur eine App betrifft (das Teilen im
+ * Haushalt, die Kategorie in der DocBase), bleibt dort, wo es hingehört.
  */
 
 /** Gedeckte Töne – die Liste soll ruhig bleiben, nicht bunt blinken. */
@@ -212,7 +214,8 @@ export function NoteText({
   ref,
 }: {
   value: RichValue
-  onChange: (value: RichValue) => void
+  /** `art` sagt, ob getippt wurde – der Verlauf bündelt das zu Schritten. */
+  onChange: (value: RichValue, art?: Aenderung) => void
   startInEditing: boolean
   /** Die Farbe der Knöpfe im Formatmenü – petrol in der DocBase. */
   akzent?: Akzent
@@ -434,6 +437,69 @@ export function DateiKnopf({ onClick }: { onClick: () => void }) {
 }
 
 /**
+ * Rückgängig und Wiederholen im Fuss des Fensters – dort, wo der Daumen ist.
+ *
+ * Die Knöpfe nehmen den Fokus nicht an: Wer beim Schreiben zurücknimmt,
+ * schreibt danach an derselben Stelle weiter, und die Tastatur bleibt offen.
+ */
+export function VerlaufKnoepfe({
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: {
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
+}) {
+  const knopf =
+    'grid size-11 min-h-11 place-items-center rounded-xl text-slate-600 transition active:bg-black/5 disabled:opacity-30 dark:text-slate-300 dark:active:bg-white/10'
+  return (
+    <div className="flex items-center">
+      <button
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onUndo}
+        disabled={!canUndo}
+        aria-label="Rückgängig"
+        title="Rückgängig (Ctrl+Z)"
+        className={knopf}
+      >
+        <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onRedo}
+        disabled={!canRedo}
+        aria-label="Wiederholen"
+        title="Wiederholen (Ctrl+Shift+Z)"
+        className={knopf}
+      >
+        <svg className="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+/**
  * Die Farbe der Notiz – ein Knopf mit der aktuellen Farbe, der die fünf
  * Möglichkeiten aufklappt.
  *
@@ -560,5 +626,102 @@ export function WidthPicker({
         </button>
       ))}
     </div>
+  )
+}
+
+/**
+ * Zwei Pfeile, um eine Notiz in der eigenen Reihenfolge zu verschieben.
+ *
+ * Pfeile statt Ziehen: In der Übersicht ist jede Notiz eine grosse Fläche,
+ * und eine Ziehgeste darauf kollidierte auf dem Handy mit dem Blättern –
+ * dieselbe Überlegung wie bei den Abteilungen des Einkaufs. In Kacheln zeigen
+ * die Pfeile nach links und rechts, denn dort steht die nächste Notiz daneben.
+ */
+export function VerschiebeKnoepfe({
+  titel,
+  waagrecht = false,
+  nachVorne,
+  nachHinten,
+  className = 'relative',
+}: {
+  titel: string
+  waagrecht?: boolean
+  nachVorne?: () => void
+  nachHinten?: () => void
+  /** Wo die Pfeile stehen – ohne Angabe im Fluss, sonst etwa `absolute …`. */
+  className?: string
+}) {
+  const knopf =
+    'grid size-11 min-h-11 shrink-0 place-items-center rounded-xl border border-black/10 bg-white/90 text-slate-600 shadow-sm transition active:scale-95 disabled:opacity-25 dark:border-white/10 dark:bg-slate-800/90 dark:text-slate-300'
+  return (
+    <div className={`z-10 flex items-center gap-1 ${className}`}>
+      <button
+        type="button"
+        onClick={nachVorne}
+        disabled={!nachVorne}
+        aria-label={`„${titel}" nach ${waagrecht ? 'vorne' : 'oben'}`}
+        title={waagrecht ? 'Nach vorne' : 'Nach oben'}
+        className={knopf}
+      >
+        <svg
+          className={`size-5 ${waagrecht ? '-rotate-90' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 19V5m0 0-6 6m6-6 6 6"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={nachHinten}
+        disabled={!nachHinten}
+        aria-label={`„${titel}" nach ${waagrecht ? 'hinten' : 'unten'}`}
+        title={waagrecht ? 'Nach hinten' : 'Nach unten'}
+        className={knopf}
+      >
+        <svg
+          className={`size-5 ${waagrecht ? '-rotate-90' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 5v14m0 0 6-6m-6 6-6-6"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Was ein Notizfenster bearbeitet und sein Verlauf sich merkt: Titel, Text und
+ * – bei einer Checkliste – die Einträge. Farbe, Anheften und Teilen gehören
+ * nicht dazu: Die nimmt man mit demselben Knopf zurück, mit dem man sie
+ * gesetzt hat.
+ */
+export interface NotizInhalt {
+  title: string
+  text: RichValue
+  items: Eintrag[]
+}
+
+export function gleicherInhalt(a: NotizInhalt, b: NotizInhalt): boolean {
+  return (
+    a.title === b.title &&
+    a.text.text === b.text.text &&
+    a.text.rich === b.text.rich &&
+    gleicheEintraege(a.items, b.items)
   )
 }

@@ -1,24 +1,29 @@
 import { randomUUID } from 'node:crypto'
 
 import {
+  compareNotesInOwnOrder,
+  normalizeChecklistRich,
   normalizeForSearch,
   normalizeRich,
+  NOTE_SORT_STEP,
   noteQuerySchema,
   parseChecklist,
+  placeInOrder,
+  reorderNotesSchema,
   upsertNoteSchema,
   type Bereich,
   type Note,
   type NoteColor,
   type NoteKind,
 } from '@manager/shared'
-import { and, desc, eq, like, or, type SQL } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, like, min, or, type SQL } from 'drizzle-orm'
 import type { FastifyPluginAsync } from 'fastify'
 
 import { db } from '../db/index.js'
 import { categories, notes, type NoteRow } from '../db/schema.js'
 import { notFound, unauthorized, validationError } from '../lib/errors.js'
 import { categoryCondition } from '../lib/filters.js'
-import { deleteNoteFiles, filesOfNote, linkNoteFiles } from '../lib/note-files.js'
+import { linkNoteFiles } from '../lib/note-files.js'
 
 function toApi(row: NoteRow): Note {
   return {
@@ -30,6 +35,7 @@ function toApi(row: NoteRow): Note {
     bereich: row.bereich as Bereich,
     categoryId: row.categoryId,
     pinned: row.pinned,
+    sortOrder: row.sortOrder,
     shared: row.shared,
     color: row.color as NoteColor,
     createdBy: row.createdBy,
@@ -54,6 +60,15 @@ function visibleTo(userId: string): SQL {
   const condition = or(eq(notes.createdBy, userId), eq(notes.shared, true))
   if (!condition) throw new Error('Sichtbarkeitsbedingung fehlt')
   return condition
+}
+
+/**
+ * Was noch nicht gelöscht ist. Eine gelöschte Notiz bleibt 30 Tage liegen,
+ * damit „Rückgängig" sie zurückholen kann – sonst aber gibt es sie nicht: Sie
+ * steht in keiner Liste und lässt sich nicht ändern.
+ */
+function notDeleted(): SQL {
+  return isNull(notes.deletedAt)
 }
 
 /**
@@ -109,13 +124,31 @@ async function keptFormatting(
   kind: NoteKind,
   body: string,
 ): Promise<string | null> {
-  if (kind === 'liste') return null
   const rows = await db
     .select({ bodyRich: notes.bodyRich })
     .from(notes)
-    .where(and(eq(notes.id, id), visibleTo(userId)))
+    .where(and(eq(notes.id, id), visibleTo(userId), notDeleted()))
     .limit(1)
-  return normalizeRich(body, rows[0]?.bodyRich)
+  return kind === 'liste'
+    ? normalizeChecklistRich(body, rows[0]?.bodyRich)
+    : normalizeRich(body, rows[0]?.bodyRich)
+}
+
+/**
+ * Der Platz für eine neue Notiz: vor allen anderen ihres Bereichs.
+ *
+ * Wer seine Notizen geordnet hat, findet die neue oben und schiebt sie von
+ * dort, wohin sie gehört – unten zwischen lauter Altem fände er sie nicht.
+ * Solange niemand verschoben hat, stehen alle auf 0, und die neue Notiz steht
+ * ohnehin oben, weil sie die zuletzt bearbeitete ist.
+ */
+async function topSortOrder(bereich: Bereich): Promise<number> {
+  const rows = await db
+    .select({ kleinste: min(notes.sortOrder) })
+    .from(notes)
+    .where(and(eq(notes.bereich, bereich), notDeleted()))
+  const kleinste = rows[0]?.kleinste
+  return kleinste === null || kleinste === undefined ? 0 : Math.min(0, kleinste - NOTE_SORT_STEP)
 }
 
 const noteRoutes: FastifyPluginAsync = async (fastify) => {
@@ -130,7 +163,11 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Der Bereich steht wie bei den Dokumenten zuerst und hat keinen Ausweg:
     // Der Haushalt sieht nie eine Notiz der DocBase und umgekehrt.
-    const conditions: SQL[] = [visibleTo(user.id), eq(notes.bereich, parsed.data.bereich)]
+    const conditions: SQL[] = [
+      visibleTo(user.id),
+      eq(notes.bereich, parsed.data.bereich),
+      notDeleted(),
+    ]
     if (parsed.data.q) {
       // Dieselbe Vereinheitlichung wie bei den Dokumenten – „PRÄMIE" und
       // „praemie" sollen überall dasselbe finden.
@@ -174,6 +211,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
         bereich,
         categoryId: await resolveCategory(categoryId, bereich),
         pinned,
+        sortOrder: await topSortOrder(bereich),
         shared,
         color,
         searchText: searchTextFor(kind, title, body),
@@ -220,7 +258,7 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
       })
       // Die Bedingung prüft den Stand vor der Änderung: Eine fremde private
       // Notiz lässt sich damit nicht durch Mitschicken von shared aufbrechen.
-      .where(and(eq(notes.id, id), visibleTo(user.id)))
+      .where(and(eq(notes.id, id), visibleTo(user.id), notDeleted()))
       .returning()
 
     const row = updated[0]
@@ -229,23 +267,89 @@ const noteRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.send({ note: toApi(row) })
   })
 
+  /**
+   * Die eigene Reihenfolge. Geschickt wird die neue Folge der Notizen, die
+   * man gerade sieht – bei einer Suche oder einem Filter nur ein Teil davon.
+   *
+   * Zuerst bekommt jede sichtbare Notiz des Bereichs ihren heutigen Platz als
+   * Zahl (10, 20, 30 …): Solange niemand verschoben hat, stehen alle auf 0, und
+   * erst so lässt sich eine einzelne zwischen zwei andere setzen. Dann nehmen
+   * die geschickten Notizen die Plätze ein, die sie zusammen schon hatten – nur
+   * in der neuen Folge (`placeInOrder`). Was die Anfrage nicht nennt, bleibt
+   * stehen, auch wenn es auf dem anderen Gerät eben erst dazukam.
+   *
+   * Verschieben ist kein Bearbeiten: `updatedAt` bleibt, wie es ist.
+   */
+  fastify.put('/api/notes/reihenfolge', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const parsed = reorderNotesSchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send(validationError(parsed.error))
+
+    const rows = await db
+      .select({
+        id: notes.id,
+        pinned: notes.pinned,
+        sortOrder: notes.sortOrder,
+        updatedAt: notes.updatedAt,
+      })
+      .from(notes)
+      .where(and(visibleTo(user.id), eq(notes.bereich, parsed.data.bereich), notDeleted()))
+
+    const bisher = [...rows].sort(compareNotesInOwnOrder)
+    const reihenfolge = placeInOrder(
+      bisher.map((row) => row.id),
+      parsed.data.ids,
+    )
+    const platzVorher = new Map(bisher.map((row) => [row.id, row.sortOrder]))
+
+    db.transaction((tx) => {
+      for (const [index, id] of reihenfolge.entries()) {
+        const platz = (index + 1) * NOTE_SORT_STEP
+        if (platzVorher.get(id) === platz) continue
+        tx.update(notes).set({ sortOrder: platz }).where(eq(notes.id, id)).run()
+      }
+    })
+
+    return reply.status(204).send()
+  })
+
+  /**
+   * Löschen – zunächst nur zum Schein: Die Notiz verschwindet aus jeder Liste,
+   * bleibt aber samt ihren Dateien liegen, damit „Rückgängig" sie
+   * zurückholen kann. Endgültig weg ist sie nach 30 Tagen (siehe index.ts).
+   */
   fastify.delete('/api/notes/:id', async (request, reply) => {
     const user = request.user
     if (!user) return reply.status(401).send(unauthorized())
 
     const { id } = request.params as { id: string }
-    // Vor dem Löschen einsammeln: Danach steht bei ihnen keine Notiz mehr.
-    const dateien = await filesOfNote(id)
     const deleted = await db
-      .delete(notes)
-      .where(and(eq(notes.id, id), visibleTo(user.id)))
+      .update(notes)
+      .set({ deletedAt: new Date().toISOString() })
+      .where(and(eq(notes.id, id), visibleTo(user.id), notDeleted()))
       .returning({ id: notes.id })
 
     if (deleted.length === 0) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
-    // Mit der Notiz verschwinden ihre Dateien. Was dabei hängen bleibt, holt
-    // das stündliche Aufräumen nach – die Zeilen stehen dann ohne Notiz da.
-    await deleteNoteFiles(dateien, request.log)
     return reply.status(204).send()
+  })
+
+  /** „Rückgängig" nach dem Löschen: Die Notiz steht wieder da, wo sie stand. */
+  fastify.post('/api/notes/:id/wiederherstellen', async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send(unauthorized())
+
+    const { id } = request.params as { id: string }
+    const restored = await db
+      .update(notes)
+      .set({ deletedAt: null })
+      .where(and(eq(notes.id, id), visibleTo(user.id), isNotNull(notes.deletedAt)))
+      .returning()
+
+    const row = restored[0]
+    if (!row) return reply.status(404).send(notFound('Notiz nicht gefunden.'))
+    return reply.send({ note: toApi(row) })
   })
 }
 

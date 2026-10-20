@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  compareNotesInOwnOrder,
   noteQuerySchema,
   parseChecklist,
+  placeInOrder,
   serializeChecklist,
   sortChecklist,
   splitLinks,
@@ -219,5 +221,48 @@ describe('Wonach eine Notizliste gefragt wird', () => {
 
   it('lässt die Kategorie weg, wenn nichts angehakt ist', () => {
     assert.equal(noteQuerySchema.parse({ bereich: 'docbase' }).categoryId, undefined)
+  })
+})
+
+describe('Eigene Reihenfolge der Notizen', () => {
+  const notiz = (sortOrder: number, updatedAt: string, pinned = false) => ({
+    sortOrder,
+    updatedAt,
+    pinned,
+  })
+
+  it('stellt Angeheftetes zuerst, darunter nach Platz', () => {
+    const sortiert = [
+      notiz(20, '2026-01-01'),
+      notiz(10, '2026-01-01'),
+      notiz(30, '2026-01-01', true),
+    ].sort(compareNotesInOwnOrder)
+    assert.deepEqual(
+      sortiert.map((eintrag) => eintrag.sortOrder),
+      [30, 10, 20],
+    )
+  })
+
+  it('ordnet nie Verschobenes wie bisher nach dem letzten Bearbeiten', () => {
+    // Alle stehen auf 0, solange niemand etwas verschoben hat.
+    const sortiert = [notiz(0, '2026-01-01'), notiz(0, '2026-03-01')].sort(compareNotesInOwnOrder)
+    assert.deepEqual(
+      sortiert.map((eintrag) => eintrag.updatedAt),
+      ['2026-03-01', '2026-01-01'],
+    )
+  })
+
+  it('ordnet einen Teil neu und lässt den Rest stehen', () => {
+    // b und d tauschen ihre Plätze; a, c und e bleiben, wo sie waren – wie
+    // bei einer Suche, die nur b und d zeigt.
+    assert.deepEqual(placeInOrder(['a', 'b', 'c', 'd', 'e'], ['d', 'b']), ['a', 'd', 'c', 'b', 'e'])
+  })
+
+  it('übergeht Unbekanntes und Doppeltes', () => {
+    assert.deepEqual(placeInOrder(['a', 'b', 'c'], ['c', 'x', 'c', 'a']), ['c', 'b', 'a'])
+  })
+
+  it('nimmt die ganze Liste als neue Reihenfolge', () => {
+    assert.deepEqual(placeInOrder(['a', 'b', 'c'], ['c', 'a', 'b']), ['c', 'a', 'b'])
   })
 })

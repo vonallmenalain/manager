@@ -6,7 +6,21 @@ import {
   DEFAULT_BEREICH,
   normalizeForSearch,
 } from './documents.js'
-import { normalizeRich } from './richtext.js'
+import {
+  blockText,
+  docOfValue,
+  isPlainDoc,
+  normalizeDoc,
+  normalizeRich,
+  parseRichJson,
+  serializeDoc,
+  singleLineBlock,
+  toRichValue,
+  trimBlock,
+  type RichBlock,
+  type RichDoc,
+  type RichValue,
+} from './richtext.js'
 
 /**
  * Die Abteilungen, mit denen eine frische Einkaufsliste beginnt – in der
@@ -266,6 +280,34 @@ export const updateShoppingItemSchema = z.object({
 
 export type UpdateShoppingItemInput = z.infer<typeof updateShoppingItemSchema>
 
+/**
+ * Gelöschte Einträge zurückholen – „Rückgängig" nach dem Löschen oder
+ * Aufräumen.
+ *
+ * Zurück kommt der Eintrag, wie er war: mit seiner Kennung, seinem Platz in
+ * der Abteilung (der hängt am Zeitpunkt des Anlegens) und mit seinem Haken.
+ * Ein neu angelegter Eintrag stünde sonst zuunterst und wäre wieder offen.
+ */
+export const restoreShoppingItemsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(60),
+        text: z.string().trim().min(1).max(120),
+        sectionId: z.string().max(60),
+        done: z.boolean(),
+        createdBy: z.string().max(60),
+        doneBy: z.string().max(60).nullable(),
+        createdAt: z.string().max(40),
+        doneAt: z.string().max(40).nullable(),
+      }),
+    )
+    .min(1)
+    .max(500),
+})
+
+export type RestoreShoppingItemsInput = z.infer<typeof restoreShoppingItemsSchema>
+
 /** Farben für Notizen – gedeckt gehalten, damit die Liste ruhig bleibt. */
 export const NOTE_COLORS = ['default', 'gelb', 'gruen', 'blau', 'rosa'] as const
 export type NoteColor = (typeof NOTE_COLORS)[number]
@@ -434,9 +476,132 @@ export function serializeChecklist(items: readonly ChecklistItem[]): string {
  * sieht die Liste auf jedem Gerät gleich aus, und die Vorschau in der
  * Übersicht zeigt dieselben offenen Punkte wie die geöffnete Notiz.
  */
-export function sortChecklist(items: readonly ChecklistItem[]): ChecklistItem[] {
+export function sortChecklist<T extends { done: boolean }>(items: readonly T[]): T[] {
   return [...items.filter((item) => !item.done), ...items.filter((item) => item.done)]
 }
+
+/**
+ * Ein Eintrag samt Formatierung – so, wie ihn das Fenster bearbeitet.
+ *
+ * `value` ist genau eine Zeile: der Text des Eintrags und, falls etwas daran
+ * fett, farbig oder gross ist, das Formatfeld dazu (siehe richtext.ts).
+ */
+export interface RichChecklistItem {
+  done: boolean
+  value: RichValue
+}
+
+/**
+ * Die Formatierung einer Checkliste – oder `null`, wenn sie nicht (mehr) passt.
+ *
+ * Eine Checkliste formatiert ihre Einträge, nicht ihre Zeilen samt Kästchen:
+ * Im Formatfeld steht je Eintrag ein Absatz, ohne `[ ]` und ohne `[x]` – die
+ * gehören dem gespeicherten Text. Gilt nur, wenn Absatz für Absatz derselbe
+ * Wortlaut dasteht wie in den Einträgen des Textes. Hat eine ältere App die
+ * Liste geändert, passt das nicht mehr, und die Liste steht unformatiert da –
+ * dieselbe Regel wie beim Fliesstext (`richDocFor`).
+ */
+export function checklistDocFor(body: string, rich: string | null | undefined): RichDoc | null {
+  if (!rich) return null
+  const doc = parseRichJson(rich)
+  if (!doc) return null
+  const items = parseChecklist(body)
+  if (doc.blocks.length !== items.length) return null
+  const passt = doc.blocks.every(
+    (block, index) => !block.file && !block.list && blockText(block) === items[index]?.text,
+  )
+  return passt ? doc : null
+}
+
+/** Das Formatfeld einer Checkliste, wie es abgelegt wird – aufgeräumt, oder gar keins. */
+export function normalizeChecklistRich(
+  body: string,
+  rich: string | null | undefined,
+): string | null {
+  const doc = checklistDocFor(body, rich)
+  if (!doc || isPlainDoc(doc)) return null
+  return serializeDoc(doc)
+}
+
+/** Die Einträge einer gespeicherten Checkliste, jeder mit seiner Formatierung. */
+export function checklistFromNote(
+  body: string,
+  rich: string | null | undefined,
+): RichChecklistItem[] {
+  const doc = checklistDocFor(body, rich)
+  return parseChecklist(body).map((item, index) => {
+    const block = doc?.blocks[index]
+    return {
+      done: item.done,
+      value: block ? toRichValue({ blocks: [block] }) : { text: item.text, rich: null },
+    }
+  })
+}
+
+/**
+ * Die Einträge zurück in Text und Formatfeld.
+ *
+ * Leere Einträge fallen weg, und jeder wird vorne und hinten getrimmt – im
+ * Text wie in der Formatierung, damit beide nachher zueinander passen.
+ */
+export function checklistToNote(items: readonly RichChecklistItem[]): {
+  body: string
+  bodyRich: string | null
+} {
+  const lines: ChecklistItem[] = []
+  const blocks: RichBlock[] = []
+  for (const item of items) {
+    const block = trimBlock(singleLineBlock(docOfValue(item.value)))
+    const text = blockText(block)
+    if (!text) continue
+    lines.push({ text, done: item.done })
+    blocks.push(block)
+  }
+
+  const body = serializeChecklist(lines)
+  if (blocks.length === 0) return { body, bodyRich: null }
+  const doc = normalizeDoc({ blocks })
+  return { body, bodyRich: isPlainDoc(doc) ? null : serializeDoc(doc) }
+}
+
+/**
+ * Die eigene Reihenfolge der Notizen: angeheftete zuerst, darin und darunter
+ * nach `sortOrder`. Bei gleichem Platz entscheidet, was zuletzt bearbeitet
+ * wurde – so sehen Notizen, die noch nie jemand verschoben hat, genauso aus
+ * wie vor der eigenen Reihenfolge.
+ */
+export function compareNotesInOwnOrder(
+  a: Pick<Note, 'pinned' | 'sortOrder' | 'updatedAt'>,
+  b: Pick<Note, 'pinned' | 'sortOrder' | 'updatedAt'>,
+): number {
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || b.updatedAt.localeCompare(a.updatedAt)
+}
+
+/**
+ * Einige Notizen neu ordnen, ohne die übrigen zu bewegen.
+ *
+ * `alle` ist die ganze Reihenfolge, `gewuenscht` die neue Folge eines Teils
+ * davon – etwa der Notizen, die eine Suche oder ein Kategorienfilter gerade
+ * zeigt. Die gewünschten nehmen die Plätze ein, die sie schon zusammen
+ * hatten, nur eben in der neuen Folge; alle anderen bleiben, wo sie sind.
+ * Unbekannte Kennungen und Doppelte fallen weg.
+ */
+export function placeInOrder(alle: readonly string[], gewuenscht: readonly string[]): string[] {
+  const bekannt = new Set(alle)
+  const gesehen = new Set<string>()
+  const bewegt: string[] = []
+  for (const id of gewuenscht) {
+    if (!bekannt.has(id) || gesehen.has(id)) continue
+    gesehen.add(id)
+    bewegt.push(id)
+  }
+  let naechste = 0
+  return alle.map((id) => (gesehen.has(id) ? (bewegt[naechste++] as string) : id))
+}
+
+/** Der Abstand zwischen zwei Notizen in der eigenen Reihenfolge – wie bei den Abteilungen. */
+export const NOTE_SORT_STEP = 10
 
 export const noteSchema = z.object({
   id: z.string(),
@@ -464,6 +629,12 @@ export const noteSchema = z.object({
    */
   categoryId: z.string().nullable(),
   pinned: z.boolean(),
+  /**
+   * Der Platz in der eigenen Reihenfolge – kleiner heisst weiter oben. Neue
+   * Notizen kommen vor alle anderen; verschoben wird über `/api/notes/reihenfolge`.
+   * Wer die Liste nach „zuletzt bearbeitet" sortiert, liest das Feld nicht.
+   */
+  sortOrder: z.number(),
   /**
    * false heisst „nur für mich". Im Haushalt ist eine Notiz zunächst privat
    * und wird bewusst freigegeben – umgekehrt hätte man Geteiltes, das nie
@@ -532,8 +703,9 @@ export const upsertNoteSchema = z
    * eine Notiz später sieht – nicht, welche Knöpfe gerade angezeigt werden.
    *
    * Aus demselben Grund wird hier auch die Formatierung geprüft: Abgelegt wird
-   * nur ein Formatfeld, das Zeichen für Zeichen zum Text passt, und eine
-   * Checkliste hat gar keins – ihre Zeilen sind Einträge, keine Absätze.
+   * nur ein Formatfeld, das Zeichen für Zeichen zum Text passt. Bei einer
+   * Checkliste heisst das: je Eintrag ein Absatz mit demselben Wortlaut
+   * (`checklistDocFor`).
    */
   .transform((note) => ({
     ...note,
@@ -542,11 +714,24 @@ export const upsertNoteSchema = z
       note.bodyRich === undefined
         ? undefined
         : note.kind === 'liste'
-          ? null
+          ? normalizeChecklistRich(note.body, note.bodyRich)
           : normalizeRich(note.body, note.bodyRich),
   }))
 
 export type UpsertNoteInput = z.infer<typeof upsertNoteSchema>
+
+/**
+ * Die neue Reihenfolge, als Liste von Kennungen – wie bei den Abteilungen.
+ *
+ * Es darf ein Teil sein: Wer bei gesetztem Filter verschiebt, kennt nur die
+ * Notizen, die er sieht. Die übrigen bleiben, wo sie sind (`placeInOrder`).
+ */
+export const reorderNotesSchema = z.object({
+  bereich: bereichSchema.default(DEFAULT_BEREICH),
+  ids: z.array(z.string().max(60)).min(1, 'Keine Notizen angegeben').max(5000),
+})
+
+export type ReorderNotesInput = z.infer<typeof reorderNotesSchema>
 
 /**
  * Wonach eine Notizliste gefragt wird.

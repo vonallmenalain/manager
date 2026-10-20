@@ -1,11 +1,15 @@
-import type {
-  Bereich,
-  CreateShoppingItemInput,
-  Note,
-  ShoppingItem,
-  ShoppingSection,
-  UpdateShoppingItemInput,
-  UpsertNoteInput,
+import {
+  compareNotesInOwnOrder,
+  NOTE_SORT_STEP,
+  placeInOrder,
+  type Bereich,
+  type CreateShoppingItemInput,
+  type Note,
+  type ReorderNotesInput,
+  type ShoppingItem,
+  type ShoppingSection,
+  type UpdateShoppingItemInput,
+  type UpsertNoteInput,
 } from '@manager/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -102,6 +106,32 @@ export function useClearDoneShoppingItems() {
   return useOptimisticShopping(
     () => api.clearDoneShoppingItems(),
     (items) => items.filter((item) => !item.done),
+  )
+}
+
+/**
+ * Gelöschte Einträge zurück – sofort sichtbar, so wie sie dastanden. Was die
+ * Liste schon kennt, kommt nicht doppelt.
+ */
+export function useRestoreShoppingItems() {
+  return useOptimisticShopping(
+    (restore: ShoppingItem[]) =>
+      api.restoreShoppingItems({
+        items: restore.map((item) => ({
+          id: item.id,
+          text: item.text,
+          sectionId: item.sectionId,
+          done: item.done,
+          createdBy: item.createdBy,
+          doneBy: item.doneBy,
+          createdAt: item.createdAt,
+          doneAt: item.doneAt,
+        })),
+      }),
+    (items, restore) => {
+      const bekannt = new Set(items.map((item) => item.id))
+      return [...items, ...restore.filter((item) => !bekannt.has(item.id))]
+    },
   )
 }
 
@@ -243,6 +273,66 @@ export function useDeleteNote() {
   return useMutation({
     mutationFn: (id: string) => api.deleteNote(id),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
+    },
+  })
+}
+
+/** „Rückgängig" nach dem Löschen – der Server hält die Notiz 30 Tage bereit. */
+export function useRestoreNote() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.restoreNote(id),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
+    },
+  })
+}
+
+/**
+ * Die eigene Reihenfolge – sofort sichtbar, auch bevor der Server geantwortet
+ * hat. Gerechnet wird wie dort (`placeInOrder`), in jeder Liste dieses
+ * Bereichs, die gerade im Zwischenspeicher liegt: Die ungefilterte Übersicht
+ * soll nach dem Verschieben in einer Suche nicht den alten Stand zeigen.
+ */
+export function useReorderNotes() {
+  const queryClient = useQueryClient()
+  const istBereich = (key: readonly unknown[], bereich: Bereich) => {
+    const filters = key[1] as NoteFilters | undefined
+    return key[0] === NOTES_KEY && (filters?.bereich ?? 'manager') === bereich
+  }
+
+  return useMutation({
+    mutationFn: (input: ReorderNotesInput) => api.reorderNotes(input),
+    onMutate: async (input: ReorderNotesInput) => {
+      const predicate = (query: { queryKey: readonly unknown[] }) =>
+        istBereich(query.queryKey, input.bereich)
+      await queryClient.cancelQueries({ predicate })
+      const previous = queryClient.getQueriesData<{ notes: Note[] }>({ predicate })
+
+      for (const [key, data] of previous) {
+        if (!data) continue
+        const bisher = [...data.notes].sort(compareNotesInOwnOrder)
+        const platz = new Map(
+          placeInOrder(
+            bisher.map((note) => note.id),
+            input.ids,
+          ).map((id, index) => [id, (index + 1) * NOTE_SORT_STEP]),
+        )
+        queryClient.setQueryData(key, {
+          ...data,
+          notes: data.notes.map((note) => ({
+            ...note,
+            sortOrder: platz.get(note.id) ?? note.sortOrder,
+          })),
+        })
+      }
+      return { previous }
+    },
+    onError: (_error, _input, context) => {
+      for (const [key, data] of context?.previous ?? []) queryClient.setQueryData(key, data)
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: [NOTES_KEY] })
     },
   })

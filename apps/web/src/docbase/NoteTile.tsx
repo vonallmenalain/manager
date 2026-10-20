@@ -1,7 +1,8 @@
 import type { Note } from '@manager/shared'
 
+import { ChecklistPreview } from '../components/Checklist'
 import { NoteIcon } from '../components/icons'
-import { COLOR_STYLES } from '../components/NoteParts'
+import { COLOR_STYLES, VerschiebeKnoepfe } from '../components/NoteParts'
 import { RichText } from '../components/RichText'
 
 /**
@@ -18,21 +19,25 @@ import { RichText } from '../components/RichText'
  * Textes – auch das ist eine Vorschau, nur eben aus Buchstaben.
  *
  * Ein Knopf und kein Verweis: Die Notiz geht als Fenster über der Sammlung
- * auf, genau wie im Manager, statt eine eigene Adresse zu bekommen.
+ * auf, genau wie im Manager, statt eine eigene Adresse zu bekommen. Beim
+ * Anordnen ist sie kein Knopf, sondern trägt die Pfeile zum Verschieben.
  */
 export function NoteTile({
   note,
   categoryName,
   onOpen,
+  verschieben,
 }: {
   note: Note
   categoryName?: string
   onOpen: () => void
+  verschieben?: Verschieben
 }) {
+  const Flaeche = verschieben ? 'div' : 'button'
   return (
-    <li>
-      <button
-        onClick={onOpen}
+    <li className="relative">
+      <Flaeche
+        onClick={verschieben ? undefined : onOpen}
         className={`flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition active:scale-[0.99] ${COLOR_STYLES[note.color]}`}
       >
         {/* Titel oben und `flex-1` aus demselben Grund wie bei der
@@ -65,16 +70,39 @@ export function NoteTile({
               ) : null}
               <NoteIcon className="size-4" />
             </span>
-            {note.body ? (
+            {note.kind === 'liste' && note.body ? (
+              <ChecklistPreview
+                body={note.body}
+                bodyRich={note.bodyRich}
+                max={12}
+                links={false}
+                className=""
+              />
+            ) : note.body ? (
               <RichText text={note.body} rich={note.bodyRich} links={false} dateien="kompakt" />
             ) : (
               <span className="text-slate-400">Ohne Text</span>
             )}
           </span>
         </span>
-      </button>
+      </Flaeche>
+      {verschieben ? (
+        <VerschiebeKnoepfe
+          titel={note.title || 'Ohne Titel'}
+          waagrecht
+          nachVorne={verschieben.nachVorne}
+          nachHinten={verschieben.nachHinten}
+          className="absolute inset-x-0 bottom-2 justify-center"
+        />
+      ) : null}
     </li>
   )
+}
+
+/** Beim Anordnen: wohin die Notiz rücken kann – fehlt eine Richtung, geht es dort nicht weiter. */
+export interface Verschieben {
+  nachVorne?: () => void
+  nachHinten?: () => void
 }
 
 /** Dieselbe Notiz als Zeile – wie die Zeile eines Dokuments aufgebaut. */
@@ -82,15 +110,18 @@ export function NoteRow({
   note,
   categoryName,
   onOpen,
+  verschieben,
 }: {
   note: Note
   categoryName?: string
   onOpen: () => void
+  verschieben?: Verschieben
 }) {
+  const Flaeche = verschieben ? 'div' : 'button'
   return (
     <li>
-      <button
-        onClick={onOpen}
+      <Flaeche
+        onClick={verschieben ? undefined : onOpen}
         className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition active:scale-[0.99] ${COLOR_STYLES[note.color]}`}
       >
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300">
@@ -107,7 +138,15 @@ export function NoteRow({
             Notiz · {note.updatedAt.slice(0, 10)}
             {categoryName ? ` · ${categoryName}` : ''}
           </span>
-          {note.body ? (
+          {note.kind === 'liste' && note.body ? (
+            <ChecklistPreview
+              body={note.body}
+              bodyRich={note.bodyRich}
+              max={2}
+              links={false}
+              className="mt-0.5 text-xs text-slate-500 dark:text-slate-400"
+            />
+          ) : note.body ? (
             // Ohne `block` neben `line-clamp-2`: Das bringt seine eigene
             // Anzeigeart mit, und ein `block` daneben hob die Grenze auf – eine
             // lange Notiz stand sonst in voller Länge in der Zeile.
@@ -121,7 +160,14 @@ export function NoteRow({
             📌
           </span>
         ) : null}
-      </button>
+        {verschieben ? (
+          <VerschiebeKnoepfe
+            titel={note.title || 'Ohne Titel'}
+            nachVorne={verschieben.nachVorne}
+            nachHinten={verschieben.nachHinten}
+          />
+        ) : null}
+      </Flaeche>
     </li>
   )
 }
