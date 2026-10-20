@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
 
 /**
  * Meldet an, dass eine bildschirmfüllende Fläche offen ist.
@@ -63,4 +63,32 @@ export function useFullScreenOverlay(): void {
  */
 export function useOpenPanel(): void {
   useEffect(() => melde('menue'), [])
+}
+
+/**
+ * Schliessen mit einem Klick auf den Hintergrund – aber nur, wenn der Klick
+ * dort auch angefangen hat.
+ *
+ * Wer im Fenster Text markiert und die Maus erst ausserhalb loslässt, hat
+ * nicht auf den Hintergrund geklickt. Der Browser meldet den Klick trotzdem
+ * dort: an das Element, das Drücken und Loslassen gemeinsam umschliesst – und
+ * das ist der Hintergrund. Das Fenster ging dann mitten im Markieren zu, samt
+ * der Markierung. Deshalb zählt der Klick nur, wenn schon das Drücken auf dem
+ * Hintergrund selbst lag und nicht im Fenster.
+ */
+export function useHintergrundKlick(onClose: () => void): {
+  onPointerDown: (event: PointerEvent<HTMLElement>) => void
+  onClick: (event: MouseEvent<HTMLElement>) => void
+} {
+  const begonnen = useRef(false)
+  return {
+    onPointerDown: (event) => {
+      begonnen.current = event.target === event.currentTarget
+    },
+    onClick: (event) => {
+      const treffer = begonnen.current && event.target === event.currentTarget
+      begonnen.current = false
+      if (treffer) onClose()
+    },
+  }
 }
